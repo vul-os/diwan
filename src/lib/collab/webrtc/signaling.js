@@ -1,5 +1,5 @@
 /**
- * signaling.js — Vulos RELAY signaling client for vulos-office.
+ * signaling.js — Ephor signalling client for the office suite.
  *
  * Opens a WebSocket to the Vulos OS signaling stream
  * (GET /api/peering/stream) and multiplexes offer/answer/ICE frames
