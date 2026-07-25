@@ -22,7 +22,7 @@
  *   • Otherwise, both entry points resolve transportSelection.js's three-way
  *     choice BEFORE touching the fabric:
  *       1. HOST-BOX PEERING — this server mounts `/api/peering/*` (Vulos OS /
- *          Vulos Relay in front of Ofisi). Unchanged default.
+ *          Ephor in front of Ofisi). Unchanged default.
  *       2. ANY RELAYD RENDEZVOUS — no host-box peering, but a rendezvous URL is
  *          configured (config.yaml `collab.rendezvous_url` /
  *          VULOS_RENDEZVOUS_URL). The invite-link session then runs entirely

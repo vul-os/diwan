@@ -7,7 +7,7 @@
  * priority order:
  *
  *   1. HOST_PEERING  — this server itself mounts `/api/peering/*` (a Vulos OS
- *      or Vulos Relay host is in front of Ofisi). Preferred when present:
+ *      or Ephor host is in front of Ofisi). Preferred when present:
  *      unchanged from Ofisi's original behaviour, and it is the one transport
  *      that can carry an authToken tied to an account session.
  *   2. RENDEZVOUS    — no host-box peering, but this deployment has a

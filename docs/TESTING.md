@@ -87,7 +87,7 @@ npm run test:e2e:p2p
 ```
 
 What it boots (`e2e-p2p/stack.mjs`): a real `vulos-relayd` built from the
-sibling `../vulos-relay` checkout with `-rendezvous`, and **two** standalone
+sibling Ephor checkout (`../vulos-relay`) with `-rendezvous`, and **two** standalone
 `vulos-office` servers on separate ports with separate data dirs, both pointed
 at that relayd — plus a third with no rendezvous configured for the negative
 case. The two peers therefore share **no** server: only the relayd, and the room

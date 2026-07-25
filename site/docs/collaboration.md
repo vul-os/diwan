@@ -43,7 +43,7 @@ Ofisi uses its own first-party `FabricClient` (`src/lib/collab/webrtc/fabric.js`
 
 Both of the above need peer discovery: a place to exchange WebRTC offer/answer/ICE candidates, and ICE/STUN-TURN config. Ofisi picks **one of three transports** for that discovery, in this priority order (`src/lib/collab/transportSelection.js`, resolved fresh for every collab session):
 
-1. **Host-box peering (`/api/peering/*`)** — this Ofisi server itself is fronted by a **Vulos OS / Vulos Relay** deployment, which mounts:
+1. **Host-box peering (`/api/peering/*`)** — this Ofisi server itself is fronted by a **Vulos OS / Ephor** deployment, which mounts:
    - Signaling: `wss://<host>/api/peering/stream` — exchanges offer/answer/ICE candidates.
    - ICE config: `GET /api/peering/ice` — returns the STUN/TURN servers to use.
 

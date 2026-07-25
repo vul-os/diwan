@@ -7,7 +7,7 @@
 //
 // STUN/TURN configuration (no other Vulos product required):
 //   Ofisi's default collaboration transport is direct WebRTC (see
-//   docs/COLLABORATION.md). A host box (Vulos OS / Vulos Relay) can supply its
+//   docs/COLLABORATION.md). A host box (Vulos OS / Ephor) can supply its
 //   own ICE servers via /api/peering/ice, but a standalone/self-hosted Ofisi
 //   with no host box in front of it needs somewhere else to get STUN (NAT
 //   discovery) and, for the ~10-20% of peer pairs behind a symmetric NAT that

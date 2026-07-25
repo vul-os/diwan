@@ -139,7 +139,7 @@ SDK so Ofisi depends on no other Vulos product's package; see
 content-blind peer-discovery surface, and Ofisi picks one of three, in order:
 
 1. **This server's own peering fabric** (`/api/peering/*`) — present only when
-   a Vulos OS / Vulos Relay deployment fronts Ofisi. Unchanged default.
+   a Vulos OS / Ephor deployment fronts Ofisi. Unchanged default.
 2. **A configured rendezvous URL** — the base URL of any **self-hosted
    `vulos-relayd`**'s OPEN rendezvous surface (announce/resolve/signal/mailbox
    + ICE). No Vulos OS and no account are required. Set it and a bare

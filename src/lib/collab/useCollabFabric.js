@@ -30,7 +30,7 @@
  * HONESTY GUARD — three-way reality (see docs/COLLABORATION.md §3):
  *
  *   1. HOST-BOX PEERING — this server mounts `/api/peering/*` (Vulos OS /
- *      Vulos Relay in front of Ofisi). Unchanged default behaviour.
+ *      Ephor in front of Ofisi). Unchanged default behaviour.
  *   2. ANY RELAYD RENDEZVOUS — no host-box peering, but this deployment has a
  *      configured rendezvous URL (config.yaml `collab.rendezvous_url` /
  *      VULOS_RENDEZVOUS_URL). The browser talks DIRECTLY to that relayd's
