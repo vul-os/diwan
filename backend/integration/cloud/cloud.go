@@ -1,5 +1,6 @@
-// Package cloud is the OPTIONAL vulos-cloud ("cp" control plane) adapter for the
-// office integration seam.
+// Package cloud is the OPTIONAL gateway ("cp" control plane) adapter for the
+// office integration seam. Office has no dependency on any Vulos cloud
+// product; this adapter talks to whatever gateway the owner configures.
 //
 // It implements the seam.Identity / seam.Entitlements / seam.Usage interfaces
 // against the control plane. It is a SEPARATE package on purpose:

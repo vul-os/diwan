@@ -4,9 +4,10 @@
 //
 // This is the wedge-aligned identity path: Office never mints or verifies its
 // OWN session signature — it INTROSPECTS the opaque `vc_session` cookie against a
-// configurable identity provider (the sovereign box in self-host, the vulos-cloud
-// control plane in cloud). The provider is the sole holder of session-signing
-// power; Office only ever asks "is this session valid, and who is it?".
+// configurable identity provider (the sovereign box in self-host, an optional
+// gateway the owner configures for hosted deployments). The provider is the
+// sole holder of session-signing power; Office only ever asks "is this session
+// valid, and who is it?".
 //
 //	POST {IDENTITY_URL}/api/session/introspect
 //	  Headers: Content-Type: application/json

@@ -108,7 +108,7 @@ func main() {
 	// ── Integration seam ──────────────────────────────────────────────────────
 	// office runs COMPLETELY STANDALONE by default: identity is verified against
 	// office's local JWT secret, entitlements are unlimited (self-host), and
-	// usage metering is a no-op. The vulos-cloud control plane is OPTIONAL and
+	// usage metering is a no-op. An optional gateway the owner configures is
 	// only engaged when VULOS_CP_BASE_URL is set — the core never imports the
 	// cloud adapter, so removing it cannot break the standalone build.
 	provider := seam.NewStandaloneProvider(middleware.JWTSecret, cfg.Auth.Enabled)
@@ -613,8 +613,8 @@ func mountStatic(r *gin.Engine, staticFS fs.FS) {
 	}
 
 	// "/" serves the SPA for everyone (it shows the login screen when the
-	// visitor is unauthenticated). The marketing landing that used to gate the
-	// root moved to the centralized vulos-cloud site.
+	// visitor is unauthenticated). There is no separate marketing site gating
+	// the root.
 	r.GET("/", func(c *gin.Context) {
 		c.Request.URL.Path = "/"
 		staticServer.ServeHTTP(c.Writer, c.Request)

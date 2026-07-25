@@ -1,7 +1,7 @@
 // Package apikey implements the Vulos API-key introspection seam used by the
 // public /v1 API to authenticate `Authorization: Bearer vk_…` credentials.
 //
-// Introspection is brokered by the vulos-cloud control plane ("CP"). Office (and
+// Introspection is brokered by an optional gateway the owner configures ("CP"). Office (and
 // every other Vulos product) presents the opaque key to the SAME endpoint and
 // gets back the resolved account + scopes + products:
 //

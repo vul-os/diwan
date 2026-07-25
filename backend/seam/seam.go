@@ -1,9 +1,9 @@
 // Package seam defines the integration "seam" between vulos-office's core and
-// any external control plane (e.g. vulos-cloud / "cp").
+// any external control plane (e.g. an optional gateway / "cp").
 //
 // GOAL: vulos-office must run COMPLETELY STANDALONE as an open-source project
-// with NO dependency on vulos-cloud. The standalone path is the default and
-// works with zero cloud configuration.
+// with NO dependency on any Vulos cloud product. The standalone path is the
+// default and works with zero cloud configuration.
 //
 // The seam is a small set of interfaces with two kinds of implementation:
 //
@@ -17,7 +17,7 @@
 //     it; only the composition root (main.go) wires it, and only when explicitly
 //     selected via env/config. So removing the cloud package never breaks core.
 //
-// This mirrors the spirit of vulos-mail's seam (Identity / Entitlements / Usage
+// This mirrors the spirit of lilmail's seam (Identity / Entitlements / Usage
 // / SignupGate), adapted to what office actually needs.
 package seam
 

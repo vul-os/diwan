@@ -6,7 +6,7 @@ package handlers
 // (docs_export / sheets_export / slides_export) as the internal /api handlers —
 // it does not re-implement any document logic.
 //
-// Conventions (modelled on vulos-mail's /v1):
+// Conventions (modelled on lilmail's /v1):
 //   - JSON in, JSON out. Every error is `{"error":"<message>"}` with the right
 //     status (never an HTML redirect).
 //   - Ownership-scoped: each request resolves to a verified account (session JWT

@@ -3,7 +3,7 @@
  *
  * Nothing here is mocked. It builds and runs:
  *
- *   • one `vulos-relayd` (from the sibling vulos-relay checkout, UNMODIFIED)
+ *   • one `vulos-relayd` (from the sibling Ephor checkout, UNMODIFIED)
  *     with the rendezvous role enabled on a temp port, and
  *   • two STANDALONE `vulos-office` binaries — separate ports, separate data
  *     dirs, separate config files — each pointed at that relayd via
@@ -33,12 +33,12 @@ const execFileAsync = promisify(execFile)
 export const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 /**
- * Where the vulos-relay checkout lives. Overridable so CI (or a differently
+ * Where the Ephor checkout lives. Overridable so CI (or a differently
  * laid-out working copy) can point at it explicitly. That repo is READ-ONLY
  * here: we only `go build` it to an output path OUTSIDE the checkout.
  */
 export const RELAY_REPO =
-  process.env.VULOS_RELAY_REPO || path.resolve(REPO_ROOT, '..', 'vulos-relay')
+  process.env.VULOS_RELAY_REPO || path.resolve(REPO_ROOT, '..', 'ephor')
 
 /** Returns true when the relay checkout needed to run this suite is present. */
 export function relayRepoAvailable() {
@@ -81,7 +81,7 @@ async function httpOk(url) {
 
 /**
  * Build the binaries under test. The relayd build writes its output into our
- * temp dir — the vulos-relay checkout is never modified.
+ * temp dir — the Ephor checkout is never modified.
  */
 export async function buildBinaries(outDir) {
   const officeBin = path.join(outDir, 'vulos-office-e2e')

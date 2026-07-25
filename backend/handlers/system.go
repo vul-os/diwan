@@ -28,7 +28,7 @@ import (
 )
 
 // EnvPublicURL is Office's OWN externally-reachable origin (e.g.
-// https://office.vulos.org, or a vulos-relay tunnel URL when the box has no
+// https://office.vulos.org, or an Ephor tunnel URL when the box has no
 // public IP). It is what P2P collab invite links and same-origin signaling must
 // use INSTEAD of window.location.origin when a visitor loads Office over a
 // LAN-only / private address. Unset ⇒ the client keeps using its own origin

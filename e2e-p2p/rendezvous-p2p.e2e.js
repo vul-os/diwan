@@ -7,7 +7,7 @@
  *
  * Everything else about that claim was covered only by selector unit tests with
  * a fake fabric. This suite runs the real thing: a real `vulos-relayd` binary
- * built from the sibling vulos-relay checkout with the rendezvous role enabled,
+ * built from the sibling Ephor checkout with the rendezvous role enabled,
  * two real standalone `vulos-office` servers (separate ports, separate data
  * dirs — no shared state whatsoever), two real browser contexts, and a real
  * WebRTC data channel.
@@ -49,7 +49,7 @@ let stack
 
 test.beforeAll(async () => {
   test.skip(!relayRepoAvailable(),
-    `vulos-relay checkout not found at ${RELAY_REPO} — set VULOS_RELAY_REPO to run the real-P2P suite`)
+    `Ephor checkout not found at ${RELAY_REPO} — set VULOS_RELAY_REPO to run the real-P2P suite`)
   stack = await startStack({ offices: 2, localOnlyOffice: true })
 })
 

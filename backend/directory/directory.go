@@ -46,8 +46,8 @@ var ErrUnavailable = errors.New("directory: email resolution unavailable (no con
 // DiscoveryResult mirrors vulos discovery.go's DiscoveryResult — the EXISTING
 // shape returned by the cell directory. Field names are decoded permissively
 // (snake_case, camelCase, and exported-name forms) because the wire tags are
-// owned by the vulos-cloud directory agent and we want to interoperate without
-// a lock-step change.
+// owned by an externally configured directory agent and we want to
+// interoperate without a lock-step change.
 type DiscoveryResult struct {
 	// VulaID is the recipient's self-certifying identity
 	// (vula:ed25519:<base64 pubkey>). For an account-only user this is the
@@ -172,8 +172,8 @@ func (r *CPResolver) LookupEmail(ctx context.Context, email string) (DiscoveryRe
 
 // decodeDiscovery parses a DiscoveryResult permissively across the field-name
 // dialects the directory might emit (snake_case / camelCase / exported names),
-// so office interoperates with the vulos-cloud directory without a lock-step
-// JSON-tag change.
+// so office interoperates with an externally configured directory without a
+// lock-step JSON-tag change.
 func decodeDiscovery(body []byte) (DiscoveryResult, error) {
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(body, &raw); err != nil {
