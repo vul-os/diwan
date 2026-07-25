@@ -21,7 +21,7 @@ docker run -d \
 
 ```sh
 git clone https://github.com/vul-os/ofisi.git
-cd vulos-office
+cd ofisi
 
 # Build frontend
 npm ci && npm run build

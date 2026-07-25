@@ -12,7 +12,7 @@ Symptom → cause → fix, for the problems users and admins actually hit: docum
 |------------|---------|
 | Docker | `docker logs -f vulos-office` |
 | systemd | `journalctl -u <your-unit> -f` |
-| Fly.io | `fly logs -c vulos-office/fly.toml` |
+| Fly.io | `fly logs -c fly.toml` |
 | Foreground binary | it's already on your terminal |
 
 Startup lines worth grepping for — they announce every mode decision:
@@ -44,7 +44,7 @@ Ofisi running → http://localhost:8080
 | Boot dies with `auth is enabled but no JWT signing secret is configured` | `auth.enabled: true` without a secret | `export VULOS_OFFICE_JWT_SECRET="$(openssl rand -hex 32)"` (or `VULOS_OFFICE_DEV=1` for local dev only) |
 | Boot dies with `Storage init failed` | Bad `DATABASE_URL` / unreachable Postgres / unwritable `data_dir` | Check the URL and DB reachability; ensure the process can create `./data` (in Docker the writable dirs are `/srv/data`, `/srv/uploads`) |
 | Starts but you expected your config | Log shows `Config error: … — using defaults` | The server reads `config.yaml` **from its working directory**. Run it from the directory that holds the file |
-| Docker build fails resolving `file:../vulos-relay/client` | Built from inside `vulos-office/` | Build from the **parent** directory: `docker build -f vulos-office/Dockerfile …` (see Dockerfile header) |
+| Docker build fails resolving an npm dependency | Stale `node_modules`/lockfile in the build context, or a `file:third_party/*` vendored dep out of sync with `package-lock.json` | Build from the repo root with a clean context: `docker build -t ghcr.io/vul-os/ofisi:latest .`; if it persists, delete `node_modules` and re-run `npm install` before building |
 | Container healthcheck failing | App not listening on 8080 or crash-looping | `docker logs`; confirm `server.addr` and the port mapping; hit `/healthz` from inside the container |
 
 ---
@@ -55,7 +55,9 @@ Collaboration is **peer-to-peer — there is no central document server** to che
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| Editor shows "Offline"; nobody else appears | This deployment has **no peering fabric** — a bare standalone Ofisi binary does not mount `/api/peering/*`, so peers can't discover each other | Run Ofisi behind a **Vulos OS / Relay host** that provides `/api/peering/*` (signaling + ICE). Your edits still autosave to your storage regardless |
+| Editor shows "Offline"; nobody else appears | This deployment has **no peering fabric** (a bare standalone Ofisi binary does not mount `/api/peering/*`) **and no rendezvous URL configured** — peers can't discover each other | Run Ofisi behind a **Vulos OS / Relay host** (provides `/api/peering/*`), **or** set `collab.rendezvous_url` / `VULOS_RENDEZVOUS_URL` to any self-hosted `vulos-relayd` (no OS or account needed — see [CONFIGURATION.md](CONFIGURATION.md)). Your edits still autosave to your storage regardless |
+| `rendezvous_url` is set, but DevTools shows the rendezvous calls failing with a **CORS** error | The browser calls the configured relayd **directly** (cross-origin). Its rendezvous role must send CORS headers — an old relayd, or a reverse proxy in front of it that strips them, breaks discovery for every user | Check it directly: `curl -i -H "Origin: https://office.example.org" https://relay.example.org/rendezvous/ice` must return `Access-Control-Allow-Origin: *` (and must NOT return `Access-Control-Allow-Credentials`). Upgrade the relayd, or stop your proxy stripping the headers |
+| `rendezvous_url` is set, but the browser blocks the request as **mixed content** | An `https` Ofisi page cannot call an `http://` relay | Put TLS on the relay and set `collab.rendezvous_url` to its `https://` URL. An `http` relay only works for an `http` (e.g. LAN/dev) Ofisi |
 | An invite link opens but nobody connects | Discovery unreachable (proxy dropped the `/api/peering/stream` WebSocket) **or** both peers are behind hard NATs with no TURN | Forward `Upgrade`/`Connection` on the discovery WS and keep read timeouts long; ensure the host's ICE config includes a reachable STUN and, for hard NATs, a TURN server (see [ADMIN-GUIDE.md](ADMIN-GUIDE.md) §6) |
 | Two people edit the same doc but never see each other | They opened **different** rooms — each `#vp2p=` link is its own room/key | Everyone must open the **same** invite link with the fragment intact (the `#vp2p=…` part). Forwarding the link text (not a re-share) is fine |
 | A read-only peer's edits never land | Expected: the ro link holds the decryption key but **not** the RW-authority MAC, so rw peers cryptographically refuse its writes | Share the **read-write** link if the person should edit |
@@ -68,7 +70,7 @@ Collaboration is **peer-to-peer — there is no central document server** to che
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| Presence pill says offline/local; peer count stays 0 | The peering fabric isn't there: standalone Ofisi does **not** serve `/api/peering/stream` or `/api/peering/ice` — those come from a Vulos OS / Relay host | Check Network tab: is the WebSocket to `/api/peering/stream` 404/failing? If standalone, that's expected — use account sharing instead |
+| Presence pill says offline/local; peer count stays 0 | Neither transport is reachable: the peering fabric isn't there (standalone Ofisi does **not** serve `/api/peering/stream` or `/api/peering/ice` — those come from a Vulos OS / Relay host) **and** no rendezvous URL is configured | Check Network tab: is the WebSocket to `/api/peering/stream` 404/failing, and does `GET /api/reachability` report a blank `rendezvous_url`? If both, that's expected on a bare standalone server — set `collab.rendezvous_url` (self-hosted relayd, no OS needed) or use account sharing instead |
 | Invite link opens the doc but no P2P session starts | The `#vp2p=…` **fragment was lost** — chat apps, redirects, or link "sanitizers" often strip URL fragments | Re-copy the link from the share modal (Copy button) and send it through a channel that preserves `#…`; verify the received URL still contains `#vp2p=` |
 | Console: `[p2p] join from link failed: …` | Malformed/tampered/truncated invite payload — join **fails closed** by design | Get a fresh link from the sharer (Rotate mints new ones) |
 | Link worked yesterday, dead today | The sharer **rotated** the room — rotation revokes all previous links | Ask for the new link |
@@ -152,13 +154,13 @@ Confirm what the server is actually running with `GET /version` and compare agai
 
 ---
 
-## 11. Cloud-attached deployments (CP seam)
+## 11. Control-plane-attached deployments (CP seam)
 
 Only relevant when `VULOS_CP_BASE_URL` / `IDENTITY_URL` are set — with them unset none of this code runs.
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `402` on writes/uploads/invites | Billing gate: over storage quota, seats exhausted, or account suspended (entitlements from the control plane) | Resolve on the billing side; standalone installs never see 402 (unlimited local entitlements) |
+| `402` on writes/uploads/invites | Entitlements/quota gate: over storage quota, seats exhausted, or account suspended (entitlements from the control plane) | Resolve on the control-plane side; standalone installs never see 402 (unlimited local entitlements) |
 | `503 API key validation unavailable` on `/v1` with `vk_` keys | Control plane unreachable during key introspection — **fail-closed** by design | Restore CP reachability; introspection results are cached ~60 s per key, so brief blips mostly ride through |
 | All SSO logins failing `401` | `IDENTITY_URL` introspection failing **closed** (provider down, wrong `VULOS_CP_TOKEN`) | Check the `[sso]` startup line and the provider's `/api/session/introspect`; native JWT login (if enabled) still works |
 | Features vanished after a CP outage | Entitlements fetch fails **open** on transient outages — so this usually isn't the CP | Check `[seam]` log line; verify you're in the mode you think you are |
@@ -167,7 +169,7 @@ Only relevant when `VULOS_CP_BASE_URL` / `IDENTITY_URL` are set — with them un
 
 ## 12. Embedding & CORS
 
-When embedding `@vulos/office-client` panels or calling the API from another origin:
+When embedding `ofisi` library panels or calling the API from another origin:
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
@@ -225,8 +227,8 @@ All verified against the code; hitting one of these is expected behavior, not a 
 
 Thirty seconds in DevTools → Network answers most collab tickets. (Collaboration is peer-to-peer — you should **never** see a `/v1/documents/*/collab/*` request; there is no document server.)
 
-1. **WebSocket to `/api/peering/stream` connected?** Peer discovery is up. If it's `404`, you're on a bare standalone server — no peering fabric, by design; collaboration is local-only until you run behind a Vulos OS/Relay host.
-2. **`#vp2p=` in the address bar?** You're in a collaboration room. Everyone must have the **same** link (fragment intact). A WebRTC connection should follow discovery — the document bytes travel inside it, not any HTTP request.
+1. **WebSocket to `/api/peering/stream` connected?** Host-box peer discovery is up. If it's `404`, check `GET /api/reachability`'s `rendezvous_url`: non-blank means discovery is instead going straight to that self-hosted relayd (no Vulos OS involved); blank means this is a bare standalone server with neither transport configured — collaboration is local-only until you run behind a Vulos OS/Relay host **or** set `collab.rendezvous_url`.
+2. **`#vp2p=` in the address bar?** You're in a collaboration room. Everyone must have the **same** link (fragment intact). A WebRTC connection should follow discovery (via whichever transport won the check above) — the document bytes travel inside it, not any HTTP request.
 3. **See a `/v1/documents/*/collab/*` request at all?** That's a **regression** — Ofisi has no server-mediated collab endpoint. File an issue.
 4. **None of the above?** You're local-only: autosave + drafts still protect the work; check auth (`/api/auth/status`) and connectivity.
 
@@ -246,7 +248,7 @@ Security-sensitive findings: follow [SECURITY.md](../SECURITY.md) instead of a p
 ## See also
 
 - [USER-GUIDE.md](USER-GUIDE.md) — everyday use of Docs, Sheets, Slides, and Signing
-- [COLLABORATION.md](COLLABORATION.md) — how the three sync transports and E2E rooms actually work
+- [COLLABORATION.md](COLLABORATION.md) — how the peer-to-peer CRDT sync and E2E rooms actually work
 - [ADMIN-GUIDE.md](ADMIN-GUIDE.md) — deployment, configuration, storage, backup
 - [CONFIGURATION.md](CONFIGURATION.md) — the full environment-variable matrix
 - [API.md](API.md) — the `/v1` REST API and its status codes

@@ -37,8 +37,9 @@ credential is required and requests act as the local `self` identity.
 
 `Authorization: Bearer vk_live_…`
 
-A Vulos API key is an opaque token prefixed with `vk_`. It is validated against
-the Vulos control plane ("CP") via the **key introspection seam** (below). A key
+An API key is an opaque token prefixed with `vk_`. It is validated against a
+configured control plane ("CP") via the **key introspection seam** (below) —
+Vulos operates no control plane; this points at your own, if you run one. A key
 must be valid **and** carry the `office` product scope.
 
 The API-key path is enabled only when the CP base URL is configured
@@ -62,9 +63,9 @@ scope.
 
 ## Key introspection seam (control-plane contract)
 
-This is the **shared** seam every Vulos product (Ofisi, Mail, Talk, …) uses to
-validate `vk_` keys. The control plane implements **one** endpoint; products
-call it identically.
+This is the **shared** seam contract Vulos products (Ofisi, Mail, Talk, …) can
+implement identically against a self-configured control plane to validate `vk_`
+keys: **one** endpoint, called the same way by every product.
 
 ### Request
 
@@ -114,11 +115,11 @@ For an unknown / revoked / expired key the CP still returns `200` with:
 
 | Env var              | Purpose                                                             |
 | -------------------- | ------------------------------------------------------------------ |
-| `VULOS_CP_BASE_URL`  | Control-plane base URL (e.g. `https://api.vulos.org`). Enables the `vk_` path. Unset → session-only. |
+| `VULOS_CP_BASE_URL`  | Control-plane base URL (e.g. `https://cp.example.org`, pointing at your own control plane — Vulos operates none). Enables the `vk_` path. Unset → session-only. |
 | `VULOS_CP_TOKEN`     | Service token sent as `X-Relay-Auth` on the introspection call. Optional. |
 
-These are the **same** env vars the optional cloud billing seam uses, so a
-cloud-attached deployment configures them once.
+These are the **same** env vars the optional control-plane entitlements seam
+uses, so a CP-attached deployment configures them once.
 
 ---
 
@@ -338,7 +339,7 @@ Set `"revoke": true` to remove access.
 | 201  | Created (POST /v1/documents)                                        |
 | 400  | Malformed request body / unsupported export format                 |
 | 401  | Missing or invalid credentials                                     |
-| 402  | Billing gate (over quota / plan does not include the office product) |
+| 402  | Entitlements/quota gate (over quota / plan does not include the office product) |
 | 403  | API key not authorized for the `office` product                    |
 | 404  | Document not found or not accessible                                |
 | 429  | Rate limited (write endpoints; token-bucket)                       |

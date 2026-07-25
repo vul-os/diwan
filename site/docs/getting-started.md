@@ -21,7 +21,7 @@ The dev server runs Vite (frontend, hot-reload) and the Go API side by side:
 
 ```bash
 git clone https://github.com/vul-os/ofisi.git
-cd vulos-office
+cd ofisi
 
 npm install
 go mod tidy

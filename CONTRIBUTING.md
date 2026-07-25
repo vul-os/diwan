@@ -70,7 +70,7 @@ Look for `good first issue` or `help wanted` labels. UI polish, accessibility, a
 - **No Google SSO / OAuth** login flows.
 - **No Stripe billing** integration.
 - **No Rust rewrites** — Go throughout.
-- Live collaboration features that require vulos-cloud infrastructure belong there, not here.
+- Live collaboration features that need infrastructure beyond Ofisi's own P2P peer fabric belong in the Vulos OS repo (github.com/vul-os/vulos), not here.
 - New runtime dependencies without prior issue discussion.
 
 ## Licensing

@@ -154,13 +154,13 @@ Confirm what the server is actually running with `GET /version` and compare agai
 
 ---
 
-## 11. Cloud-attached deployments (CP seam)
+## 11. Control-plane-attached deployments (CP seam)
 
 Only relevant when `VULOS_CP_BASE_URL` / `IDENTITY_URL` are set — with them unset none of this code runs.
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `402` on writes/uploads/invites | Billing gate: over storage quota, seats exhausted, or account suspended (entitlements from the control plane) | Resolve on the billing side; standalone installs never see 402 (unlimited local entitlements) |
+| `402` on writes/uploads/invites | Entitlements/quota gate: over storage quota, seats exhausted, or account suspended (entitlements from the control plane) | Resolve on the control-plane side; standalone installs never see 402 (unlimited local entitlements) |
 | `503 API key validation unavailable` on `/v1` with `vk_` keys | Control plane unreachable during key introspection — **fail-closed** by design | Restore CP reachability; introspection results are cached ~60 s per key, so brief blips mostly ride through |
 | All SSO logins failing `401` | `IDENTITY_URL` introspection failing **closed** (provider down, wrong `VULOS_CP_TOKEN`) | Check the `[sso]` startup line and the provider's `/api/session/introspect`; native JWT login (if enabled) still works |
 | Features vanished after a CP outage | Entitlements fetch fails **open** on transient outages — so this usually isn't the CP | Check `[seam]` log line; verify you're in the mode you think you are |

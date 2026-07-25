@@ -179,8 +179,8 @@ collaboration server. It rides the **Vulos peer fabric** — the OS already sync
 state via **cr-sqlite/CRDT to buckets** and connects instances **P2P with
 relay/TURN fallback**. Ofisi models its documents as CRDTs over that same
 transport, so a doc converges across peers exactly the way the OS converges
-device state. See the [Vulos peering / RELAY layer](../vulos-cloud/roadmap/RELAY.md)
-for the signaling and relay primitives this builds on.
+device state — the signaling and relay primitives this builds on live in the
+Vulos OS itself (github.com/vul-os/vulos).
 
 ### Goals
 
@@ -223,8 +223,9 @@ for the signaling and relay primitives this builds on.
   ship a parallel WebSocket sync server.
 - **No OT (operational transform).** CRDTs only — to match the OS sync model and
   guarantee offline convergence.
-- **No global hosted document cloud** in the OSS core. Documents live on the
-  user's instances/buckets; the cloud control plane only routes peers.
+- **No global hosted document cloud.** Documents live on the user's own
+  instances/buckets; there is no central service that routes or stores them —
+  peers connect directly, P2P.
 - **Not real-time co-editing inside the PDF annotator** in v1 — PDF collaboration
   is the signing flow (§ 3), not live canvas co-editing.
 
@@ -288,8 +289,9 @@ This pillar is **shipped** (see Now). The notes below record its scope.
   tamper-evidence and audit trails, not (yet) government-grade qualified
   signatures.
 - **No paid identity-verification vendors** (ID-scan, KYC) in the OSS core.
-- **No always-on signing requires the cloud** — signing works on a self-hosted
-  instance; the cloud only relays the link/notification where used.
+- **Signing never requires any hosted service** — it runs entirely on a
+  self-hosted instance; link/notification delivery is your own SMTP relay, not
+  anything Vulos operates.
 
 ---
 
@@ -335,21 +337,18 @@ in `vulos`) wires this up; no vulos-office code changes are needed.
 
 Ofisi uses the same Vulos account identity as the OS. There is no separate Ofisi
 identity — the Vulos account (email + password / OAuth / passkey) is the single identity for
-all surfaces. Collaboration sessions are keyed by Vulos account; the cloud control plane routes
-presence and CRDT sync using the same identity service.
+all surfaces. Collaboration sessions are keyed by the Vulos account; presence and CRDT sync
+ride the same P2P peer fabric and identity as the rest of the OS.
 
 ---
 
 ## Bundling decision
 
-**Ofisi ships with the suite; it is not a separately-priced tier.** There are no
+**Ofisi ships with the suite; nothing about it is sold separately.** There are no
 per-active-user pricing tiers and no "mail tier" — mail is an experimental **connector**
-(bring your own Gmail/Outlook/IMAP), never a billed product. Billing is grounded in
-**compute + storage + relay** usage, not seats. Ofisi installs by default alongside the
-other suite apps; self-hosting Ofisi on your own box costs nothing.
-
-Cross-repo: see `vulos-cloud/ROADMAP.md` billing model section for the compute/storage/relay
-model.
+(bring your own Gmail/Outlook/IMAP), never a billed product. Vulos sells nothing: Ofisi
+installs by default alongside the other suite apps, and self-hosting it on your own box
+costs nothing.
 
 ---
 

@@ -152,9 +152,9 @@ content-blind peer-discovery surface, and Ofisi picks one of three, in order:
    [COLLABORATION.md](COLLABORATION.md) §3 for exactly what the relay does and
    does not see. Two things this puts on you as the operator:
 
-   - The relayd must serve **CORS** on its rendezvous role. Every `vulos-relay`
-     that has the role does; `npm run test:e2e:p2p` asserts the posture against
-     a real one, from a real browser.
+   - The relayd must serve **CORS** on its rendezvous role. Every Ephor
+     deployment with the role does; `npm run test:e2e:p2p` asserts the posture
+     against a real one, from a real browser.
    - It must be reachable from wherever users load Ofisi, over a scheme the
      page can call: an **https** Ofisi cannot call an **http** relay, so a
      public deployment needs TLS on the relay.
@@ -177,7 +177,7 @@ externally-reachable origin:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `VULOS_OFFICE_PUBLIC_URL` | This Office instance's externally-reachable origin (a public domain, or a vulos-relay tunnel URL when behind NAT/CGNAT). Used to build P2P invite links / signaling targets an external peer can actually reach, instead of blindly trusting `window.location.origin` (which may be a LAN-only address). | — (falls back to the visitor's own origin) |
+| `VULOS_OFFICE_PUBLIC_URL` | This Office instance's externally-reachable origin (a public domain, or an Ephor tunnel URL when behind NAT/CGNAT). Used to build P2P invite links / signaling targets an external peer can actually reach, instead of blindly trusting `window.location.origin` (which may be a LAN-only address). | — (falls back to the visitor's own origin) |
 
 `rendezvous_url` is `""` when nothing is configured, and clients treat empty as
 "not available" rather than guessing a default — that is what keeps an
@@ -323,7 +323,7 @@ Prometheus metrics are always available at `GET /metrics` (no env var needed).
 
 ## Org-bucket wiring
 
-`backend/storage/backendconfig.go` exposes `OfficeBackendConfig` for per-org S3 bucket + CRDT snapshot configuration injected by the Vulos control plane. This is the canonical configuration path for multi-tenant Hosted deployments — do not duplicate it in environment variables.
+`backend/storage/backendconfig.go` exposes `OfficeBackendConfig` for per-org S3 bucket + CRDT snapshot configuration, injected by whatever control plane fronts a multi-tenant deployment (self-configured — Vulos operates none). This is the canonical configuration path for such deployments — do not duplicate it in environment variables.
 
 ---
 

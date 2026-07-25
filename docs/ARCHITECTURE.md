@@ -138,8 +138,9 @@ flowchart TD
   (default; a fully sovereign self-host with no OS gateway in front — all features
   open, no billing/entitlement gating, blob I/O via the process-wide object client
   or a silent no-op) and `os` (Ofisi running as an app **behind a Vulos OS box
-  gateway**). Ofisi is never multi-tenant cloud-hosted; the cloud runs Mail + Relay
-  + the control plane only. In `os` mode the process **refuses to boot** without an
+  gateway**). Ofisi is never centrally hosted by Vulos — `os` mode simply means
+  it runs behind a self-hosted Vulos OS box, not any service Vulos operates. In
+  `os` mode the process **refuses to boot** without an
   authenticated posture (native auth or SSO introspection) so a hosted deployment can
   never silently collapse every caller onto one shared identity.
 - **Storage seam** (`backend/storage/seam_client.go`, `backend/handlers/bucket_store.go`):

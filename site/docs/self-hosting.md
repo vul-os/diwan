@@ -1,8 +1,9 @@
 # Self-hosting Ofisi (standalone, no cloud)
 
 Ofisi runs **completely standalone** as an open-source project with **no
-dependency on vulos-cloud** (the "cp" control plane). The standalone path is the
-default and works with **zero cloud configuration**. Cloud integration is
+dependency on any external control plane** — Vulos operates no hosted control
+plane for Ofisi. The standalone path is the default and works with **zero
+external configuration**. Wiring up your own control-plane integration is
 **optional** and lives entirely behind a clean seam.
 
 ## Quick start (zero cloud config)
@@ -60,16 +61,16 @@ The composition root (`main.go`) wires the standalone defaults with
 `seam.NewStandaloneProvider(...)`. **The core never imports any cloud code**, so
 the standalone build cannot break if the cloud adapter is removed.
 
-## Optional: vulos-cloud control plane
+## Optional: external control-plane integration
 
-The cloud adapter is a **separate package** (`backend/integration/cloud`) that
-implements the same `seam` interfaces against the control plane. It is selected
-**only** when `VULOS_CP_BASE_URL` is set:
+This integration adapter is a **separate package** (`backend/integration/cloud`)
+that implements the same `seam` interfaces against an external control plane.
+It is selected **only** when `VULOS_CP_BASE_URL` is set:
 
 ```sh
-export VULOS_CP_BASE_URL="https://api.vulos.org"   # enables the cloud adapter
-export VULOS_CP_TOKEN="<service token>"           # optional outbound auth
-export VULOS_ORG_ID="<org id>"                    # tenant scoping (also used by storage)
+export VULOS_CP_BASE_URL="https://cp.example.org"  # points at your own control plane
+export VULOS_CP_TOKEN="<service token>"            # optional outbound auth
+export VULOS_ORG_ID="<org id>"                      # tenant scoping (also used by storage)
 ```
 
 When enabled:
@@ -77,8 +78,9 @@ When enabled:
 - Identity is still verified locally (office tokens are HS256-signed with a
   shared secret) but stamped with the configured `OrgID`.
 - Entitlements are fetched from `GET {CP}/api/entitlements` (fails **open** on a
-  transient cp outage).
+  transient CP outage).
 - Usage events are posted fire-and-forget to `POST {CP}/api/usage`.
 
-With `VULOS_CP_BASE_URL` unset (the default), none of this runs and office is
-fully standalone.
+With `VULOS_CP_BASE_URL` unset (the default), none of this runs and Ofisi is
+fully standalone. Vulos does not operate a control plane for you to point this
+at — this seam exists for anyone who wants to wire up their own.

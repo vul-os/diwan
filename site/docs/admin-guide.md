@@ -46,22 +46,20 @@ Image facts (from the `Dockerfile`):
 - `EXPOSE 8080`; built-in `HEALTHCHECK` polls `GET /healthz`.
 - The binary is static (CGO off; Postgres via pure-Go pgx) on Alpine.
 
-**Building the image yourself** requires a *parent* build context: `package.json` has a `file:` dependency on `../vulos-relay/client`. From the directory that contains both repos:
+**Building the image yourself**: the WebRTC collaboration fabric is first-party source under `src/lib/collab/webrtc/` (no separate package, no sibling-repo checkout needed), so a plain build from the repo root always works:
 
 ```bash
-docker build -f vulos-office/Dockerfile -t ghcr.io/vul-os/ofisi:latest .
+docker build -t ghcr.io/vul-os/ofisi:latest .
 ```
-
-A plain `docker build .` from inside `vulos-office/` will fail — the sibling repos aren't reachable.
 
 ### 1.3 Fly.io
 
-`fly.toml` is checked in. Because Fly's build context is the config file's directory (which breaks the sibling-repo requirement), build and push the image out-of-band, then deploy by image reference:
+`fly.toml` is checked in. Because Fly's build context is the config file's directory, build and push the image out-of-band, then deploy by image reference:
 
 ```bash
-docker build -f vulos-office/Dockerfile -t ghcr.io/vul-os/ofisi:latest .
+docker build -t ghcr.io/vul-os/ofisi:latest .
 docker push ghcr.io/vul-os/ofisi:latest
-fly deploy -c vulos-office/fly.toml --image ghcr.io/vul-os/ofisi:latest
+fly deploy -c fly.toml --image ghcr.io/vul-os/ofisi:latest
 ```
 
 The config mounts a volume `office_data` at `/srv/data`, checks `/healthz`, forces HTTPS, and documents setting `DATABASE_URL` / `IDENTITY_URL` / `VULOS_CP_TOKEN` as Fly secrets.
@@ -127,7 +125,7 @@ SSO / cloud seams (all optional; unset = fully standalone):
 | Variable | Purpose |
 |----------|---------|
 | `IDENTITY_URL` | Identity provider base URL. When set, Ofisi validates the browser's `vc_session` cookie via `POST {IDENTITY_URL}/api/session/introspect`, **fail-closed** (401 on invalid/unreachable). Unset ⇒ SSO path disabled. |
-| `VULOS_CP_BASE_URL` | vulos-cloud control-plane URL. Enables the cloud entitlements/usage adapter and the `vk_` API-key introspection path for `/v1`. Unset ⇒ none of that code runs. |
+| `VULOS_CP_BASE_URL` | External control-plane URL (Vulos operates none — this points at your own, if you run one). Enables the entitlements/usage adapter and the `vk_` API-key introspection path for `/v1`. Unset ⇒ none of that code runs. |
 | `VULOS_CP_TOKEN` | Service token presented as `X-Relay-Auth` to the CP / identity provider. Not a signing key. |
 | `VULOS_ORG_ID` | Tenant/org scoping used by the cloud adapter and storage. |
 
@@ -188,10 +186,10 @@ Related behavior to be aware of:
 
 ## 5. Integration into the Vulos OS
 
-- **Embedding**: every editor surface ships as the npm library `@vulos/office-client` with entries `…/docs`, `…/sheets`, `…/slides`, `…/pdf` — the Vulos OS (or your own app) mounts them as native panels. Built by `vite.config.lib.js` into `dist-lib/`.
-- **Identity**: on a Vulos box or cloud cell, set `IDENTITY_URL` so Ofisi introspects the shared `vc_session` cookie — Ofisi deliberately holds no session-signing power in that mode.
-- **Peering fabric**: the OS/Relay host provides `/api/peering/stream` (WebSocket signaling) and `/api/peering/ice`; Ofisi's collab code discovers them same-origin and lights up P2P collaboration + presence automatically. Without them it degrades gracefully.
-- **Control plane** (managed/multi-tenant): `VULOS_CP_BASE_URL` + `VULOS_CP_TOKEN` + `VULOS_ORG_ID` enable entitlements (`GET {CP}/api/entitlements`, fails open on transient CP outage), usage metering (fire-and-forget `POST {CP}/api/usage`), and `vk_` API-key introspection for `/v1` (fail-closed `503` if the CP is unreachable during key validation). See [SELFHOST.md](SELFHOST.md) for the full seam contract.
+- **Embedding**: every editor surface ships as the npm library `ofisi` with entries `ofisi/docs`, `ofisi/sheets`, `ofisi/slides`, `ofisi/whiteboard`, `ofisi/pdf` — the Vulos OS (or your own app) mounts them as native panels. Built by `vite.config.lib.js` into `dist-lib/`. (The Go module and the binary it builds are named `vulos-office`; the npm package and the product are Ofisi.)
+- **Identity**: on a Vulos OS box, set `IDENTITY_URL` so Ofisi introspects the shared `vc_session` cookie — Ofisi deliberately holds no session-signing power in that mode.
+- **Peering fabric**: the OS/Relay host provides `/api/peering/stream` (WebSocket signaling) and `/api/peering/ice`; Ofisi's collab code discovers them same-origin and lights up P2P collaboration + presence automatically. Without a host-box fabric, setting `collab.rendezvous_url` / `VULOS_RENDEZVOUS_URL` to any self-hosted `vulos-relayd` gets the same result with no OS involved (see [CONFIGURATION.md](CONFIGURATION.md)); with neither, it degrades gracefully to local-only.
+- **Control plane** (self-wired, multi-tenant): `VULOS_CP_BASE_URL` + `VULOS_CP_TOKEN` + `VULOS_ORG_ID` enable entitlements (`GET {CP}/api/entitlements`, fails open on transient CP outage), usage metering (fire-and-forget `POST {CP}/api/usage`), and `vk_` API-key introspection for `/v1` (fail-closed `503` if the CP is unreachable during key validation). Vulos operates no control plane for you to point this at. See [SELFHOST.md](SELFHOST.md) for the full seam contract.
 
 ---
 
