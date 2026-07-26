@@ -45,6 +45,7 @@ that proved productivity software can be free, open, and community-driven — in
 the browser, on a fast React frontend and a lightweight Go backend.
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'ui-monospace, SFMono-Regular, Menlo, monospace','primaryColor':'transparent','primaryBorderColor':'#14b8a6','primaryTextColor':'#8f969e','lineColor':'#8a8f98','nodeBorder':'#5f8f8a','edgeLabelBackground':'transparent','clusterBorder':'#3f8f86','clusterBkg':'transparent'}}}%%
 flowchart LR
     you["you (browser)"] -->|edits| ofisi["Ofisi<br/>single binary"]
     peer["a collaborator"] -.->|"E2E-encrypted P2P (WebRTC)"| you
@@ -165,6 +166,7 @@ Self-hosting it yourself is always the default path, and never second-class.
 ## Architecture
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'ui-monospace, SFMono-Regular, Menlo, monospace','primaryColor':'transparent','primaryBorderColor':'#14b8a6','primaryTextColor':'#8f969e','lineColor':'#8a8f98','nodeBorder':'#5f8f8a','edgeLabelBackground':'transparent','clusterBorder':'#3f8f86','clusterBkg':'transparent'}}}%%
 flowchart TD
     FE["React + Vite + Tailwind frontend<br/>Docs · Sheets · Slides · Whiteboards · PDF signing"]
     BE["Go backend (Gin)<br/>handlers · userauth · signing · storage · obs"]
