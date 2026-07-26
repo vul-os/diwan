@@ -1,7 +1,7 @@
 /**
  * src/lib/crdt/text.js
  *
- * Browser-side RGA text CRDT for Vulos Office (OFFICE-22).
+ * Browser-side RGA text CRDT for Ofisi (OFFICE-22).
  *
  * Mirrors backend/crdt/text.go and backend/crdt/id.go so that ops
  * encoded here are accepted by the Go Doc.ApplyRemote() and vice-versa.

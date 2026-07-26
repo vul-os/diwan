@@ -47,7 +47,7 @@ Ofisi is a collaborative document editing + e-signing service. It exposes:
 > - **The only server role** is content-blind peer **discovery** (signaling + ICE),
 >   resolved as a three-way choice (`src/lib/collab/transportSelection.js`, see
 >   docs/COLLABORATION.md §3): (1) this server's own `/api/peering/*`, provided
->   by a host (Vulos OS / Relay) in front of Ofisi; else (2) a configured
+>   by a host (Vulos OS / Ephor) in front of Ofisi; else (2) a configured
 >   rendezvous URL (`config.yaml` `collab.rendezvous_url` / `VULOS_RENDEZVOUS_URL`)
 >   pointing at ANY self-hosted `vulos-relayd`'s open rendezvous surface — no
 >   Vulos OS, no account, no host-box backend, and the standalone binary's own

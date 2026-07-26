@@ -133,7 +133,7 @@ func ResolveOfficeBackend() (*ResolvedBackend, error) {
 // ─── org-bucket resolver ──────────────────────────────────────────────────────
 
 // Environment variables for org-bucket scoping.
-// These are injected by the Vulos cloud control-plane at instance startup and
+// These are injected by an external control plane at instance startup and
 // are NOT read from config.yaml — they are deployment-time secrets.
 //
 //	VULOS_ORG_ID          — the organisation identifier (cloud-managed UUID or slug).

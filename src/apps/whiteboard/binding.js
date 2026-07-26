@@ -2,7 +2,7 @@
  * src/apps/whiteboard/binding.js — the Yjs <-> Excalidraw binding.
  *
  * PROVENANCE. This is @vulos/board-ui's `src/binding.ts` (MIT, Vulos
- * contributors), converted to JS and vendored into Vulos Office so the
+ * contributors), converted to JS and vendored into Ofisi so the
  * whiteboard document type rides Office's OWN distributed P2P collab engine
  * (yP2PSession + FabricClient) rather than board-ui's separate transport. The
  * Excalidraw editor it drives is the MIT-licensed

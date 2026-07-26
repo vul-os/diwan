@@ -3,7 +3,7 @@
  *
  * When the WebRTC P2P data channel cannot be established, FabricClient falls
  * back to depositing application payloads (live Office doc edits, cursors) on
- * the Vulos relay server for the peer to pick up.  The relay server is an
+ * the relay server for the peer to pick up.  The relay server is an
  * UNTRUSTED transport: the product markets this path as sovereign / E2E, so the
  * relay MUST NOT be able to read the relayed collaboration content.
  *

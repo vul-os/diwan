@@ -177,7 +177,7 @@ For Docs, **Collaborate via link** starts an end-to-end encrypted peer session:
 - Read-only peers see live edits but cannot make authoritative changes.
 - A tampered or malformed invite link simply fails to join — the editor stays in normal local mode.
 
-> Note: the peer-to-peer channel needs a peer-discovery transport to be reachable — either the Vulos peering fabric (provided when Ofisi runs inside a Vulos OS / Relay deployment), **or** a self-hosted `vulos-relayd` your admin pointed this deployment at (`collab.rendezvous_url`, no Vulos OS or account needed — see [CONFIGURATION.md](CONFIGURATION.md)). On a bare standalone server with **neither** configured, invite-link collaboration cannot connect peers — account-based live collaboration (6.1) is the path that always works regardless.
+> Note: the peer-to-peer channel needs a peer-discovery transport to be reachable — either the Vulos peering fabric (provided when Ofisi runs inside a Vulos OS / Ephor deployment), **or** a self-hosted `vulos-relayd` your admin pointed this deployment at (`collab.rendezvous_url`, no Vulos OS or account needed — see [CONFIGURATION.md](CONFIGURATION.md)). On a bare standalone server with **neither** configured, invite-link collaboration cannot connect peers — account-based live collaboration (6.1) is the path that always works regardless.
 
 ---
 

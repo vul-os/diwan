@@ -148,7 +148,7 @@ All four editors are wired: **Docs** and **Whiteboard** are plain Y.Docs and use
 
 - **Account sharing (the ACL)** — `backend/fileacl/`: roles `viewer` < `commenter` < `editor`, plus `owner`. Grants are owner-gated server-side, land in the append-only **audit log**, and no-access responses are `404` to avoid existence leaks. Read-only **share links** (256-bit token, optional bcrypt-hashed password, expiry capped at one year) reach *only* the anonymous read path. This governs who may open the document from **your storage** — it does **not** put a server in the live-collaboration path.
 - **Live collaboration** — possession of the invite fragment. The host cannot enumerate, join, or read rooms; it also cannot audit their content. If your compliance posture requires all collaboration to be server-auditable, note that Ofisi's collaboration is deliberately end-to-end and peer-to-peer — auditing happens at the account-save and version-history layer, not in the wire.
-- **Peer discovery** is available where either a host provides the peering fabric (Vulos OS / Relay) **or** this deployment has a rendezvous URL configured (§3) — a self-hosted `vulos-relayd` with no Vulos OS or account. Neither present ⇒ no live P2P, automatically — the editor stays local-only.
+- **Peer discovery** is available where either a host provides the peering fabric (Vulos OS / Ephor) **or** this deployment has a rendezvous URL configured (§3) — a self-hosted `vulos-relayd` with no Vulos OS or account. Neither present ⇒ no live P2P, automatically — the editor stays local-only.
 
 ---
 

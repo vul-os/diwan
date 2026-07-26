@@ -4,12 +4,12 @@
 // The office backend persists CRDT snapshots, op-logs, and file attachments to
 // an S3-compatible object store. This file provides the resolver layer so the
 // endpoint and credentials are sourced from the account's StorageBackend
-// (configured via the Vulos cloud control-plane, or injected at instance
+// (configured via an external control plane, or injected at instance
 // startup for BYO) instead of being hardcoded to Tigris.
 //
 // Two backends are supported:
 //
-//	OfficeBEKindTigris — Vulos-managed Tigris (default). Endpoint and creds
+//	OfficeBEKindTigris — Tigris (default). Endpoint and creds
 //	  are read from TIGRIS_ENDPOINT / TIGRIS_REGION / TIGRIS_ACCESS_KEY_ID /
 //	  TIGRIS_SECRET_ACCESS_KEY environment variables.
 //
@@ -39,7 +39,7 @@ import (
 type OfficeBEKind string
 
 const (
-	// OfficeBEKindTigris uses Vulos-managed Tigris object storage (default).
+	// OfficeBEKindTigris uses Tigris object storage (default).
 	OfficeBEKindTigris OfficeBEKind = "tigris"
 
 	// OfficeBEKindMinIO uses a customer-provided S3-compatible endpoint (BYO).

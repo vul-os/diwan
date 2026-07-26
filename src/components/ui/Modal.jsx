@@ -5,7 +5,7 @@
  * -----
  * - Closes on backdrop click (`onClose`) and on Escape (Esc).
  * - Uses our `scale-in` keyframe + ease-spring for a calm appear motion.
- * - No portal — Vulos Office is a single-root app and modals are scoped to it.
+ * - No portal — Ofisi is a single-root app and modals are scoped to it.
  * - Focus trap: focuses the first focusable element on open, cycles Tab/Shift-Tab
  *   within the dialog, and restores focus to the trigger element on close.
  *

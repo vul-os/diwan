@@ -1,5 +1,5 @@
 /**
- * fabric.js — Vulos Office fabric client adapter (OFFICE-20).
+ * fabric.js — Ofisi fabric client adapter (OFFICE-20).
  *
  * Joins a Vulos fabric session for a given document/session id:
  *  1. Fetches ICE/TURN credentials from the OS relay  (/api/peering/ice  or
@@ -8,7 +8,7 @@
  *  3. Negotiates a WebRTC RTCPeerConnection per remote peer (offer/answer/ICE
  *     via the "signal" channel).
  *  4. Opens an RTCDataChannel for duplex application messages.
- *  5. Falls back to a relay circuit (via the Vulos relay deposit/pickup HTTP
+ *  5. Falls back to a relay circuit (via the relay deposit/pickup HTTP
  *     API) when the data channel cannot be established within RELAY_TIMEOUT_MS.
  *
  * Usage:
@@ -855,7 +855,7 @@ export class FabricClient extends EventTarget {
   }
 
   /**
-   * Deposit a message via the Vulos relay for a specific peer.
+   * Deposit a message via the relay for a specific peer.
    *
    * Integrity signature: the deposit payload (blob_b64 + nonce + to + from)
    * is signed with a per-session ECDSA P-256 key held in memory.  The relay

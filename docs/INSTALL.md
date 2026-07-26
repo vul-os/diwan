@@ -13,7 +13,7 @@ upgrading), see [`DEPLOY.md`](DEPLOY.md).
 
 The supported "easy path" is the **co-located bundle**: one box runs the Vulos
 OS and vulos-office, sharing **one S3-compatible bucket endpoint**
-(Vulos-managed Tigris by default; local MinIO via the OS-side storage selector
+(Tigris by default, using your own Tigris credentials; local MinIO via the OS-side storage selector
 opt-in). Both services share one CRDT/peering fabric and one identity.
 
 ### Use the bundle installer (canonical command)

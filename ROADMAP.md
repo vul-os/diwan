@@ -356,7 +356,7 @@ costs nothing.
 
 Ofisi is not involved in mail at all — PIM is a separate **bring-your-own-mailbox
 connector** (`lilmail`, exposing `/v1`) that logs into your existing IMAP/SMTP mailbox; the OS
-surfaces Calendar/Contacts widgets over it. There is no hosted Vulos mail. Ofisi installs
+surfaces Calendar/Contacts widgets over it. There is no hosted mail service — `lilmail` runs on your own box. Ofisi installs
 alongside the rest of the suite regardless of whether the connector is configured. There
 is no "Mail tier" gating Ofisi.
 </content>

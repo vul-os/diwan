@@ -12,8 +12,8 @@
  * `window.location.origin` would embed that unreachable private address — the
  * external peer can never connect.
  *
- * The box's operator surfaces the real public origin (a public domain, or a
- * vulos-relay tunnel URL when the box is behind NAT/CGNAT) via the backend env
+ * The box's operator surfaces the real public origin (a public domain, or an
+ * Ephor tunnel URL when the box is behind NAT/CGNAT) via the backend env
  * VULOS_OFFICE_PUBLIC_URL, exposed at the unauthenticated `GET /api/reachability`
  * endpoint (see backend/handlers/system.go).
  *

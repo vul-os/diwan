@@ -59,7 +59,7 @@ Ofisi uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   **content-blind relay** circuit (per-session X25519 box — ciphertext only) is
   used solely as a hard-NAT fallback. Presence rides the same E2E room. The only
   server role is content-blind peer **discovery** (`/api/peering/*`), supplied by
-  the Vulos OS / Relay host — never document content. A bare standalone binary
+  the Vulos OS / Ephor host — never document content. A bare standalone binary
   mounts no discovery, so it stays **local-only** and autosaves, honestly showing
   "Offline" instead of a fake "Live".
 - **Tests + docs:** `collabGate` now asserts co-editing ON makes **zero**
@@ -216,7 +216,7 @@ sanitiser ingress paths.
 ### Changed — UI/UX redesign
 
 - Rebuilt on a **token-first, near-black design system** (`src/design/tokens.css`)
-  aligned with the vulos-cloud landing: IDE aesthetic, one deep-teal accent,
+  aligned with the Vulos landing: IDE aesthetic, one deep-teal accent,
   Inter chrome + mono micro-UI, hairline borders, deep no-bloom elevation. Dark
   is the default canvas; a clean light theme is opt-in.
 - New shared primitives: `SaveStatus` (breathing save dot), `Avatar`/`AvatarStack`
@@ -296,14 +296,14 @@ mirrors the earlier Meet/Talk extractions.
   routing in-process.
 
 > Follow-up (not in this change): repoint the Vulos OS AppRegistry
-> `vulos-calendar` / `vulos-contacts` tiles and the Workspace registry to the Mail
+> `vulos-calendar` / `vulos-contacts` tiles and the wede registry to the Mail
 > product's Calendar/Contacts surfaces.
 
 ### Changed — Ofisi is now documents-only
 
 Ofisi is now scoped to **documents only** (Docs, Sheets, Slides, PDF/Signing).
 Real-time chat + Spaces and video calling/meetings have been
-split into their own products, combined with Ofisi by the **Vulos Workspace** shell:
+split into their own products, combined with Ofisi by the **wede** shell:
 
 - **Vulos Meet → `vulos-meet`**: the standalone video product. Ofisi's meeting/lobby/
   TURN/recording surface and the `/meet/*` routes were removed from this repo.

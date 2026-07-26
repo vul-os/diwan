@@ -1,5 +1,5 @@
 /**
- * WhiteboardEditor — Vulos Office's whiteboard document type.
+ * WhiteboardEditor — Ofisi's whiteboard document type.
  *
  * A whiteboard is an Excalidraw canvas (MIT — https://github.com/excalidraw/excalidraw)
  * backed by a Y.Doc, mounted on Office's OWN distributed peer-to-peer collab

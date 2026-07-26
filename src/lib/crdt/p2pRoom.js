@@ -1,7 +1,7 @@
 /**
  * src/lib/crdt/p2pRoom.js — secure local/P2P collaboration room (WAVE-25).
  *
- * This is the ADDITIVE second collab mode for Vulos Office: two OSS installs
+ * This is the ADDITIVE second collab mode for Ofisi: two OSS installs
  * co-edit a document with NO cloud doc backend. It layers three things on top
  * of the existing FabricClient P2P transport (WebRTC data channels + relay-
  * circuit fallback) and the hand-rolled RGA TextCRDT (see ./text.js, ./index.js):

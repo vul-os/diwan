@@ -188,16 +188,16 @@ Related behavior to be aware of:
 
 - **Embedding**: every editor surface ships as the npm library `ofisi` with entries `ofisi/docs`, `ofisi/sheets`, `ofisi/slides`, `ofisi/whiteboard`, `ofisi/pdf` — the Vulos OS (or your own app) mounts them as native panels. Built by `vite.config.lib.js` into `dist-lib/`. (The Go module and the binary it builds are named `vulos-office`; the npm package and the product are Ofisi.)
 - **Identity**: on a Vulos OS box, set `IDENTITY_URL` so Ofisi introspects the shared `vc_session` cookie — Ofisi deliberately holds no session-signing power in that mode.
-- **Peering fabric**: the OS/Relay host provides `/api/peering/stream` (WebSocket signaling) and `/api/peering/ice`; Ofisi's collab code discovers them same-origin and lights up P2P collaboration + presence automatically. Without a host-box fabric, setting `collab.rendezvous_url` / `VULOS_RENDEZVOUS_URL` to any self-hosted `vulos-relayd` gets the same result with no OS involved (see [CONFIGURATION.md](CONFIGURATION.md)); with neither, it degrades gracefully to local-only.
+- **Peering fabric**: the OS/Ephor host provides `/api/peering/stream` (WebSocket signaling) and `/api/peering/ice`; Ofisi's collab code discovers them same-origin and lights up P2P collaboration + presence automatically. Without a host-box fabric, setting `collab.rendezvous_url` / `VULOS_RENDEZVOUS_URL` to any self-hosted `vulos-relayd` gets the same result with no OS involved (see [CONFIGURATION.md](CONFIGURATION.md)); with neither, it degrades gracefully to local-only.
 - **Control plane** (self-wired, multi-tenant): `VULOS_CP_BASE_URL` + `VULOS_CP_TOKEN` + `VULOS_ORG_ID` enable entitlements (`GET {CP}/api/entitlements`, fails open on transient CP outage), usage metering (fire-and-forget `POST {CP}/api/usage`), and `vk_` API-key introspection for `/v1` (fail-closed `503` if the CP is unreachable during key validation). Vulos operates no control plane for you to point this at. See [SELFHOST.md](SELFHOST.md) for the full seam contract.
 
 ---
 
 ## 6. Running behind a reverse proxy
 
-Ofisi serves the app + API on one port, so proxying is one location block. Note: Ofisi itself hosts **no** long-lived collaboration stream — collaboration is peer-to-peer with no central document server (see [COLLABORATION.md](COLLABORATION.md)). One path needs care, and only on a Vulos OS/Relay host:
+Ofisi serves the app + API on one port, so proxying is one location block. Note: Ofisi itself hosts **no** long-lived collaboration stream — collaboration is peer-to-peer with no central document server (see [COLLABORATION.md](COLLABORATION.md)). One path needs care, and only on a Vulos OS/Ephor host:
 
-- **WebSocket** (`/api/peering/stream`): the content-blind peer-discovery signaling channel. It only exists when a Vulos OS/Relay host provides the peering fabric; if you proxy such a deployment, `Upgrade`/`Connection` headers must be forwarded and read timeouts kept long, or peers fail to discover each other (see [TROUBLESHOOTING.md](TROUBLESHOOTING.md) §3).
+- **WebSocket** (`/api/peering/stream`): the content-blind peer-discovery signaling channel. It only exists when a Vulos OS/Ephor host provides the peering fabric; if you proxy such a deployment, `Upgrade`/`Connection` headers must be forwarded and read timeouts kept long, or peers fail to discover each other (see [TROUBLESHOOTING.md](TROUBLESHOOTING.md) §3).
 
 nginx sketch:
 

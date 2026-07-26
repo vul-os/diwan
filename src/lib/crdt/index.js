@@ -1,7 +1,7 @@
 /**
  * src/lib/crdt/index.js
  *
- * Thin collab-session orchestrator for Vulos Office (OFFICE-22).
+ * Thin collab-session orchestrator for Ofisi (OFFICE-22).
  *
  * DocsCollabSession ties together:
  *   - TextCRDT  (local CRDT state machine)

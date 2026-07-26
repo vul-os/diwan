@@ -1,5 +1,5 @@
 /**
- * presence.js — Vulos Office Presence layer (OFFICE-24).
+ * presence.js — Ofisi Presence layer (OFFICE-24).
  *
  * Broadcasts {accountId, displayName, color, online} over a dedicated
  * "presence" channel on the OFFICE-20 FabricClient (separate from CRDT ops).

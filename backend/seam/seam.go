@@ -2,7 +2,7 @@
 // any external control plane (e.g. an optional gateway / "cp").
 //
 // GOAL: vulos-office must run COMPLETELY STANDALONE as an open-source project
-// with NO dependency on any Vulos cloud product. The standalone path is the
+// with NO dependency on any external control plane. The standalone path is the
 // default and works with zero cloud configuration.
 //
 // The seam is a small set of interfaces with two kinds of implementation:

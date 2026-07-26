@@ -256,7 +256,7 @@ Precedence (first match wins): `vk_` API key → per-product session JWT → SSO
 **Operator quick-reference**
 
 - Self-host single-user box: leave `IDENTITY_URL` unset. Nothing else to do.
-- Cloud / multi-user: set `IDENTITY_URL=https://api.vulos.org` and `VULOS_CP_TOKEN=<CP shared secret>` (plus `auth.enabled: true` / `VULOS_OFFICE_JWT_SECRET` if you also keep native JWT logins).
+- Multi-user with an external identity/control plane: point `IDENTITY_URL` at your own control-plane host (there is no default host — leave it unset and the box stays self-contained) and set `VULOS_CP_TOKEN=<CP shared secret>` (plus `auth.enabled: true` / `VULOS_OFFICE_JWT_SECRET` if you also keep native JWT logins).
 
 ### Persistence
 

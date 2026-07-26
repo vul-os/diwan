@@ -1,4 +1,4 @@
-// Package deploymode provides a single typed DEPLOY_MODE enum for Vulos Office,
+// Package deploymode provides a single typed DEPLOY_MODE enum for Ofisi,
 // per the cross-repo app-deployment contract:
 //
 //	DEPLOY_MODE = standalone|os
