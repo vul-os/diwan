@@ -114,7 +114,7 @@ img{max-width:100%;display:block}
 
 .wrap{max-width:var(--max);margin:0 auto;padding:0 28px}
 .eyebrow{
-  font-family:var(--mono);font-size:11.5px;font-weight:500;
+  font-family:var(--mono);font-size:12px;font-weight:500;
   letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);
 }
 
@@ -135,7 +135,7 @@ img{max-width:100%;display:block}
 .spine-mark{width:27px;height:27px;flex:none}
 .spine-rule{width:1px;flex:1;margin:18px 0;background:var(--line);min-height:20px}
 .spine-title{
-  writing-mode:vertical-rl;font-family:var(--mono);font-size:11px;font-weight:500;
+  writing-mode:vertical-rl;font-family:var(--mono);font-size:12px;font-weight:500;
   letter-spacing:.34em;text-transform:uppercase;color:var(--ink-ghost);
   display:flex;align-items:center;gap:14px;flex:none;
 }
@@ -169,6 +169,7 @@ img{max-width:100%;display:block}
 .iconbtn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-tint)}
 .iconbtn svg{width:16px;height:16px}
 [data-theme="light"] .moon,[data-theme="dark"] .sun{display:none}
+@media(max-width:768px){.iconbtn{width:44px;height:44px}}
 
 .vulos-badge{
   display:inline-flex;align-items:center;gap:8px;padding:6px 12px;
@@ -178,6 +179,7 @@ img{max-width:100%;display:block}
 .vulos-badge:hover{border-color:var(--accent);color:var(--ink)}
 .vulos-badge img{width:15px;height:15px;border-radius:4px}
 @media(max-width:640px){.vulos-badge span{display:none}}
+@media(max-width:768px){.vulos-badge{min-height:44px;min-width:44px;justify-content:center}}
 
 /* ══ Buttons ════════════════════════════════════════════════════════════════ */
 .btn{
@@ -196,11 +198,11 @@ img{max-width:100%;display:block}
 .leaf{padding:78px 0;border-top:1px solid var(--line)}
 .folio{display:flex;align-items:center;gap:14px;margin-bottom:26px}
 .folio .n{
-  font-family:var(--mono);font-size:11.5px;font-weight:600;letter-spacing:.1em;
+  font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.1em;
   color:var(--accent);padding:3px 8px;border:1px solid var(--accent-tint-2);
   border-radius:5px;background:var(--accent-tint);
 }
-.folio .t{font-family:var(--mono);font-size:11.5px;font-weight:500;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint)}
+.folio .t{font-family:var(--mono);font-size:12px;font-weight:500;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-faint)}
 .folio .r{flex:1;height:1px;background:var(--line)}
 h2.head{
   font-family:var(--display);font-weight:600;letter-spacing:-.028em;line-height:1.08;
@@ -239,7 +241,7 @@ h2.head{
   border-top:1px solid var(--line);border-bottom:1px solid var(--line);
 }
 .spec i{
-  font-style:normal;font-family:var(--mono);font-size:11.5px;font-weight:500;
+  font-style:normal;font-family:var(--mono);font-size:12px;font-weight:500;
   letter-spacing:.1em;text-transform:uppercase;color:var(--ink-faint);
   padding:14px 22px 14px 0;margin-right:22px;border-right:1px solid var(--line);
 }
@@ -268,11 +270,22 @@ h2.head{
 .window .chrome u{width:9px;height:9px;border-radius:50%;background:var(--line-emph);display:block;flex:none}
 .window .chrome u:first-child{background:color-mix(in srgb,var(--accent) 55%,var(--line-emph))}
 .window .chrome em{
-  font-style:normal;font-family:var(--mono);font-size:11px;color:var(--ink-faint);
+  font-style:normal;font-family:var(--mono);font-size:12px;color:var(--ink-faint);
   margin-left:8px;letter-spacing:.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
 }
 .window img{width:100%;display:block;background:var(--canvas)}
 [data-theme="light"] .shot-dark,[data-theme="dark"] .shot-light{display:none}
+/* Below desktop widths, shrinking a full desktop-app screenshot to fit the
+   column turns it into an illegible postage stamp. Instead pin it to a
+   minimum width the UI in it can actually be read at, and let the window
+   itself scroll horizontally — the same "don't shrink dense content, scroll
+   it" treatment the terminal and code blocks already get. Left alone at
+   ≥1280px, where every screenshot already renders wider than this floor. */
+@media(max-width:1180px){
+  .window{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch}
+  .window .chrome{min-width:960px}
+  .window img{min-width:960px}
+}
 
 /* ══ 01 · Surfaces — the app rail, translated ═════════════════════════════ */
 .surfaces{display:grid;grid-template-columns:322px 1fr;gap:34px;align-items:start}
@@ -283,7 +296,7 @@ h2.head{
 }
 @media(max-width:980px){.rail{position:static}}
 .rail-label{
-  font-family:var(--mono);font-size:10.5px;font-weight:500;letter-spacing:.16em;
+  font-family:var(--mono);font-size:12px;font-weight:500;letter-spacing:.16em;
   text-transform:uppercase;color:var(--ink-ghost);padding:12px 12px 8px;
 }
 .srow{
@@ -321,11 +334,11 @@ h2.head{
 .diagram{max-width:680px;margin:0 auto 36px;width:100%;display:block}
 .diagram .peer-box{fill:var(--canvas);stroke:var(--line-strong);stroke-width:1}
 .diagram .peer-lbl{fill:var(--ink);font-family:var(--sans);font-size:12.5px;font-weight:600}
-.diagram .peer-sub{fill:var(--ink-faint);font-family:var(--mono);font-size:8px;letter-spacing:.1em}
+.diagram .peer-sub{fill:var(--ink-faint);font-family:var(--mono);font-size:12px;letter-spacing:.06em}
 .diagram .edge{stroke:var(--accent);stroke-width:1.6;fill:none}
-.diagram .edge-lbl{fill:var(--accent);font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;font-weight:500}
+.diagram .edge-lbl{fill:var(--accent);font-family:var(--mono);font-size:12px;letter-spacing:.06em;font-weight:500}
 .diagram .relay-box{fill:var(--sand);stroke:var(--line-strong);stroke-width:1;stroke-dasharray:4 3}
-.diagram .relay-lbl{fill:var(--ink-faint);font-family:var(--mono);font-size:8px;letter-spacing:.1em}
+.diagram .relay-lbl{fill:var(--ink-faint);font-family:var(--mono);font-size:12px;letter-spacing:.06em}
 .diagram .fallback{stroke:var(--ink-ghost);stroke-width:1.2;stroke-dasharray:4 4;fill:none}
 .diagram .dot{fill:var(--accent)}
 .cols3{display:grid;grid-template-columns:repeat(3,1fr);gap:30px;padding-top:34px;border-top:1px solid var(--line)}
@@ -345,7 +358,7 @@ h2.head{
 .term .chrome{display:flex;align-items:center;gap:9px;padding:11px 14px;border-bottom:1px solid var(--line-strong)}
 .term .chrome u{width:9px;height:9px;border-radius:50%;background:var(--line-emph);display:block;flex:none}
 .term .chrome u:first-child{background:color-mix(in srgb,var(--accent) 60%,var(--line-emph))}
-.term .chrome em{font-style:normal;font-family:var(--mono);font-size:11px;color:var(--ink-faint);margin-left:8px}
+.term .chrome em{font-style:normal;font-family:var(--mono);font-size:12px;color:var(--ink-faint);margin-left:8px}
 .term pre{margin:0;padding:22px;overflow-x:auto;font-family:var(--mono);font-size:13px;line-height:1.85;color:var(--ink)}
 .term .c{color:var(--ink-faint)}
 .term .p{color:var(--accent);font-weight:600}
@@ -355,7 +368,7 @@ h2.head{
 .steps li{display:flex;gap:16px;padding:20px 0;border-bottom:1px solid var(--line)}
 .steps li:first-child{padding-top:0}
 .steps li:last-child{border-bottom:0}
-.steps .n{font-family:var(--mono);font-size:11.5px;font-weight:600;color:var(--accent);flex:none;width:26px;padding-top:3px;letter-spacing:.06em}
+.steps .n{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--accent);flex:none;width:26px;padding-top:3px;letter-spacing:.06em}
 .steps b{display:block;font-size:16px;font-weight:600;margin-bottom:3px}
 .steps span{font-size:14.8px;color:var(--ink-muted)}
 .steps code{font-family:var(--mono);font-size:.87em;background:var(--sand);padding:1.5px 6px;border-radius:5px;color:var(--ink)}
@@ -370,7 +383,7 @@ h2.head{
 .lrow:hover{background:var(--paper)}
 @media(max-width:680px){.lrow{grid-template-columns:1fr;gap:6px}}
 .lrow dt{
-  font-family:var(--mono);font-size:11.5px;font-weight:500;letter-spacing:.13em;
+  font-family:var(--mono);font-size:12px;font-weight:500;letter-spacing:.13em;
   text-transform:uppercase;color:var(--ink-faint);
 }
 .lrow dd{margin:0;font-size:15.5px;color:var(--ink)}
@@ -409,7 +422,7 @@ h2.head{
 .turn[data-turned="true"] img{transform:rotate(90deg)}
 .mark-note .caption{margin:0;font-size:15.5px;color:var(--ink-muted);max-width:60ch}
 .mark-note .caption b{color:var(--ink);font-weight:600}
-.mark-note .swap{display:block;margin-top:7px;font-family:var(--mono);font-size:11.5px;
+.mark-note .swap{display:block;margin-top:7px;font-family:var(--mono);font-size:12px;
   letter-spacing:.1em;text-transform:uppercase;color:var(--accent);
   transition:opacity .35s var(--ease)}
 @media(prefers-reduced-motion:reduce){
@@ -439,6 +452,7 @@ h2.head{
 .vulos-band p{margin:0;color:var(--ink-muted);font-size:15.5px;max-width:72ch}
 .vulos-band a.more{display:inline-flex;margin-top:14px;color:var(--accent);font-weight:600;font-size:15px}
 .vulos-band a.more:hover{text-decoration:underline;text-underline-offset:3px}
+@media(max-width:768px){.vulos-band a.more{padding:11px 2px;margin:3px -2px -11px}}
 
 /* ══ Footer ═════════════════════════════════════════════════════════════════ */
 .foot{border-top:1px solid var(--line);padding:40px 0 60px}
@@ -446,9 +460,12 @@ h2.head{
 .foot .links{display:flex;flex-wrap:wrap;gap:22px}
 .foot .links a{font-size:14.5px;color:var(--ink-muted)}
 .foot .links a:hover{color:var(--accent)}
+/* Padding, cancelled by a matching negative margin, grows the tap target
+   without moving the link visually or disturbing the row's spacing. */
+@media(max-width:768px){.foot .links a{padding:12px 4px;margin:-12px -4px}}
 .foot .set{
   margin:26px 0 0;padding-top:22px;border-top:1px solid var(--line);
-  font-family:var(--mono);font-size:11.5px;line-height:1.9;letter-spacing:.05em;
+  font-family:var(--mono);font-size:12px;line-height:1.9;letter-spacing:.05em;
   color:var(--ink-ghost);max-width:80ch;
 }
 
