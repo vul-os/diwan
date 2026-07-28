@@ -152,18 +152,40 @@ Both files assert a **minimum amount of work done** (files walked, links
 checked, pairs compared) as well as the result, so a broken walk or a regex that
 stops matching fails loudly instead of passing vacuously.
 
-## Vendored-binary provenance (Vitest)
+## Substrate-engine provenance (Vitest)
 
-`src/lib/crdt/__tests__/vendorProvenance.test.js` recomputes the SHA-256 and byte
-size of every file in `third_party/dmtap-sync-wasm/vendor/` against
-`vendor/PROVENANCE.json`, and asserts the manifest covers exactly the files that
-are there. **It cannot skip** — it only hashes files already in the repo.
+The shared CRDT engine used to be a copy vendored under
+`third_party/dmtap-sync-wasm/`. It is now the published npm package
+`@vul-os/kotva-sync`, pinned to an exact version, and
+`src/lib/crdt/__tests__/substratePackageProvenance.test.js` guards it in two
+layers:
 
-It exists because that copy had silently gone stale against upstream (a
-395,912-byte `.wasm` against upstream's 400,930-byte build) and nothing failed.
-See `third_party/dmtap-sync-wasm/VENDOR.md` for the incident this class of drift
-caused upstream, and for the re-vendoring recipe — which includes re-recording
-the digests. Never edit `PROVENANCE.json` to make this test pass.
+* **the tarball** — `package-lock.json` records a sha512 SRI for the exact
+  artifact npm fetched, and the test pins that string, so the dependency cannot
+  move to a different published tarball without someone updating the constant
+  deliberately. It also fails if any dependency reappears as a local
+  `file:`/`link:` path, for which npm records no integrity at all.
+* **the installed bytes** — the lockfile hash covers the tarball and stops
+  mattering once it is unpacked, so the test also recomputes the SHA-256 and size
+  of every file in `node_modules/@vul-os/kotva-sync`, asserts the recorded set
+  matches the installed set in both directions, and asserts the coverage count so
+  a shrunken manifest cannot pass by checking less.
+
+It also asserts the compiled module still declares exactly the one host import
+`src/lib/crdt/kotvaSync.js` supplies, which is the one upstream change that would
+otherwise become a bare `LinkError` at runtime.
+
+**It cannot skip.** There is no toolchain to detect and no service to reach; if
+the package is not installed, every read throws and the suite fails — the correct
+outcome, because an uninstalled engine means `substrateGrid.js` cannot load
+either.
+
+The gate exists because the vendored copy had silently gone stale against
+upstream (a 395,912-byte `.wasm` against upstream's 400,930-byte build) and
+nothing failed. Upstream records the same class of incident in
+`bindings/go/embed.go`: a stale committed module aborted the allocator on every
+response whose Rust-side String capacity outran its length. Never edit a digest
+to make this test pass — re-record it from a fresh install.
 
 ## Share-link token storage (Go)
 

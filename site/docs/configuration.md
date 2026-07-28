@@ -101,11 +101,17 @@ Diwan's Sheets grid ships two interchangeable CRDT implementations:
 * **`VITE_SUBSTRATE_SYNC=on`** — `src/lib/crdt/substrateGrid.js`, an LWW
   register per `substrate/SYNC.md` §4.4 (the spec lives in the `kotva` repo; it
   is not linked relatively, because building Diwan must never require a sibling
-  checkout) computed by the **shared** `dmtap-sync` engine
-  (`third_party/dmtap-sync-wasm`) — the same compiled core a Rust server runs,
-  rather than a second implementation of the same spec. That vendored copy is
-  tied to its upstream source by digest — see `third_party/dmtap-sync-wasm/VENDOR.md`
-  in the repo.
+  checkout) computed by the **shared** KOTVA Sync engine — the published npm
+  package [`@vul-os/kotva-sync`](https://www.npmjs.com/package/@vul-os/kotva-sync),
+  the same compiled core a Rust server runs, rather than a second implementation
+  of the same spec. It was vendored under `third_party/` until the substrate was
+  published; it is an ordinary pinned dependency now, and
+  `src/lib/crdt/__tests__/substratePackageProvenance.test.js` pins both the
+  lockfile's sha512 for the tarball and the SHA-256 of every installed file.
+  `src/lib/crdt/kotvaSync.js` is the loader — the package is a wasm-pack
+  *bundler* build whose entry point cannot be imported under Vitest, so that file
+  instantiates the WebAssembly directly; it re-uses the published wrappers and
+  `.wasm` byte-for-byte and re-implements no algebra.
 
 Storage and transport are identical on both paths: the same `OpLogSync`
 adapter, the same server update log, the same fabric wire types. Only the merge
@@ -120,8 +126,8 @@ per-user rollout) is what keeps every replica on one engine.
 
 **Cost.** The engine is WASM and loads by dynamic import: with the flag off a
 client downloads **nothing** extra. With it on, first opening a spreadsheet
-fetches ~23 kB of JS (5.7 kB gzipped) and a 400.9 kB WebAssembly module
-(159.2 kB gzipped), once. If that load fails the editor falls back to the
+fetches ~23 kB of JS (5.7 kB gzipped) and a 402.0 kB WebAssembly module
+(159.6 kB gzipped), once. If that load fails the editor falls back to the
 `grid.js` path rather than presenting a grid that records nothing.
 
 Docs and Whiteboard are **not** affected: they use Yjs for rich text, which the

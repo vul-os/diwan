@@ -86,8 +86,8 @@ export function updateLogEnabled() {
 }
 
 /**
- * True when Sheets should run its grid CRDT on the SHARED DMTAP Sync substrate
- * engine (`dmtap-sync-wasm`, an LWW register per §4.4 of substrate/SYNC.md)
+ * True when Sheets should run its grid CRDT on the SHARED KOTVA Sync substrate
+ * engine (`@vul-os/kotva-sync`, an LWW register per §4.4 of substrate/SYNC.md)
  * instead of the hand-rolled LWW map in src/lib/crdt/grid.js.
  *
  * Off by default, and additive exactly as VITE_UPDATE_LOG was: with the flag
@@ -107,7 +107,8 @@ export function updateLogEnabled() {
  * editor falls back to the grid.js path rather than leaving the user with a
  * grid that silently records nothing.
  *
- * See src/lib/crdt/substrateGrid.js and third_party/dmtap-sync-wasm/VENDOR.md.
+ * See src/lib/crdt/substrateGrid.js for the mapping and src/lib/crdt/kotvaSync.js
+ * for how the published package is loaded.
  */
 export function substrateSyncEnabled() {
   return boolFlag('VITE_SUBSTRATE_SYNC', false)

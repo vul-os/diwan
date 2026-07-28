@@ -1,8 +1,9 @@
 /**
  * src/lib/crdt/substrateGrid.js
  *
- * Sheets' grid CRDT, backed by the SHARED DMTAP Sync substrate engine
- * (`dmtap-sync-wasm`) instead of the hand-rolled LWW map in `./grid.js`.
+ * Sheets' grid CRDT, backed by the SHARED KOTVA Sync substrate engine
+ * (`@vul-os/kotva-sync`, loaded by `./kotvaSync.js`) instead of the hand-rolled
+ * LWW map in `./grid.js`.
  *
  * WHY
  * ---
@@ -10,7 +11,7 @@
  * such engines across the Vulos suite, each with its own clock, its own total
  * order, and its own set of bugs to find. `substrate/SYNC.md` §4.4 specifies
  * exactly this data type (an LWW register keyed by `(target, field)`, resolved
- * by HLC), and `dmtap-sync-wasm` is the *same compiled implementation* a Rust
+ * by HLC), and `@vul-os/kotva-sync` is the *same compiled implementation* a Rust
  * server runs — upstream reports it byte-identical across its native and WASM
  * surfaces against its frozen conformance vectors. Running Sheets on it makes
  * the grid's merge semantics interoperable with every other product that adopts
@@ -62,7 +63,7 @@
  */
 
 import { sha256 } from '@noble/hashes/sha2.js'
-import { loadSync } from 'dmtap-sync-wasm'
+import { loadSync } from './kotvaSync.js'
 import { bytesToB64, b64ToBytes } from './ydoc.js'
 
 const NS = 'sheet'

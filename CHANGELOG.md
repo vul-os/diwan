@@ -32,6 +32,33 @@ Diwan uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `backend/handlers/sharelink_token_once_test.go` and the dual-backend contract
   test — each fails if the plaintext ever comes back.
 
+### Changed — the substrate CRDT engine is a published npm package, no longer vendored
+
+- The shared merge engine has been published as
+  [`@vul-os/kotva-sync`](https://www.npmjs.com/package/@vul-os/kotva-sync)
+  (`0.1.0`), so `third_party/dmtap-sync-wasm/` — the `file:` dependency and the
+  ~490 kB of committed build output inside it — is **deleted**. `package.json`
+  pins the registry version exactly and `package-lock.json` carries npm's sha512
+  for the tarball.
+- The artifact names changed with the substrate's rename: `dmtap_sync.js` →
+  `kotva_sync.js`, `dmtap_sync_bg.wasm` → `kotva_sync_bg.wasm`. The published
+  package is still a wasm-pack *bundler* build whose entry point cannot be
+  imported under Vitest, so the environment-agnostic loader that used to live
+  inside the vendored copy is now first-party at `src/lib/crdt/kotvaSync.js`. It
+  uses the published wrappers and `.wasm` byte-for-byte and re-implements no
+  algebra.
+- `src/lib/crdt/__tests__/vendorProvenance.test.js` is replaced by
+  `substratePackageProvenance.test.js`, which keeps the intent with what npm
+  gives us: it pins the lockfile's sha512 for the tarball, **and** recomputes the
+  SHA-256 and size of every installed file (the lockfile hash stops mattering the
+  moment the tarball is unpacked), asserts the recorded and installed file sets
+  match in both directions with the count pinned, and fails if any dependency
+  reappears as a local `file:`/`link:` path. It still cannot skip.
+- **Sheets' hand-rolled CRDT is unaffected and unretired.** `src/lib/crdt/grid.js`
+  remains the default engine and remains the fallback when the WASM load fails;
+  `substrateGrid.js` is still the alternative behind the off-by-default
+  `VITE_SUBSTRATE_SYNC` flag. Only where the engine comes from has changed.
+
 ### Fixed — the vendored `dmtap-sync-wasm` copy was stale, and nothing said so
 
 - `third_party/dmtap-sync-wasm/vendor/` carried a 395,912-byte

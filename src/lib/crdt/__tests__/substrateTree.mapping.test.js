@@ -41,7 +41,7 @@
  */
 
 import { describe, it, expect, beforeAll } from 'vitest'
-import { loadSync } from 'dmtap-sync-wasm'
+import { loadSync } from '../kotvaSync.js'
 import { ordKeyBetween } from '../tree.js'
 
 let sync
