@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"vulos-office/backend/config"
-	"vulos-office/backend/models"
+	"diwan/backend/config"
+	"diwan/backend/models"
 )
 
 // ErrRevConflict is returned by UpdateFile when the caller supplied a stale rev

@@ -1,5 +1,5 @@
 /**
- * P4 — Equations (KaTeX) in Vulos Office Docs.
+ * P4 — Equations (KaTeX) in Diwan Docs.
  *
  * Coverage:
  *   1. renderEquationHtml produces real KaTeX (MathML + spans), never throws.

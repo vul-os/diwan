@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"vulos-office/backend/fileacl"
+	"diwan/backend/fileacl"
 )
 
 // TestNormalizeRole pins the share-API role vocabulary onto the canonical

@@ -1,5 +1,5 @@
 // backendconfig.go — per-account S3 storage-backend config resolver for
-// vulos-office (TASK: OFFICE-STORE-01).
+// diwan (TASK: OFFICE-STORE-01).
 //
 // The office backend persists CRDT snapshots, op-logs, and file attachments to
 // an S3-compatible object store. This file provides the resolver layer so the

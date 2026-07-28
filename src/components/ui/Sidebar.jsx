@@ -1,9 +1,9 @@
 /**
- * Sidebar primitives — Ofisi's warm vertical app rail (sand chrome on ivory).
+ * Sidebar primitives — Diwan's warm vertical app rail (sand chrome on ivory).
  *
  * Pieces:
  *   - <Sidebar>             root container; manages width (collapsed/expanded)
- *   - <Sidebar.Brand>       Ofisi mark + serif wordmark (fades collapsed)
+ *   - <Sidebar.Brand>       Diwan mark + serif wordmark (fades collapsed)
  *   - <Sidebar.Section>     labelled group; mono uppercase label, hides collapsed
  *   - <Sidebar.Item>        nav row; ember left-rail + calm tint when active,
  *                           optional per-app icon tint at rest
@@ -25,35 +25,32 @@ import { PanelLeftClose, PanelLeftOpen, ChevronsLeft } from 'lucide-react'
 const SidebarCtx = createContext({ collapsed: false })
 
 /**
- * OfisiMark — the brand glyph: an ember rounded tile with an ivory "O" ring.
- * Self-contained inline SVG (no asset request), so it's crisp at any size and
- * inherits the warm palette. Reused by the rail brand + the mobile header.
+ * DiwanMark — the brand glyph: an **iwan**, the vaulted portal at the heart of
+ * Persian and Ottoman architecture — the opening onto the room where the
+ * registers were kept.  Turned a quarter turn clockwise the arch's two legs
+ * become the bars of a D and the teal threshold becomes its stem.
+ *
+ * A flat two-colour glyph on transparency (ember arch, teal threshold) — it
+ * carries no tile of its own, so callers must NOT give it a rounded background
+ * or a drop shadow.
+ * Self-contained inline SVG (no asset request), so it's crisp at any size.
+ * Reused by the rail brand + the mobile header + the login screen.
  */
-export function OfisiMark({ size = 32, className = '' }) {
+export function DiwanMark({ size = 32, className = '' }) {
   return (
     <svg
       width={size}
       height={size}
-      viewBox="0 0 32 32"
+      viewBox="0 0 64 64"
       className={className}
       aria-hidden="true"
       focusable="false"
     >
-      <defs>
-        <linearGradient id="ofisi-mark-grad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#E8703F" />
-          <stop offset="0.55" stopColor="#D0471F" />
-          <stop offset="1" stopColor="#B23A16" />
-        </linearGradient>
-        <linearGradient id="ofisi-mark-sheen" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#FFFFFF" stopOpacity="0.20" />
-          <stop offset="0.5" stopColor="#FFFFFF" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <rect x="1" y="1" width="30" height="30" rx="8.5" fill="url(#ofisi-mark-grad)" />
-      <rect x="1" y="1" width="30" height="30" rx="8.5" fill="url(#ofisi-mark-sheen)" />
-      <circle cx="16" cy="16" r="8.4" fill="none" stroke="#FBF3E9" strokeWidth="4.4" />
-      <circle cx="16" cy="16" r="2.2" fill="#FBF3E9" />
+      <path
+        d="M12 55 L12 31 A22.1 22.1 0 0 1 32 9 A22.1 22.1 0 0 1 52 31 L52 55 L44 55 L44 31 A14.17 14.17 0 0 0 32 17 A14.17 14.17 0 0 0 20 31 L20 55 Z"
+        fill="#D0471F"
+      />
+      <rect x="20" y="47" width="24" height="8" fill="#0E8B86" />
     </svg>
   )
 }
@@ -95,7 +92,7 @@ function Sidebar({ mode, collapsed: collapsedProp, children, className = '' }) {
  *   mini     → stacked "expand" + "hide" buttons
  * The mobile drawer omits `onSetMode` (it closes via its own backdrop/Esc).
  */
-Sidebar.Brand = function SidebarBrand({ name = 'Ofisi', onSetMode }) {
+Sidebar.Brand = function SidebarBrand({ name = 'Diwan', onSetMode }) {
   const { collapsed } = useContext(SidebarCtx)
 
   const ctrlBtn =
@@ -107,7 +104,7 @@ Sidebar.Brand = function SidebarBrand({ name = 'Ofisi', onSetMode }) {
     // Mini rail: mark on top, then two stacked controls (expand / hide).
     return (
       <div className="flex flex-col items-center gap-1.5 pt-2.5 pb-2 border-b border-line flex-shrink-0">
-        <OfisiMark size={28} className="flex-shrink-0 rounded-lg shadow-e1" />
+        <DiwanMark size={28} className="flex-shrink-0" />
         {onSetMode && (
           <div className="flex flex-col items-center gap-0.5">
             <button type="button" title="Expand sidebar" aria-label="Expand sidebar"
@@ -126,7 +123,7 @@ Sidebar.Brand = function SidebarBrand({ name = 'Ofisi', onSetMode }) {
 
   return (
     <div className="flex items-center gap-2.5 h-14 px-4 border-b border-line flex-shrink-0">
-      <OfisiMark size={30} className="flex-shrink-0 rounded-lg shadow-e1" />
+      <DiwanMark size={30} className="flex-shrink-0" />
       <div className="flex flex-col min-w-0">
         <span className="font-display text-[20px] font-bold tracking-display text-ink truncate leading-none">
           {name}

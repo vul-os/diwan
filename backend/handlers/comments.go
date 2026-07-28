@@ -14,10 +14,10 @@ import (
 	"net/http"
 	"time"
 
-	"vulos-office/backend/billing"
-	"vulos-office/backend/models"
-	"vulos-office/backend/notify"
-	"vulos-office/backend/storage"
+	"diwan/backend/billing"
+	"diwan/backend/models"
+	"diwan/backend/notify"
+	"diwan/backend/storage"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"

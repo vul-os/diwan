@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"vulos-office/backend/storage"
+	"diwan/backend/storage"
 )
 
 func clearStorageEnv(t *testing.T) {
@@ -82,7 +82,7 @@ func TestResolveOfficeBackendMinIOFromMode(t *testing.T) {
 	clearStorageEnv(t)
 	t.Setenv(storage.EnvStorageMode, "local-minio-sync")
 	t.Setenv(storage.EnvMinIOEndpoint, "https://minio.local:9000")
-	t.Setenv(storage.EnvMinIOBucket, "vulos-office")
+	t.Setenv(storage.EnvMinIOBucket, "diwan")
 	t.Setenv(storage.EnvMinIORegion, "auto")
 
 	rb, err := storage.ResolveOfficeBackend()
@@ -142,7 +142,7 @@ func TestResolveOfficeBackendMinIOCredsFromFile(t *testing.T) {
 
 	t.Setenv(storage.EnvStorageMode, "local-minio-sync")
 	t.Setenv(storage.EnvMinIOEndpoint, "https://minio.local:9000")
-	t.Setenv(storage.EnvMinIOBucket, "vulos-office")
+	t.Setenv(storage.EnvMinIOBucket, "diwan")
 	t.Setenv(storage.EnvMinIOCredsRef, credsPath)
 
 	rb, err := storage.ResolveOfficeBackend()

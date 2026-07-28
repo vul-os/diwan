@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"strings"
 
-	"vulos-office/backend/apikey"
-	"vulos-office/backend/config"
-	"vulos-office/backend/session"
+	"diwan/backend/apikey"
+	"diwan/backend/config"
+	"diwan/backend/session"
 
 	"github.com/gin-gonic/gin"
 )

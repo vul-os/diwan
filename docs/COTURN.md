@@ -1,28 +1,28 @@
 # Self-hosting a TURN server (coturn) for collaboration behind strict NAT
 
-Ofisi's real-time collaboration (Docs/Whiteboard invite links, Sheets/Slides
+Diwan's real-time collaboration (Docs/Whiteboard invite links, Sheets/Slides
 presence) is **direct peer-to-peer WebRTC by default** — see
 [COLLABORATION.md](COLLABORATION.md) §3. No Vulos product, host box, or
-account is required to make that work: the transport is Ofisi's own
+account is required to make that work: the transport is Diwan's own
 first-party `FabricClient` (`src/lib/collab/webrtc/fabric.js`).
 
 Direct WebRTC needs help crossing NAT:
 
 - **STUN** gets you there in the vast majority of cases — it just tells a peer
   its own publicly-visible address so the two sides can hole-punch straight to
-  each other. Ofisi defaults to the public Google STUN server for this; no
+  each other. Diwan defaults to the public Google STUN server for this; no
   setup required (see [CONFIGURATION.md](CONFIGURATION.md) `VITE_STUN_URLS`).
 - **TURN** is needed only when hole-punching fails outright — most commonly
   when one peer is behind a **symmetric NAT** (common on some corporate/mobile
   networks and carrier-grade NAT). TURN relays the traffic between the two
-  peers instead of connecting them directly. In Ofisi's model this relay is
+  peers instead of connecting them directly. In Diwan's model this relay is
   still **content-blind**: the payload was already end-to-end sealed by the
   invite-link room key before it ever reaches the TURN server (see
   [COLLABORATION.md](COLLABORATION.md) §4) — TURN just moves bytes it cannot
   read.
 
 This document is about that second case: running your **own** TURN server
-([coturn](https://github.com/coturn/coturn)) and pointing Ofisi at it, so a
+([coturn](https://github.com/coturn/coturn)) and pointing Diwan at it, so a
 deployment with peers behind strict NAT doesn't need to depend on any other
 Vulos product (a host box or a `vulos-relayd`) just to get a relay fallback.
 
@@ -108,7 +108,7 @@ external-ip=203.0.113.10
 lt-cred-mech
 
 # Static credential (simplest — pick a strong, random password):
-user=ofisi:CHANGE_ME_TO_A_LONG_RANDOM_SECRET
+user=diwan:CHANGE_ME_TO_A_LONG_RANDOM_SECRET
 
 # Recommended hardening.
 fingerprint
@@ -129,7 +129,7 @@ denied-peer-ip=198.18.0.0-198.19.255.255
 
 ### Static credential vs. time-limited credential
 
-The config above uses `user=ofisi:CHANGE_ME_TO_A_LONG_RANDOM_SECRET` — a
+The config above uses `user=diwan:CHANGE_ME_TO_A_LONG_RANDOM_SECRET` — a
 single static username/password pair. That's the simplest option and is fine
 for a self-hosted deployment where you control who gets the credential (it
 goes straight into `VITE_TURN_USERNAME` / `VITE_TURN_CREDENTIAL` — see step
@@ -146,7 +146,7 @@ static-auth-secret=CHANGE_ME_TO_A_LONG_RANDOM_SECRET
 ```
 
 Minting a fresh time-limited credential per session requires a small bit of
-server-side code (Ofisi does not currently generate these — the static
+server-side code (Diwan does not currently generate these — the static
 `lt-cred-mech` credential above is the supported path today). See coturn's own
 [`README.turnserver`](https://github.com/coturn/coturn/blob/master/README.turnserver)
 for the exact HMAC recipe if you want to add that later.
@@ -174,14 +174,14 @@ If coturn is behind a cloud provider's own security group / firewall (AWS,
 Hetzner, etc.), open the same ports there too — the OS-level firewall alone
 is not enough.
 
-## 4. Point Ofisi at it
+## 4. Point Diwan at it
 
 Set these at build time (they are `VITE_*`, so they're baked into the
 frontend bundle — see [CONFIGURATION.md](CONFIGURATION.md)):
 
 ```sh
 export VITE_TURN_URL="turn:turn.example.org:3478,turns:turn.example.org:5349"
-export VITE_TURN_USERNAME="ofisi"
+export VITE_TURN_USERNAME="diwan"
 export VITE_TURN_CREDENTIAL="CHANGE_ME_TO_A_LONG_RANDOM_SECRET"   # matches user= above
 
 npm run build:frontend
@@ -192,13 +192,13 @@ covers the STUN half; only set it if you want your own STUN server too (e.g.
 `turn:turn.example.org:3478` doubles as a STUN server without credentials).
 
 If you'd rather not bake credentials into the static bundle, a host page can
-inject the same configuration at runtime instead, before Ofisi's bundle
+inject the same configuration at runtime instead, before Diwan's bundle
 loads:
 
 ```html
 <script>
   window.__VULOS_ENDPOINTS__ = {
-    turn: { urls: ['turn:turn.example.org:3478'], username: 'ofisi', credential: '…' },
+    turn: { urls: ['turn:turn.example.org:3478'], username: 'diwan', credential: '…' },
   }
 </script>
 ```
@@ -208,14 +208,14 @@ loads:
 ```sh
 # coturn's own connectivity check (needs the `turnutils_uclient` tool, ships
 # with the coturn package):
-turnutils_uclient -T -u ofisi -w 'CHANGE_ME_TO_A_LONG_RANDOM_SECRET' turn.example.org
+turnutils_uclient -T -u diwan -w 'CHANGE_ME_TO_A_LONG_RANDOM_SECRET' turn.example.org
 
 # From a browser, https://icetest.info or https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/
 # — set "TURN URI" / username / credential to your values and confirm a
 # "relay" candidate is gathered (not just "srflx"/"host").
 ```
 
-In Ofisi itself: open DevTools → Network on two browsers behind different
+In Diwan itself: open DevTools → Network on two browsers behind different
 strict NATs, start a collaboration session, and confirm the presence pill
 reaches "Live" — if `chrome://webrtc-internals` (or `about:webrtc` in
 Firefox) shows the active candidate pair as `relay`, TURN did the work that
@@ -224,7 +224,7 @@ STUN alone couldn't.
 ## Reference
 
 - coturn project: <https://github.com/coturn/coturn>
-- Ofisi's ICE configuration code: `src/lib/collab/webrtc/call/ice.js`
+- Diwan's ICE configuration code: `src/lib/collab/webrtc/call/ice.js`
 - How the fallback ICE list is used: `src/lib/collab/webrtc/fabric.js` (`_fetchICE`)
 - The wider collaboration/transport model: [COLLABORATION.md](COLLABORATION.md) §3
 - All `VITE_STUN_URLS`/`VITE_TURN_*` variables: [CONFIGURATION.md](CONFIGURATION.md)

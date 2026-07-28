@@ -1,6 +1,6 @@
-# Ofisi — Install Guide
+# Diwan — Install Guide
 
-This document covers how to install and run `vulos-office` either co-located
+This document covers how to install and run `diwan` either co-located
 with the Vulos OS (the recommended single-box deployment) or as a
 standalone service.
 
@@ -12,7 +12,7 @@ upgrading), see [`DEPLOY.md`](DEPLOY.md).
 ## Co-located deployment (recommended)
 
 The supported "easy path" is the **co-located bundle**: one box runs the Vulos
-OS and vulos-office, sharing **one S3-compatible bucket endpoint**
+OS and diwan, sharing **one S3-compatible bucket endpoint**
 (Tigris by default, using your own Tigris credentials; local MinIO via the OS-side storage selector
 opt-in). Both services share one CRDT/peering fabric and one identity.
 
@@ -43,8 +43,8 @@ See https://github.com/vul-os/vulos/blob/dev/docs/SELF-HOST-BUNDLE.md for the fu
 
 The OS-side storage-mode selector (`STORE-LOCAL-01`,
 `vulos/backend/internal/storagemode/`) writes a single shared env file
-(consumed by `vulos.service` and `vulos-office.service`)
-with the following variables. Ofisi reads these at startup and passes them
+(consumed by `vulos.service` and `diwan.service`)
+with the following variables. Diwan reads these at startup and passes them
 into [`OfficeBackendConfig`](../backend/storage/backendconfig.go):
 
 | Variable                | Purpose                                                                 |
@@ -61,7 +61,7 @@ In `central-tigris` mode, office falls back to the canonical Tigris env vars
 
 ### Systemd unit ordering
 
-The bundle installer writes the units below — `vulos-office` starts **after**
+The bundle installer writes the units below — `diwan` starts **after**
 `vulos.service` and the shared `vulos-fabric.service` oneshot (which performs the
 shared identity/fabric init). Both are pulled in by `vulos-bundle.target` (the
 all-up sentinel).
@@ -72,17 +72,17 @@ flowchart TD
     MinIO["[vulos-minio.service]<br/>(optional — local-MinIO mode only)"]
     Fabric["vulos-fabric.service<br/>(shared fabric identity init — oneshot)"]
     OS["vulos.service (OS backend, :8443)"]
-    Ofisi["vulos-office.service (office backend, :8445)"]
+    Diwan["diwan.service (office backend, :8445)"]
     Bundle["vulos-bundle.target"]
     Net --> MinIO
     MinIO --> Fabric
     Fabric --> OS
-    Fabric --> Ofisi
-    Ofisi --> Bundle
+    Fabric --> Diwan
+    Diwan --> Bundle
 ```
 
 The relevant ordering for office (from
-[`scripts/vulos-office.service`](https://github.com/vul-os/vulos/blob/main/scripts/vulos-office.service)
+[`scripts/diwan.service`](https://github.com/vul-os/vulos/blob/main/scripts/diwan.service)
 in the `vulos` repo):
 
 ```ini
@@ -94,7 +94,7 @@ Requires=vulos-fabric.service
 WantedBy=multi-user.target vulos-bundle.target
 ```
 
-Ofisi is intentionally ordered **after** `vulos.service` and the fabric
+Diwan is intentionally ordered **after** `vulos.service` and the fabric
 oneshot so the shared bucket creds + fabric identity are already in place
 before office tries to open the storage backend. The bundle target
 ([`scripts/vulos-bundle.target`](https://github.com/vul-os/vulos/blob/main/scripts/vulos-bundle.target))
@@ -108,7 +108,7 @@ brings the suite up atomically (and `systemctl stop` tears it down).
 If you only want the office suite (no Vulos OS), run office
 directly and inject the storage endpoint yourself via
 [`OfficeBackendConfig`](../backend/storage/backendconfig.go) — there is no
-endpoint-selection logic inside vulos-office; it just receives what you give
+endpoint-selection logic inside diwan; it just receives what you give
 it. See the storage/co-location notes in [`ROADMAP.md`](../ROADMAP.md).
 
 The two accepted shapes:
@@ -133,7 +133,7 @@ cfg := storage.OfficeBackendConfig{
     Kind:            storage.OfficeBEKindMinIO,
     Endpoint:        "https://minio.example.lan",   // must be https://
     Region:          "auto",
-    Bucket:          "vulos-office",                 // required
+    Bucket:          "diwan",                 // required
     Prefix:          "acct-1234",
     AccessKeyID:     "…",
     SecretAccessKey: "…",
@@ -142,7 +142,7 @@ client, err := storage.NewOfficeS3Client(cfg)
 ```
 
 Both backends use the same S3-compatible interface (pure-Go SigV4, no CGO).
-Ofisi logs the resolved endpoint at startup.
+Diwan logs the resolved endpoint at startup.
 
 For the runtime config file and Docker quick-start, see
 [`DEPLOY.md`](DEPLOY.md).

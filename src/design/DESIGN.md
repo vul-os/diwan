@@ -1,6 +1,6 @@
-# Ofisi — Design System
+# Diwan — Design System
 
-This document describes the design language for **Ofisi**, a warm, human,
+This document describes the design language for **Diwan**, a warm, human,
 real-time collaborative office suite (documents, spreadsheets, slides,
 whiteboards, PDF signing).  It is the source of truth when extending the UI to
 new surfaces.
@@ -15,7 +15,7 @@ or extend a token instead.
 
 ## 1. Direction — "Warm Workshop"
 
-Ofisi has its **own** identity, deliberately distinct from the near-black IDE
+Diwan has its **own** identity, deliberately distinct from the near-black IDE
 look of sibling products.  It is **light-first** (a workspace should feel like
 daylight), warm, and editorial: an ivory canvas, crisp white paper that pops,
 sand-toned chrome, warm-charcoal ink, and one confident signature accent —
@@ -97,7 +97,7 @@ install leaks no IP and stays air-gappable.
 
 Fraunces carries both document bodies **and** editorial display moments
 (`--font-display` aliases it): empty-state headlines, the login title, the
-`Ofisi` wordmark.  The **mono** face carries section eyebrows, `kbd` chips, and
+`Diwan` wordmark.  The **mono** face carries section eyebrows, `kbd` chips, and
 micro-UI labels (`.mono-label`) with wide tracking.
 
 **Optional swap**: to change any face, override `--font-sans` / `--font-serif` /
@@ -321,7 +321,7 @@ warm dark is a first-class opt-in, not a grudging inversion.
 - Signal backgrounds ride a low (12–16 %) alpha overlay so they don't shout.
 
 The `useTheme()` hook (in `components/ui/useTheme.js`) provides explicit
-light / dark / **system** cycling, persisted to `localStorage['ofisi.theme']`
+light / dark / **system** cycling, persisted to `localStorage['diwan.theme']`
 (honouring a legacy key).  In `system` mode it resolves `prefers-color-scheme`
 to a concrete `data-theme` and follows OS changes live.  An early boot script in
 `index.html` applies the resolved theme before first paint so there is no flash.
@@ -353,7 +353,7 @@ collapsed cycler), the app-home top bar (quick cycler), and Settings ▸ Appeara
 | `apps/pdf/PDFEditor.jsx` | Design-system `Topbar` with quiet meta-line, distinguished primary "Prepare to Sign" `Button`, warm-paper canvas + `paper-grain`, page thumbnails sidebar with 2-px accent rail on the selected slot, signature modal ported to design-system `Tabs` + `IconButton`, single-accent annotation overlays (no rainbow). |
 | `apps/pdf/SigningSetup.jsx` | Field type chips as `IconButton`s with serif-italic labels, signer roster as `Card`s with a per-signer colour stripe (name + email in serif italic), required toggle as a clear box-check control, signing-order picker (sequential / parallel) via underline `Tabs`. Drag-place + persist logic untouched. |
 | `components/EnvelopeDashboard.jsx` | Card-per-envelope with warm signal-hue status badges (sage / honey / persimmon), quiet horizontal accent progress bar, expandable per-signer rows in serif italic, remind/cancel as `IconButton`s + `Tooltip`s. |
-| `components/Verify.jsx` | Public verification page: warm paper drop-zone, serif "Verify an Ofisi-signed document" headline, calm verdict reveal with sage `ShieldCheck` / persimmon `ShieldAlert`, collapsible per-signer rows in serif body, `Powered by Ofisi` provenance footer. |
+| `components/Verify.jsx` | Public verification page: warm paper drop-zone, serif "Verify an Diwan-signed document" headline, calm verdict reveal with sage `ShieldCheck` / persimmon `ShieldAlert`, collapsible per-signer rows in serif body, `Powered by Diwan` provenance footer. |
 
 ## 10. Surfaces deferred to the next pass
 

@@ -5,12 +5,12 @@
  *
  *   • one `vulos-relayd` (from the sibling Ephor checkout, UNMODIFIED)
  *     with the rendezvous role enabled on a temp port, and
- *   • two STANDALONE `vulos-office` binaries — separate ports, separate data
+ *   • two STANDALONE `diwan` binaries — separate ports, separate data
  *     dirs, separate config files — each pointed at that relayd via
  *     `collab.rendezvous_url`, plus optionally a third with NO rendezvous
  *     configured for the negative case.
  *
- * Two SEPARATE Ofisi servers (not one server + two tabs) is the honest shape:
+ * Two SEPARATE Diwan servers (not one server + two tabs) is the honest shape:
  * the claim is that peers collaborate with no shared document server, so the
  * two browsers must have no server in common. The only thing they share is the
  * relayd — and the room key, which travels in the invite link's URL fragment
@@ -84,14 +84,14 @@ async function httpOk(url) {
  * temp dir — the Ephor checkout is never modified.
  */
 export async function buildBinaries(outDir) {
-  const officeBin = path.join(outDir, 'vulos-office-e2e')
+  const officeBin = path.join(outDir, 'diwan-e2e')
   // A prebuilt relayd wins when supplied: CI can build the relay once (and
   // pin its revision), and a local run is not blocked by whatever state the
   // sibling checkout happens to be in.
   const prebuilt = process.env.VULOS_RELAYD_BIN
   const relaydBin = prebuilt && existsSync(prebuilt) ? prebuilt : path.join(outDir, 'vulos-relayd')
 
-  // The Ofisi binary embeds dist/ (go:embed), so the frontend must be built
+  // The Diwan binary embeds dist/ (go:embed), so the frontend must be built
   // first or the server would serve a stale/absent app.
   await execFileAsync('npx', ['vite', 'build'], { cwd: REPO_ROOT, timeout: 300_000, maxBuffer: 64 << 20 })
   await execFileAsync('go', ['build', '-o', officeBin, '.'], { cwd: REPO_ROOT, timeout: 300_000, maxBuffer: 64 << 20 })
@@ -127,15 +127,15 @@ function spawnLogged(bin, args, opts, name, logs) {
 }
 
 /**
- * Boot relayd + N standalone Ofisi instances.
+ * Boot relayd + N standalone Diwan instances.
  *
  * @param {object} opts
- * @param {number} [opts.offices=2]  Ofisi instances WITH the rendezvous configured
+ * @param {number} [opts.offices=2]  Diwan instances WITH the rendezvous configured
  * @param {boolean} [opts.localOnlyOffice=false] also boot one with NO rendezvous
  * @returns {Promise<object>} the live stack (URLs, logs, stop())
  */
 export async function startStack({ offices = 2, localOnlyOffice = false } = {}) {
-  const root = mkdtempSync(path.join(tmpdir(), 'ofisi-p2p-'))
+  const root = mkdtempSync(path.join(tmpdir(), 'diwan-p2p-'))
   const logs = []
   const procs = []
 
@@ -167,7 +167,7 @@ export async function startStack({ offices = 2, localOnlyOffice = false } = {}) 
   const relayAdminUrl = `http://127.0.0.1:${relayAdminPort}`
   await waitFor(() => httpOk(`${relayUrl}/rendezvous/healthz`), { what: 'relayd rendezvous' })
 
-  // ── standalone Ofisi instances ────────────────────────────────────────────
+  // ── standalone Diwan instances ────────────────────────────────────────────
   const startOffice = async (name, rendezvousUrl) => {
     const dir = path.join(root, name)
     mkdirSync(path.join(dir, 'data'), { recursive: true })
@@ -192,7 +192,7 @@ export async function startStack({ offices = 2, localOnlyOffice = false } = {}) 
       cwd: dir,
       // DEPLOY_MODE stays standalone: this is exactly the bare binary the claim
       // is about — it mounts no /api/peering/*.
-      env: { ...process.env, DEPLOY_MODE: 'standalone', VULOS_OFFICE_PUBLIC_URL: '' },
+      env: { ...process.env, DEPLOY_MODE: 'standalone', DIWAN_PUBLIC_URL: '' },
     }, name, logs)
     procs.push(proc)
 
@@ -239,7 +239,7 @@ export async function relayResolve(relayUrl, key) {
   return { status: res.status, body }
 }
 
-/** Create a document on an Ofisi instance through its real HTTP API. */
+/** Create a document on an Diwan instance through its real HTTP API. */
 export async function createDoc(officeUrl, name) {
   const res = await fetch(`${officeUrl}/api/files`, {
     method: 'POST',

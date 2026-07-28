@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# deploy-static.sh — build and upload Vulos Office static bundles to Tigris CDN.
+# deploy-static.sh — build and upload Diwan static bundles to Tigris CDN.
 #
 # Usage:
 #   ./scripts/deploy-static.sh [office|all] [--latest]
@@ -7,7 +7,7 @@
 # Required env vars:
 #   TIGRIS_ACCESS_KEY_ID      — Tigris access key
 #   TIGRIS_SECRET_ACCESS_KEY  — Tigris secret key
-#   TIGRIS_BUCKET             — target bucket name (e.g. vulos-office-static)
+#   TIGRIS_BUCKET             — target bucket name (e.g. diwan-static)
 #
 # Optional:
 #   TIGRIS_ENDPOINT           — defaults to https://fly.storage.tigris.dev

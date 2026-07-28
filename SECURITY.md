@@ -1,4 +1,4 @@
-# Security Policy — Ofisi
+# Security Policy — Diwan
 
 ## Scope
 
@@ -8,9 +8,9 @@
 - Backend API authentication and session handling
 - File upload / blob storage access controls
 
-> Ofisi is documents-only. Chat and video are third-party (Matrix/Element;
+> Diwan is documents-only. Chat and video are third-party (Matrix/Element;
 > Element Call / Jitsi), not Vulos products — report issues there. Calendar/Contacts
-> come from the bring-your-own-mailbox PIM connector (lilmail), not from Ofisi.
+> come from the bring-your-own-mailbox PIM connector (lilmail), not from Diwan.
 
 ### Out of scope
 - Third-party Go and npm dependencies — report to upstream maintainers

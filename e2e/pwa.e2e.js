@@ -51,8 +51,11 @@ test('web app manifest is linked from the shell and is valid + installable', asy
   }, href)
 
   expect(manifest.id).toBeTruthy()
-  expect(manifest.name).toBe('Vulos Office')
-  expect(manifest.short_name).toBe('Office')
+  // The product is named Diwan. These assertions are exact on purpose: a PWA's
+  // installed name comes from here, so a rename that misses the manifest ships
+  // an app whose home-screen label disagrees with the app itself.
+  expect(manifest.name).toBe('Diwan')
+  expect(manifest.short_name).toBe('Diwan')
   expect(manifest.start_url).toBe('/')
   expect(manifest.scope).toBe('/')
   expect(manifest.display).toBe('standalone')
@@ -115,7 +118,7 @@ test('the app shell loads OFFLINE (offline reload still renders the shell)', asy
   await page.reload()
 
   // The document itself came from cache…
-  await expect(page).toHaveTitle(/Vulos Office/)
+  await expect(page).toHaveTitle(/Diwan/)
   // …and React mounted the shell (the root got children), proving the JS shell
   // was served from cache and executed, not just a bare HTML document.
   await expect

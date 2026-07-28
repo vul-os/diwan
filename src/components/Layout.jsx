@@ -34,7 +34,7 @@ import { useFilesStore } from '../store/filesStore'
 import { useNotificationsStore } from '../store/notificationsStore'
 import NewFileModal from './NewFileModal'
 import NotificationsPanel from './NotificationsPanel'
-import { Sidebar, IconButton, Tooltip, ThemeSwitch, OfisiMark } from './ui'
+import { Sidebar, IconButton, Tooltip, ThemeSwitch, DiwanMark } from './ui'
 
 // Each app icon carries one low-saturation tint at rest (so users find
 // Sheets/Slides/PDF at a glance); it brightens to accent only when its app is
@@ -82,7 +82,7 @@ function SidebarContent({ collapsed, onNavigate, onNewFile, onSetMode }) {
 
   return (
     <>
-      <Sidebar.Brand name="Ofisi" onSetMode={onSetMode} />
+      <Sidebar.Brand name="Diwan" onSetMode={onSetMode} />
 
       <Sidebar.Section>
         {/* "New" is the only emphatic button in the rail — primary accent. */}
@@ -192,7 +192,7 @@ function SidebarContent({ collapsed, onNavigate, onNewFile, onSetMode }) {
   )
 }
 
-const SIDEBAR_KEY = 'ofisi.sidebar'
+const SIDEBAR_KEY = 'diwan.sidebar'
 const SIDEBAR_MODES = ['expanded', 'mini', 'hidden']
 
 function Shell({ children }) {
@@ -275,8 +275,8 @@ function Shell({ children }) {
           <IconButton size="md" onClick={() => setMobileOpen(true)} title="Open navigation">
             <Menu size={18} />
           </IconButton>
-          <OfisiMark size={26} className="rounded-lg shadow-e1" />
-          <span className="font-display text-[18px] font-bold tracking-display text-ink leading-none">Ofisi</span>
+          <DiwanMark size={26} />
+          <span className="font-display text-[18px] font-bold tracking-display text-ink leading-none">Diwan</span>
         </header>
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">{children}</div>
       </main>

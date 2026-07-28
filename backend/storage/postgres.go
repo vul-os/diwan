@@ -4,17 +4,23 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"sort"
+	"sync"
 	"time"
 
-	"vulos-office/backend/config"
-	"vulos-office/backend/models"
+	"diwan/backend/config"
+	"diwan/backend/models"
+	"diwan/backend/signing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 type PostgresStorage struct {
 	pool *pgxpool.Pool
+	// shareLinkHashOnce guards the one-time backfill of plaintext share-link
+	// tokens into their hashes (see migrateShareLinkHashes).
+	shareLinkHashOnce sync.Once
 }
 
 // NewPostgresStorage opens a pgxpool connection to Postgres, ensures the
@@ -59,6 +65,12 @@ func NewPostgresStorage(cfg *config.Config) (*PostgresStorage, error) {
 		pool.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
+	// Convert any pre-fix share-link row holding a PLAINTEXT token at boot, so a
+	// deployment stops storing live capabilities the moment it starts this
+	// binary — not the first time somebody happens to open a share link. The
+	// read paths call it too (it is a sync.Once), which is what makes the tests
+	// that build a store directly still cover it.
+	s.migrateShareLinkHashes()
 	return s, nil
 }
 
@@ -117,6 +129,10 @@ func (s *PostgresStorage) migrate() error {
 		CREATE TABLE IF NOT EXISTS share_links (
 			id            TEXT NOT NULL,
 			file_id       TEXT NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+			-- Holds the hex SHA-256 of the share-link token, never the token.
+			-- The name predates the fix and is kept because renaming it would
+			-- be an ALTER against already-deployed databases for no functional
+			-- gain; migrateShareLinkHashes backfills existing rows.
 			token         TEXT PRIMARY KEY,
 			created_by    TEXT NOT NULL DEFAULT '',
 			password_hash TEXT NOT NULL DEFAULT '',
@@ -980,21 +996,37 @@ DELETE FROM suggestions WHERE file_id=$1 AND id=$2`, fileID, suggestionID)
 // Share links (anonymous, read-only, token-gated doc access)
 // ============================================================
 
+// The share_links.token column holds the hex SHA-256 of the share-link token,
+// NOT the token — see signing.HashShareLinkToken and migrateShareLinkHashes.
+// The column keeps its original name because renaming it would mean an ALTER on
+// a schema that is already deployed; every query below aliases it to token_hash
+// so the Go side never reads as though a live token were in hand.
+
 func (s *PostgresStorage) CreateShareLink(l *models.ShareLink) error {
+	if l.Token == "" {
+		return fmt.Errorf("share link: no token to hash")
+	}
+	// Derive the hash HERE rather than trusting the caller, so no future call
+	// site can persist a link whose lookup key is its plaintext.
+	l.TokenHash = signing.HashShareLinkToken(l.Token)
 	_, err := s.pool.Exec(context.Background(),
 		`INSERT INTO share_links (id, file_id, token, created_by, password_hash, expires_at, revoked, created_at)
 		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-		l.ID, l.FileID, l.Token, l.CreatedBy, l.PasswordHash, l.ExpiresAt, l.Revoked, l.CreatedAt,
+		l.ID, l.FileID, l.TokenHash, l.CreatedBy, l.PasswordHash, l.ExpiresAt, l.Revoked, l.CreatedAt,
 	)
 	return err
 }
 
+// GetShareLinkByToken takes the RAW token as presented on the view route and
+// resolves it by hash. The returned model's Token is empty — the database has
+// no way to produce it, which is the point.
 func (s *PostgresStorage) GetShareLinkByToken(token string) (*models.ShareLink, error) {
+	s.migrateShareLinkHashes()
 	var l models.ShareLink
 	err := s.pool.QueryRow(context.Background(),
-		`SELECT id, file_id, token, created_by, password_hash, expires_at, revoked, created_at
-		 FROM share_links WHERE token=$1`, token,
-	).Scan(&l.ID, &l.FileID, &l.Token, &l.CreatedBy, &l.PasswordHash, &l.ExpiresAt, &l.Revoked, &l.CreatedAt)
+		`SELECT id, file_id, token AS token_hash, created_by, password_hash, expires_at, revoked, created_at
+		 FROM share_links WHERE token=$1`, signing.HashShareLinkToken(token),
+	).Scan(&l.ID, &l.FileID, &l.TokenHash, &l.CreatedBy, &l.PasswordHash, &l.ExpiresAt, &l.Revoked, &l.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("share link not found")
 	}
@@ -1003,8 +1035,9 @@ func (s *PostgresStorage) GetShareLinkByToken(token string) (*models.ShareLink, 
 }
 
 func (s *PostgresStorage) ListShareLinks(fileID string) ([]*models.ShareLink, error) {
+	s.migrateShareLinkHashes()
 	rows, err := s.pool.Query(context.Background(),
-		`SELECT id, file_id, token, created_by, password_hash, expires_at, revoked, created_at
+		`SELECT id, file_id, token AS token_hash, created_by, password_hash, expires_at, revoked, created_at
 		 FROM share_links WHERE file_id=$1 ORDER BY created_at DESC`, fileID)
 	if err != nil {
 		return nil, err
@@ -1013,13 +1046,52 @@ func (s *PostgresStorage) ListShareLinks(fileID string) ([]*models.ShareLink, er
 	var links []*models.ShareLink
 	for rows.Next() {
 		var l models.ShareLink
-		if err := rows.Scan(&l.ID, &l.FileID, &l.Token, &l.CreatedBy, &l.PasswordHash, &l.ExpiresAt, &l.Revoked, &l.CreatedAt); err != nil {
+		if err := rows.Scan(&l.ID, &l.FileID, &l.TokenHash, &l.CreatedBy, &l.PasswordHash, &l.ExpiresAt, &l.Revoked, &l.CreatedAt); err != nil {
 			return nil, err
 		}
 		l.HasPassword = l.PasswordHash != ""
 		links = append(links, &l)
 	}
 	return links, rows.Err()
+}
+
+// migrateShareLinkHashes converts any row still holding a PLAINTEXT token into
+// its SHA-256 hash, once per process.
+//
+// This is a DATA migration, not a schema one: no column is added, renamed, or
+// dropped, so a deployed database needs no coordinated schema change and an old
+// binary reading the same table still finds the row it indexes on (it would
+// simply fail to resolve tokens, which is the correct behaviour for a binary
+// that predates the fix).
+//
+// EXISTING LINKS KEEP WORKING: a URL already in a user's hands carries the raw
+// token, the view route hashes it, and the converted row matches. What the
+// change does remove — visibly — is the owner's ability to re-read an old
+// link's URL from the store, because no row holds one any more.
+//
+// The predicate is exact, not heuristic. A stored hash is 64 lowercase hex
+// characters; a raw token is 32 bytes base64url-encoded without padding, i.e.
+// 43 characters, and cannot collide with that shape. So the UPDATE is
+// idempotent and re-running it can never double-hash a row.
+//
+// sha256() is a Postgres 11+ built-in, so this needs no extension.
+func (s *PostgresStorage) migrateShareLinkHashes() {
+	s.shareLinkHashOnce.Do(func() {
+		tag, err := s.pool.Exec(context.Background(), `
+			UPDATE share_links
+			   SET token = encode(sha256(token::bytea), 'hex')
+			 WHERE token !~ '^[0-9a-f]{64}$'`)
+		if err != nil {
+			// Do not fail the request: the rows that are already hashed still
+			// resolve. But say so loudly — a silently un-migrated table means
+			// old links stop resolving AND plaintext tokens stay on disk.
+			log.Printf("[storage] share-link token hash backfill FAILED (old links will not resolve and plaintext tokens remain in share_links.token): %v", err)
+			return
+		}
+		if n := tag.RowsAffected(); n > 0 {
+			log.Printf("[storage] share-link token hash backfill: converted %d plaintext token(s) to SHA-256; those links keep working, but their URLs can no longer be re-read from the store", n)
+		}
+	})
 }
 
 func (s *PostgresStorage) RevokeShareLink(fileID, linkID string) error {

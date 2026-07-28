@@ -57,7 +57,35 @@ function makePeer(fabric) {
   return { ydoc, ctx, editor, fabric }
 }
 
+// `settle` is a fixed sleep and is used ONLY for negative assertions — "give
+// the thing that must not happen a chance to happen, then check it didn't".
+// A fixed sleep is the wrong tool for a positive assertion: this suite mounts
+// two real ProseMirror editors per test, and on a loaded machine 60 ms was not
+// always enough for an update to cross the fake fabric. That made
+// "a READ-ONLY peer cannot write" fail intermittently in the full run and pass
+// in isolation — a flake, not a finding. Positive assertions now poll.
 const settle = () => new Promise((r) => setTimeout(r, 60))
+
+/**
+ * Poll `ok()` until it returns true, then resolve. Fails with `label` in the
+ * message if it never does — so a genuine regression still fails, and only the
+ * timing slack is removed.
+ */
+async function until(ok, label, timeout = 5000) {
+  const deadline = Date.now() + timeout
+  for (;;) {
+    let ready = false
+    try { ready = !!ok() } catch { ready = false }
+    if (ready) return
+    if (Date.now() >= deadline) {
+      throw new Error(`timed out after ${timeout}ms waiting for: ${label}`)
+    }
+    await new Promise((r) => setTimeout(r, 5))
+  }
+}
+
+/** Structural equality of two editor JSON docs. */
+const sameDoc = (a, b) => JSON.stringify(a) === JSON.stringify(b)
 
 /** Owner (rw) + a peer joining from one of the minted links. */
 async function room({ joinWith = 'rw' } = {}) {
@@ -91,7 +119,11 @@ describe('YP2PCollabSession — the document over an E2E-encrypted room', () => 
       '<h2>Heading</h2><p><strong>bold</strong> text</p>' +
       '<table><tbody><tr><td><p>cell</p></td></tr></tbody></table>',
     )
-    await settle()
+    await until(
+      () => sameDoc(guest.editor.getJSON(), owner.editor.getJSON())
+        && guest.editor.getJSON().content?.[0]?.type === 'heading',
+      'the guest to receive the owner\'s heading/table document',
+    )
 
     const doc = guest.editor.getJSON()
     expect(doc.content[0].type).toBe('heading')
@@ -103,7 +135,11 @@ describe('YP2PCollabSession — the document over an E2E-encrypted room', () => 
   it('converges after both peers edit while disconnected (union, no lost work)', async () => {
     const { owner, guest } = await room()
     owner.editor.commands.setContent('<p>alpha</p><p>omega</p>')
-    await settle()
+    await until(
+      () => sameDoc(guest.editor.getJSON(), owner.editor.getJSON())
+        && guest.editor.getText().includes('alpha'),
+      'both peers to share the pre-disconnect document',
+    )
 
     // Cut the wire and let both sides edit.
     const savedOwnerPeers = new Set(owner.session.fabric.peers)
@@ -122,7 +158,10 @@ describe('YP2PCollabSession — the document over an E2E-encrypted room', () => 
     for (const p of savedOwnerPeers) { owner.session.fabric.peers.add(p); p.peers.add(owner.session.fabric) }
     await owner.session.resync()
     await guest.session.resync()
-    await settle()
+    await until(
+      () => sameDoc(owner.editor.getJSON(), guest.editor.getJSON()),
+      'the two peers to converge after reconnecting and resyncing',
+    )
 
     expect(owner.editor.getJSON()).toEqual(guest.editor.getJSON())
     const text = owner.editor.getJSON().content.map(
@@ -137,7 +176,10 @@ describe('YP2PCollabSession — the document over an E2E-encrypted room', () => 
     expect(guest.session.readOnly).toBe(true)
 
     owner.editor.commands.setContent('<p>owner text</p>')
-    await settle()
+    await until(
+      () => guest.editor.getText().includes('owner text'),
+      'the read-only peer to receive the owner\'s text',
+    )
     // The ro peer RECEIVES the document (it can read live edits) …
     expect(guest.editor.getJSON()).toEqual(owner.editor.getJSON())
 
@@ -154,7 +196,10 @@ describe('YP2PCollabSession — the document over an E2E-encrypted room', () => 
   it('a hostile peer in the room cannot inject an unrenderable document', async () => {
     const { owner, guest } = await room()
     owner.editor.commands.setContent('<p>safe</p>')
-    await settle()
+    await until(
+      () => guest.editor.getText().includes('safe'),
+      'the guest to receive the baseline document before it attacks',
+    )
     const before = owner.editor.getJSON()
 
     // The guest is rw (it holds the key — an invite link can be forwarded to
@@ -170,7 +215,10 @@ describe('YP2PCollabSession — the document over an E2E-encrypted room', () => 
       { type: 'yu', u: bytesToB64(Y.encodeStateAsUpdate(evil)) },
       { authoritative: true },
     )
-    await settle()
+    await until(
+      () => owner.session.rejectedUpdates > 0,
+      'the ingress clamp to reject the malformed update',
+    )
 
     expect(owner.session.rejectedUpdates).toBeGreaterThan(0)
     expect(owner.editor.getJSON()).toEqual(before)
@@ -220,7 +268,10 @@ describe('resync on peer reachability (regression: the real-transport gap)', () 
     const fabric = new SilentFabric()
     await mkSession(fabric)
     fabric.reportState('peer-1', 'connected')
-    await settle()
+    await until(
+      () => fabric.unicast.some((u) => u.peerId === 'peer-1'),
+      'a state-vector request addressed to the newly connected peer',
+    )
     expect(fabric.unicast.map((u) => u.peerId)).toContain('peer-1')
   })
 
@@ -228,7 +279,10 @@ describe('resync on peer reachability (regression: the real-transport gap)', () 
     const fabric = new SilentFabric()
     await mkSession(fabric)
     fabric.reportState('peer-2', 'relay')
-    await settle()
+    await until(
+      () => fabric.unicast.some((u) => u.peerId === 'peer-2'),
+      'a state-vector request addressed to the relay-reachable peer',
+    )
     expect(fabric.unicast.map((u) => u.peerId)).toContain('peer-2')
   })
 

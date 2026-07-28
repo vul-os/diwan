@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"vulos-office/backend/userauth"
+	"diwan/backend/userauth"
 
 	"github.com/gin-gonic/gin"
 )

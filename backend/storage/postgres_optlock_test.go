@@ -12,8 +12,8 @@ import (
 	"sync"
 	"testing"
 
-	"vulos-office/backend/config"
-	"vulos-office/backend/models"
+	"diwan/backend/config"
+	"diwan/backend/models"
 )
 
 func newPostgresStoreForOptLock(t *testing.T) (Storage, func(id string)) {

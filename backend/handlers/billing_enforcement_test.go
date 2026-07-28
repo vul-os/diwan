@@ -20,13 +20,13 @@ import (
 	"sync"
 	"testing"
 
-	"vulos-office/backend/audit"
-	"vulos-office/backend/billing"
-	"vulos-office/backend/fileacl"
-	"vulos-office/backend/invites"
-	"vulos-office/backend/middleware"
-	"vulos-office/backend/seam"
-	"vulos-office/backend/userauth"
+	"diwan/backend/audit"
+	"diwan/backend/billing"
+	"diwan/backend/fileacl"
+	"diwan/backend/invites"
+	"diwan/backend/middleware"
+	"diwan/backend/seam"
+	"diwan/backend/userauth"
 
 	"github.com/gin-gonic/gin"
 )

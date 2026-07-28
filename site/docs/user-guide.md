@@ -1,6 +1,6 @@
-# Ofisi — User Guide
+# Diwan — User Guide
 
-Ofisi is the documents product of VulOS: word-processor documents (**Docs**), spreadsheets (**Sheets**), presentations (**Slides**), infinite-canvas **Whiteboards** (built on Excalidraw), and PDF viewing/annotation/**Signing**, all served from a single self-hosted Go binary with the web app built in. This guide covers everyday use — creating and opening files, editing in each surface, collaborating live with other people, working offline, importing and exporting files, and keyboard shortcuts. If you run the server yourself, see the [Admin Guide](ADMIN-GUIDE.md); for how collaboration works under the hood, see [Collaboration](COLLABORATION.md).
+Diwan is the documents product of VulOS: word-processor documents (**Docs**), spreadsheets (**Sheets**), presentations (**Slides**), infinite-canvas **Whiteboards** (built on Excalidraw), and PDF viewing/annotation/**Signing**, all served from a single self-hosted Go binary with the web app built in. This guide covers everyday use — creating and opening files, editing in each surface, collaborating live with other people, working offline, importing and exporting files, and keyboard shortcuts. If you run the server yourself, see the [Admin Guide](ADMIN-GUIDE.md); for how collaboration works under the hood, see [Collaboration](COLLABORATION.md).
 
 ---
 
@@ -11,7 +11,7 @@ Open the app in your browser (by default `http://localhost:8080`, or wherever yo
 - **Single-user mode** (the default): no login is required — you *are* the account. Everything below just works.
 - **Multi-user mode** (when the admin has enabled auth): you log in with your account and password, or via your Vulos single sign-on session if the instance is attached to one. New accounts are created with an **invite token** minted by an admin.
 
-Ofisi is a **PWA** — your browser can install it as a desktop or mobile app (look for "Install app" in the browser menu). The app shell keeps loading even when the network is down (see [Offline behavior](#7-offline-behavior)).
+Diwan is a **PWA** — your browser can install it as a desktop or mobile app (look for "Install app" in the browser menu). The app shell keeps loading even when the network is down (see [Offline behavior](#7-offline-behavior)).
 
 ---
 
@@ -34,7 +34,7 @@ New files are **private to you** by default — the creator is the owner.
 ### Opening existing files
 
 - Click any file on Home or a surface home page.
-- **Open** a file from your computer (file picker or drag-and-drop). Ofisi detects the format by extension and routes it to the right editor — see [Import](#8-import--export) for the supported list.
+- **Open** a file from your computer (file picker or drag-and-drop). Diwan detects the format by extension and routes it to the right editor — see [Import](#8-import--export) for the supported list.
 - **Shared with me** lists documents other accounts on the instance have shared with you.
 
 ### Folders, moving, and deleting
@@ -162,9 +162,12 @@ Account sharing controls **who may open the document from your storage**. Live c
 Create a **share link** for a file to let anyone with the link view it (no account needed) at `/view/<token>`:
 
 - Links are unguessable (256-bit random tokens).
+- **The URL is shown once, when you create the link.** The server stores only a hash of the token, so it cannot show you the URL again — copy it before you close the dialog. The link list still shows every link (password, expiry, revoke), just not its URL.
 - Optional **password** — stored only as a hash; viewers must enter it before the document name or content is revealed.
 - Optional **expiry**, capped at one year — links can't be eternal.
-- Links are **read-only** and can be **revoked** at any time.
+- Links are **read-only** and can be **revoked** at any time. Revoking works from the list and needs no URL, so a leaked link can always be killed.
+
+> Upgrading from an earlier release? Links you have already handed out keep working — the server hashes whatever a visitor presents. What you lose is the ability to re-read their URLs from the link list. If you need a URL you no longer have, revoke that link and mint a new one.
 
 ### 6.3 Collaborate via link (end-to-end encrypted, Docs)
 
@@ -177,13 +180,13 @@ For Docs, **Collaborate via link** starts an end-to-end encrypted peer session:
 - Read-only peers see live edits but cannot make authoritative changes.
 - A tampered or malformed invite link simply fails to join — the editor stays in normal local mode.
 
-> Note: the peer-to-peer channel needs a peer-discovery transport to be reachable — either the Vulos peering fabric (provided when Ofisi runs inside a Vulos OS / Ephor deployment), **or** a self-hosted `vulos-relayd` your admin pointed this deployment at (`collab.rendezvous_url`, no Vulos OS or account needed — see [CONFIGURATION.md](CONFIGURATION.md)). On a bare standalone server with **neither** configured, invite-link collaboration cannot connect peers — account-based live collaboration (6.1) is the path that always works regardless.
+> Note: the peer-to-peer channel needs a peer-discovery transport to be reachable — either the Vulos peering fabric (provided when Diwan runs inside a Vulos OS / Ephor deployment), **or** a self-hosted `vulos-relayd` your admin pointed this deployment at (`collab.rendezvous_url`, no Vulos OS or account needed — see [CONFIGURATION.md](CONFIGURATION.md)). On a bare standalone server with **neither** configured, invite-link collaboration cannot connect peers — account-based live collaboration (6.1) is the path that always works regardless.
 
 ---
 
 ## 7. Offline behavior
 
-Ofisi is deliberately resilient to bad networks:
+Diwan is deliberately resilient to bad networks:
 
 - **App shell offline**: the service worker caches the application itself, so the app opens even with no network. API data is never cached — you see the app, and your locally cached work, not stale server state.
 - **Crash-safe drafts**: before every save to the server, the document is written to a local IndexedDB draft. If the browser crashes or you go offline mid-edit, the editor offers to **restore the pending draft** on reload. Drafts are cleared after a successful save.

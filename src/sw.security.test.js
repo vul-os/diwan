@@ -72,7 +72,7 @@ describe('office service worker — sensitive + document routes are never cached
 describe('office service worker — cache versioning', () => {
   test('cache name is versioned so a stale shell is evicted on activate', () => {
     expect(swSource).toMatch(/const\s+CACHE_VERSION\s*=/)
-    expect(swSource).toMatch(/const\s+CACHE_NAME\s*=\s*`ofisi-\$\{CACHE_VERSION\}`/)
+    expect(swSource).toMatch(/const\s+CACHE_NAME\s*=\s*`diwan-\$\{CACHE_VERSION\}`/)
   })
 
   test('activate evicts every cache that is not the current version', () => {
@@ -84,8 +84,8 @@ describe('office service worker — cache versioning', () => {
 describe('office web app manifest — installability basics', () => {
   test('has the fields required for an installable PWA', () => {
     expect(manifest.id).toBeTruthy()
-    expect(manifest.name).toBe('Ofisi')
-    expect(manifest.short_name).toBe('Ofisi')
+    expect(manifest.name).toBe('Diwan')
+    expect(manifest.short_name).toBe('Diwan')
     expect(manifest.start_url).toBe('/')
     expect(manifest.scope).toBe('/')
     expect(manifest.display).toBe('standalone')

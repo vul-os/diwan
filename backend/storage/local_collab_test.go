@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"vulos-office/backend/config"
-	"vulos-office/backend/models"
+	"diwan/backend/config"
+	"diwan/backend/models"
 )
 
 func newCollabStore(t *testing.T) *LocalStorage {

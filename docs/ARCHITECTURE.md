@@ -1,29 +1,30 @@
-# Ofisi – Architecture
+# Diwan – Architecture
 
 ## Overview
 
-Ofisi is a collaborative document editing + e-signing service. It exposes:
+Diwan is a collaborative document editing + e-signing service. It exposes:
 - File CRUD with version history
 - REST persistence plus real-time collaboration (comments, suggestions, live
   co-editing). Live co-editing is always peer-to-peer over one E2E-encrypted
   room, in two CRDT flavours — see the note below
 - E-signing workflow (envelope → sign → sealed PDF)
 
-> **Scope:** Ofisi is documents-only (Docs, Sheets, Slides, Whiteboards, PDF/Signing). Calendar
+> **Scope:** Diwan is documents-only (Docs, Sheets, Slides, Whiteboards, PDF/Signing). Calendar
 > and Contacts come from the bring-your-own-mailbox PIM connector (lilmail
 > CalDAV/CardDAV + lilmail `/v1/calendar` + `/v1/contacts`), surfaced by the OS as
 > standalone widgets. Chat and video are third-party (Matrix/Element; Element Call /
 > Jitsi), not Vulos products. The Vulos OS is the shell that hosts the apps.
 
 > **Collaboration transport note:** Live co-editing is CRDT-based and runs
-> **entirely peer-to-peer — there is NO central document server.** The Ofisi
+> **entirely peer-to-peer — there is NO central document server.** The Diwan
 > binary hosts no op-relay, no doc-state hub, and no server-mediated collab
 > endpoint (confirmed in `main.go` at the `/v1` route block: "Office
 > collaboration is ALWAYS peer-to-peer … deliberately NO central document
-> server"). There are **two CRDT session flavours**, both riding the **same**
+> server"). The codebase carries **two CRDT session flavours** — one live, one
+> superseded but still tested — both riding the **same**
 > end-to-end-encrypted room (`src/lib/crdt/p2pRoom.js`) over the same
 > first-party `src/lib/collab/webrtc/fabric.js` fabric transport (re-homed
-> from the vendored relay-client SDK — Ofisi depends on no other Vulos
+> from the vendored relay-client SDK — Diwan depends on no other Vulos
 > product's package):
 > - **Yjs session** (`YP2PCollabSession`, `src/lib/crdt/yP2PSession.js`) — the
 >   structure-aware path used by **Docs**. The document is a Yjs document
@@ -32,9 +33,15 @@ Ofisi is a collaborative document editing + e-signing service. It exposes:
 >   whiteboard document type rides the same session with an Excalidraw-scene
 >   validator (`boardYdoc.js`).
 > - **Custom-CRDT session** (`P2PCollabSession`, `src/lib/crdt/p2pSession.js`) —
->   the hand-rolled CRDT path (text RGA, grid LWW, tree fractional-index —
->   `src/lib/crdt/{text,grid,tree}.js`) with an `{op, snap-req, snap}` wire
->   vocabulary and offline-buffer-then-sync convergence.
+>   the hand-rolled text-RGA path (`src/lib/crdt/text.js`, `crdt/index.js`) with
+>   an `{op, snap-req, snap}` wire vocabulary and offline-buffer-then-sync
+>   convergence. **No editor builds it any more**: Docs moved to the Yjs session
+>   above, and nothing outside `src/lib/crdt/__tests__/` and the library barrel
+>   constructs a `P2PCollabSession`. It is superseded code kept under test, not a
+>   second live path — do not read this bullet as a feature the app offers.
+>   (Sheets' grid LWW `crdt/grid.js` and Slides' fractional-index tree
+>   `crdt/tree.js` **are** live, but they ride the fabric directly through
+>   `GridSession` / `TreeSession`, not through `P2PCollabSession`.)
 > - In both cases peers connect **directly** over WebRTC data channels
 >   (STUN-assisted); a **content-blind relay** circuit is used only as a hard-NAT
 >   fallback (per-session X25519 box — ciphertext only). Frames are sealed
@@ -47,7 +54,7 @@ Ofisi is a collaborative document editing + e-signing service. It exposes:
 > - **The only server role** is content-blind peer **discovery** (signaling + ICE),
 >   resolved as a three-way choice (`src/lib/collab/transportSelection.js`, see
 >   docs/COLLABORATION.md §3): (1) this server's own `/api/peering/*`, provided
->   by a host (Vulos OS / Ephor) in front of Ofisi; else (2) a configured
+>   by a host (Vulos OS / Ephor) in front of Diwan; else (2) a configured
 >   rendezvous URL (`config.yaml` `collab.rendezvous_url` / `VULOS_RENDEZVOUS_URL`)
 >   pointing at ANY self-hosted `vulos-relayd`'s open rendezvous surface — no
 >   Vulos OS, no account, no host-box backend, and the standalone binary's own
@@ -68,7 +75,7 @@ flowchart TD
     Storage["backend/storage/<br/>local, PG"]
     Signing["backend/signing/<br/>crypto.go"]
     Fileacl["backend/fileacl/<br/>(per-file ACLs)"]
-    Obs["Observability: backend/obs/<br/>vulos_office_* metrics + OTel<br/>GET /metrics"]
+    Obs["Observability: backend/obs/<br/>diwan_* metrics + OTel<br/>GET /metrics"]
     Browser -->|"HTTP REST"| Server
     Server --> Storage
     Server --> Signing
@@ -137,20 +144,20 @@ flowchart TD
 - **Deploy modes** (`backend/deploymode/`, `DEPLOY_MODE`): exactly two — `standalone`
   (default; a fully sovereign self-host with no OS gateway in front — all features
   open, no billing/entitlement gating, blob I/O via the process-wide object client
-  or a silent no-op) and `os` (Ofisi running as an app **behind a Vulos OS box
-  gateway**). Ofisi is never centrally hosted by Vulos — `os` mode simply means
+  or a silent no-op) and `os` (Diwan running as an app **behind a Vulos OS box
+  gateway**). Diwan is never centrally hosted by Vulos — `os` mode simply means
   it runs behind a self-hosted Vulos OS box, not any service Vulos operates. In
   `os` mode the process **refuses to boot** without an
   authenticated posture (native auth or SSO introspection) so a hosted deployment can
   never silently collapse every caller onto one shared identity.
 - **Storage seam** (`backend/storage/seam_client.go`, `backend/handlers/bucket_store.go`):
   in `os` mode the gateway injects per-request `X-Vulos-Storage-*` headers describing a
-  short-lived, per-user S3 slice, so Ofisi never holds full-bucket credentials. The
+  short-lived, per-user S3 slice, so Diwan never holds full-bucket credentials. The
   headers are honoured **only** when the request also carries a valid
   `X-Vulos-Storage-Broker-Auth` matching `VULOS_STORAGE_BROKER_SECRET` (constant-time),
   and the injected endpoint is SSRF-checked (`ValidateSeamEndpoint`: https always,
   http only for loopback/private hosts). Otherwise the seam headers are ignored and
-  Ofisi falls back to the standalone object client. In every mode blob keys are built
+  Diwan falls back to the standalone object client. In every mode blob keys are built
   by `storage.OrgScopedKey(accountID, name)`, which scopes each object under its
   owning account and sanitises every segment so a caller-influenced id can never inject
   a path separator or `..` and escape into another account's namespace.

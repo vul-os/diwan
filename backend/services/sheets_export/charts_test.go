@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"vulos-office/backend/services/sheets_export"
+	"diwan/backend/services/sheets_export"
 )
 
 // These tests assert on the REAL EXPORTED BYTES: they unzip the .xlsx and read the

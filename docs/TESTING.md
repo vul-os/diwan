@@ -1,4 +1,4 @@
-# Frontend testing — Ofisi
+# Frontend testing — Diwan
 
 Two complementary layers cover the React app. Both are hermetic (no Go backend,
 no relay): the API surface is mocked.
@@ -20,7 +20,7 @@ no relay): the API surface is mocked.
 ├─────────────────────────────────────────────────────────────────────┤
 │ Layer 3 — Real P2P integration      npm run test:e2e:p2p             │
 │   • NOTHING mocked: a real vulos-relayd (rendezvous role) + two      │
-│     standalone vulos-office servers + two browsers + real WebRTC.   │
+│     standalone diwan servers + two browsers + real WebRTC.   │
 │   • proves OS-free peer-to-peer collaboration end to end.           │
 │   • separate config/job so it cannot destabilise layers 1–2.        │
 └─────────────────────────────────────────────────────────────────────┘
@@ -77,7 +77,7 @@ comments, suggestions). The `officePage` fixture attaches it automatically;
 ### Layer 3 — Real P2P integration (`npm run test:e2e:p2p`)
 
 The one suite in this repo with **no mocks at all**. It exists because the
-repo's central architectural claim — *a standalone Ofisi, with no Vulos OS and
+repo's central architectural claim — *a standalone Diwan, with no Vulos OS and
 no account, does real peer-to-peer collaboration through any self-hosted
 `vulos-relayd`* — was otherwise covered only by selector unit tests with a fake
 fabric.
@@ -88,14 +88,14 @@ npm run test:e2e:p2p
 
 What it boots (`e2e-p2p/stack.mjs`): a real `vulos-relayd` built from the
 sibling Ephor checkout (`../vulos-relay`) with `-rendezvous`, and **two** standalone
-`vulos-office` servers on separate ports with separate data dirs, both pointed
+`diwan` servers on separate ports with separate data dirs, both pointed
 at that relayd — plus a third with no rendezvous configured for the negative
 case. The two peers therefore share **no** server: only the relayd, and the room
 key in the invite link's URL fragment.
 
 | Requirement | Notes |
 |-------------|-------|
-| Go toolchain | builds the Ofisi binary and (unless `VULOS_RELAYD_BIN` is set) `vulos-relayd` |
+| Go toolchain | builds the Diwan binary and (unless `VULOS_RELAYD_BIN` is set) `vulos-relayd` |
 | `../vulos-relay` checkout | override with `VULOS_RELAY_REPO`; the suite **never modifies** it, it only `go build`s to a temp path. The whole file skips with a clear message when it is absent. |
 | `VULOS_RELAYD_BIN` | optional prebuilt relayd — what CI uses, so a broken relay checkout is reported as such and never mistaken for a failed claim |
 | Chromium flags | `playwright.p2p.config.js` sets `--disable-features=WebRtcHideLocalIpsWithMdns` so two loopback contexts can actually see each other's host candidates. This affects candidate visibility only — no protocol, signaling path or crypto changes. |
@@ -103,15 +103,15 @@ key in the invite link's URL fragment.
 What it asserts: the relay is reachable **and** cross-origin usable by a
 browser — `Allow-Origin: *`, a preflight that succeeds, no `Allow-Credentials`,
 verified both by header inspection and by fetching the relay from a real
-Chromium page on an Ofisi origin, since only a browser enforces CORS. That is
+Chromium page on a Diwan origin, since only a browser enforces CORS. That is
 the guarantee the direct-to-relay transport rests on, so a relayd that regressed
-it fails here rather than in the field. (Ofisi used to carry a same-origin proxy
-because the relay served no CORS; that is gone, and the suite asserts Ofisi
-mounts nothing for discovery.) It also asserts: a standalone Ofisi serves no
+it fails here rather than in the field. (Diwan used to carry a same-origin proxy
+because the relay served no CORS; that is gone, and the suite asserts Diwan
+mounts nothing for discovery.) It also asserts: a standalone Diwan serves no
 `/api/peering/*`; two browsers converge in both directions with the relay's own
 presence state confirming the signaling went through it — with the browsers'
 request logs showing the rendezvous calls aimed at the **relay's** origin, not
-either Ofisi's; offline divergence
+either Diwan's; offline divergence
 merges as a union on reconnect; and — the negative control — an unconfigured
 deployment reports local-only and refuses to mint invite links. The transport
 that carried the edits is asserted as *either* a direct host/host WebRTC pair
@@ -136,3 +136,43 @@ pretending "direct" in a sandbox where ICE cannot complete.
   with an injected in-process fabric (`src/lib/crdt/__tests__/p2pSession.test.js`
   and `p2pShare.integration.test.jsx`). The browser E2E covers the *sharer UI* and
   invite-link format; full ro enforcement in the browser would need a live relay.
+
+## Repository-integrity gates (Go `go test ./...`, root package)
+
+These are not frontend tests, but they run in the same CI job as the Go backend
+and they fail the build, so they belong on this page.
+
+| Test | Fails when |
+|------|-----------|
+| `docs_mirror_test.go` → `TestSiteDocsMirrorIsInSync` | a page under `docs/` (or `CHANGELOG.md` / `ROADMAP.md`) stops being byte-identical to its `site/docs/` mirror. There is no generator for that mirror; this is its replacement. It had already drifted — the published changelog was 26 lines behind. |
+| `docs_mirror_test.go` → `TestSiteDocsPageListIsMirrored` | `site/docs.html` publishes a page the mirror table does not cover, so a new site page cannot start drifting unnoticed. |
+| `docs_links_test.go` → `TestMarkdownRelativeLinksResolve` | any relative Markdown link in `README.md`, `docs/` or `third_party/*/VENDOR.md` points at a file that does not exist. It caught three dead links on the README's front page. `site/docs/` is excluded: its links are rewritten at render time by `site/docs.html`, so resolving them as file paths is the wrong model. |
+
+Both files assert a **minimum amount of work done** (files walked, links
+checked, pairs compared) as well as the result, so a broken walk or a regex that
+stops matching fails loudly instead of passing vacuously.
+
+## Vendored-binary provenance (Vitest)
+
+`src/lib/crdt/__tests__/vendorProvenance.test.js` recomputes the SHA-256 and byte
+size of every file in `third_party/dmtap-sync-wasm/vendor/` against
+`vendor/PROVENANCE.json`, and asserts the manifest covers exactly the files that
+are there. **It cannot skip** — it only hashes files already in the repo.
+
+It exists because that copy had silently gone stale against upstream (a
+395,912-byte `.wasm` against upstream's 400,930-byte build) and nothing failed.
+See `third_party/dmtap-sync-wasm/VENDOR.md` for the incident this class of drift
+caused upstream, and for the re-vendoring recipe — which includes re-recording
+the digests. Never edit `PROVENANCE.json` to make this test pass.
+
+## Share-link token storage (Go)
+
+The share-link token is stored only as a SHA-256 hash. Four suites hold that
+line, and each fails if the plaintext returns:
+
+| Test | Fails when |
+|------|-----------|
+| `backend/storage/local_sharelinks_hash_test.go` | the file backend writes a token into a record or a filename; a pre-hash data directory does not convert; a converted link stops resolving |
+| `backend/storage/postgres_sharelinks_test.go` | the Postgres backend writes a token into `share_links.token`, or the backfill of pre-fix rows does not run. **Requires `VULOS_TEST_POSTGRES_DSN`**; it skips with a message naming exactly what went unverified, and CI's `go-postgres` job always sets it |
+| `backend/storage/backend_contract_test.go` | either backend returns a token from a read path, or accepts a link with no token |
+| `backend/handlers/sharelink_token_once_test.go` | `GET /api/files/:id/share-links` emits a `token` key (even an empty one), or the stored hash works as a credential on the anonymous view route |

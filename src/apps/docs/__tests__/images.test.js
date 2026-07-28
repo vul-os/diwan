@@ -1,5 +1,5 @@
 /**
- * WAVE-57 — Inline images in Vulos Office Docs.
+ * WAVE-57 — Inline images in Diwan Docs.
  *
  * Coverage:
  *   1. Insert / resize / align / alt ops on a real TipTap editor using the

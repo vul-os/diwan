@@ -1,11 +1,11 @@
-# Security Testing — Ofisi
+# Security Testing — Diwan
 
 This document describes the **pentest / adversarial test suite** for the
-`vulos-office` backend (Go) and the document/slide HTML render path (JSX/vitest).
+`diwan` backend (Go) and the document/slide HTML render path (JSX/vitest).
 
-> Ofisi is the documents-only product. Chat and video are third-party
+> Diwan is the documents-only product. Chat and video are third-party
 > (Matrix/Element; Element Call / Jitsi), not Vulos products; this document covers
-> only Ofisi's own attack surface.
+> only Diwan's own attack surface.
 
 The suites are written attacker-first: every test **attempts a concrete attack
 and asserts it is blocked**. A green run means the corresponding defense holds.
@@ -17,7 +17,7 @@ flaky test.
 Go (backend) pentests:
 
 ```bash
-cd ofisi
+cd diwan
 
 # Run only the pentest suites (verbose):
 CGO_ENABLED=0 go test ./backend/... -run 'Pentest' -v
@@ -29,7 +29,7 @@ CGO_ENABLED=0 go build ./... && CGO_ENABLED=0 go vet ./... && CGO_ENABLED=0 go t
 Frontend (HTML render / sanitiser) pentest:
 
 ```bash
-cd ofisi
+cd diwan
 npx vitest run src/apps/slides/sanitize.test.js
 # or the full vitest suite:
 npm test
@@ -46,6 +46,9 @@ npm test
 | `backend/handlers/pentest_localfiles_test.go` | Local-file serve | 3 (path traversal) |
 | `backend/handlers/pentest_creds_test.go` | Auth/creds | 5 (per-user credentials) |
 | `backend/handlers/pentest_helpers_test.go` / `pentest_storage_test.go` | test harness | (support) |
+| `backend/handlers/sharelink_sec_test.go` | Share-link view route | 3 (write escalation from a token), 7 (brute force / existence oracle) |
+| `backend/handlers/sharelink_token_once_test.go` | Share-link management API | 7 (credential-at-rest: no endpoint may re-emit a link token) |
+| `backend/storage/local_sharelinks_hash_test.go` / `postgres_sharelinks_test.go` | Share-link persistence | 7 (credential-at-rest: no backend may store a token in the clear) |
 | `src/apps/slides/sanitize.test.js` | JSX render path | 4 (XSS) |
 
 These build on (and do not replace) the pre-existing focused tests:
@@ -118,8 +121,27 @@ proves there is **no ambient authority**: a state-changing request that carries
 no verified token (and only a forged `X-Account-ID`) is attributed to the local
 `self` identity, **never** to an attacker-named account.
 
+### 7. Credentials at rest (`sharelink_token_once_test.go`, `local_sharelinks_hash_test.go`, `postgres_sharelinks_test.go`)
+
+A share-link token is a bearer capability: possession is access. It was stored
+**in the clear** — as the filename and a `token` field in
+`data/sharelinks/<token>.json`, and in `share_links.token` on Postgres — so
+read access to the store was read access to every document those links pointed
+at. `backend/invites` had the right shape all along (SHA-256 of the raw token,
+raw shown once at mint); share links now match it.
+
+The suites above assert the negative space directly: that the plaintext is
+absent from the bytes on disk and from the database column, that no read path
+on any backend can return a token, that the management endpoint emits no
+`token` key at all, and that presenting the stored hash to the view route does
+not open the document. Records written by the previous release convert in place
+on first use, and there are tests for that too — an existing link that stopped
+working would be as much a defect as a leaked one.
+
 ## Findings
 
-No live vulnerabilities were found while writing this suite — all attacks are
-blocked. If you add a new file-scoped, signer-scoped, or admin-scoped endpoint,
-extend the relevant pentest suite with a negative test before shipping.
+One finding, fixed: share-link tokens were stored in plaintext (see class 7
+above). Everything else in this suite was already blocked when the tests were
+written. If you add a new file-scoped, signer-scoped, or admin-scoped endpoint,
+extend the relevant pentest suite with a negative test before shipping — and if
+you add a new bearer credential, store its hash, not it.

@@ -1,17 +1,59 @@
 # Changelog
 
-All notable changes to Ofisi are documented here.  
+All notable changes to Diwan are documented here.  
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).  
-Ofisi uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+Diwan uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
 ## [Unreleased]
 
-### Changed — Ofisi is now self-contained: no dependency on another Vulos product's package
+### Security — share-link tokens are stored hashed (was: plaintext)
+
+- Share-link tokens were persisted **in the clear** — as
+  `data/sharelinks/<token>.json` on the file backend and in
+  `share_links.token` on Postgres — so anyone who could read the store (a
+  backup, a stray `SELECT *`) held working, unexpiring read capabilities to the
+  documents those links pointed at. Only a SHA-256 hash is stored now, the same
+  discipline `backend/invites` already applied to registration tokens.
+- **Links you have already handed out keep working.** Both backends convert
+  existing records in place on first use: the file store rewrites each record
+  under its hash and deletes the plaintext-named file; Postgres backfills the
+  column with `sha256()` and logs how many rows it converted. The view route
+  hashes whatever a visitor presents, so an old URL still resolves. Neither
+  conversion is a schema change.
+- **What does change, visibly:** the link URL is now shown **once**, in the mint
+  response. `GET /api/files/:id/share-links` no longer returns a token for any
+  link, and the share dialog says "URL shown only when created" for links the
+  current session did not mint. Revoking still works from the link id, so a
+  leaked link can always be killed without its URL.
+- Covered by `backend/storage/local_sharelinks_hash_test.go`,
+  `backend/storage/postgres_sharelinks_test.go`,
+  `backend/handlers/sharelink_token_once_test.go` and the dual-backend contract
+  test — each fails if the plaintext ever comes back.
+
+### Fixed — the vendored `dmtap-sync-wasm` copy was stale, and nothing said so
+
+- `third_party/dmtap-sync-wasm/vendor/` carried a 395,912-byte
+  `dmtap_sync_bg.wasm` (`sha256 94262463…`) against upstream's 400,930-byte
+  build (`sha256 0c50eff9…`), missing four `snapshot_body_*` exports. Re-vendored
+  from `envoir/crates/dmtap-sync-wasm`.
+- Added `vendor/PROVENANCE.json` and
+  `src/lib/crdt/__tests__/vendorProvenance.test.js`, which recompute every
+  vendored file's digest and size on each `npm test` and **fail** on drift. The
+  guard cannot skip — it only hashes files already in the repo. This is the
+  failure mode upstream's own `bindings/go/embed.go` documents: a stale blob
+  whose Rust-side String capacity outran its length aborted the allocator on
+  free, invisibly, because nothing ties a binary blob to its source.
+- `VENDOR.md` corrected: it claimed Sheets had **retired** its hand-rolled CRDT.
+  It has not — `src/lib/crdt/grid.js` is still present, still the default, and
+  still the fallback when the WASM load fails. `substrateGrid.js` is an
+  alternative behind the off-by-default `VITE_SUBSTRATE_SYNC` flag.
+
+### Changed — Diwan is now self-contained: no dependency on another Vulos product's package
 
 - Removed the `@vulos/relay-client` npm dependency (`third_party/relay-client`)
-  entirely. Ofisi no longer depends on any other Vulos product's package.
+  entirely. Diwan no longer depends on any other Vulos product's package.
 - **Endpoint selection** (cloud↔LAN failover used by the API client, PWA
   bootstrap, and `main.jsx`/`office.jsx` entry points) is re-homed as
   first-party code at `src/lib/endpoints/` (`index.js`, `offlineBootstrap.js`)
@@ -21,7 +63,7 @@ Ofisi uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   same E2E-encrypted rooms, the same presence/live-cursors. The `FabricClient`
   transport (plus signaling/rendezvous/prekey/relay-box support code) is
   re-homed as first-party source at `src/lib/collab/webrtc/` instead of a
-  vendored package dependency. Unused subpaths the SDK shipped but Ofisi never
+  vendored package dependency. Unused subpaths the SDK shipped but Diwan never
   imported (a Node health-check export, region-aware PoP selection, audio/
   video calling signaling) were dropped rather than carried along.
 - **New:** STUN/TURN are now directly configurable (`VITE_STUN_URLS`,
@@ -38,13 +80,13 @@ Ofisi uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.3.0] - 2026-07-17
 
-### Added — Whiteboards, a new Ofisi document type (Board folded into Ofisi)
+### Added — Whiteboards, a new Diwan document type (Board folded into Diwan)
 
-- **Vulos Board is now a first-class Ofisi document type.** The Excalidraw-based
+- **Vulos Board is now a first-class Diwan document type.** The Excalidraw-based
   collaborative whiteboard (formerly the separate `@vulos/board-ui` library) is
   brought in as a `whiteboard` file type alongside doc/sheet/slide/PDF —
   "**New → Whiteboard**" from the launcher, the app rail, and the file browser.
-- **It rides Ofisi's OWN distributed peer-to-peer collab engine** — the exact
+- **It rides Diwan's OWN distributed peer-to-peer collab engine** — the exact
   same `YP2PCollabSession` + `FabricClient` transport, E2E-encrypted room,
   content-blind signalling (`/api/peering/*`) and TURN-only-on-hard-NAT fallback
   that Docs uses. There is **no** central whiteboard/collab server and **no**
@@ -63,7 +105,7 @@ Ofisi uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed — Collaboration is now ALWAYS peer-to-peer (no central document server)
 
-- **Removed the server-mediated collaboration path entirely.** Ofisi's
+- **Removed the server-mediated collaboration path entirely.** Diwan's
   differentiator is that co-editing is genuinely distributed peer-to-peer —
   unlike Collabora/OnlyOffice, which route every edit through a central document
   server. The codebase had grown a parallel **server-mediated** collab path (an
@@ -113,7 +155,7 @@ Ofisi uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   annotate → export pipeline. The risky geometry (PDF↔screen coordinate mapping,
   Y-flip, scale) lives in a pure, unit-tested `formFields.js` module.
 
-### Added — Ofisi interop (import + export fidelity)
+### Added — Diwan interop (import + export fidelity)
 
 - **Unified Open flow**: drag-and-drop + file-picker on every app home detects the
   format (.docx/.xlsx/.pptx/.odt/.ods/.odp/.md/.txt/.html/.csv/.pdf) and routes to
@@ -274,7 +316,7 @@ sanitiser ingress paths.
 
 ### Added — Standalone, server-honest Settings + admin surface
 
-A self-hoster running Ofisi standalone now gets a Settings surface that
+A self-hoster running Diwan standalone now gets a Settings surface that
 reports what the instance is **actually** doing, instead of hardcoded placeholders.
 
 - **New endpoint** `GET /api/system/info` — honest runtime facts: build version,
@@ -300,7 +342,7 @@ reports what the instance is **actually** doing, instead of hardcoded placeholde
 
 ### Changed — Calendar + Contacts moved to the mail connector
 
-Ofisi is now **documents-only** (Docs, Sheets, Slides, PDF/Signing). Calendar
+Diwan is now **documents-only** (Docs, Sheets, Slides, PDF/Signing). Calendar
 and Contacts were redundant with the canonical PIM surfaces now served by the **mail
 connector** (lilmail CalDAV/CardDAV + `/v1/calendar` + `/v1/contacts` +
 `@vulos/mail-ui`), so they have been removed from this repo. This
@@ -325,13 +367,13 @@ mirrors the earlier Meet/Talk extractions.
 > `vulos-calendar` / `vulos-contacts` tiles and the wede registry to the Mail
 > product's Calendar/Contacts surfaces.
 
-### Changed — Ofisi is now documents-only
+### Changed — Diwan is now documents-only
 
-Ofisi is now scoped to **documents only** (Docs, Sheets, Slides, PDF/Signing).
+Diwan is now scoped to **documents only** (Docs, Sheets, Slides, PDF/Signing).
 Real-time chat + Spaces and video calling/meetings have been
-split into their own products, combined with Ofisi by the **wede** shell:
+split into their own products, combined with Diwan by the **wede** shell:
 
-- **Vulos Meet → `vulos-meet`**: the standalone video product. Ofisi's meeting/lobby/
+- **Vulos Meet → `vulos-meet`**: the standalone video product. Diwan's meeting/lobby/
   TURN/recording surface and the `/meet/*` routes were removed from this repo.
 - **Vulos Talk → `vulos-talk`**: team chat + Spaces (channels, DMs, threads, reactions,
   pins, presence). The `/spaces/*` routes, message CRDT store, and chat UI were removed.
@@ -350,7 +392,7 @@ split into their own products, combined with Ofisi by the **wede** shell:
   THREAT-MODEL, the design system, and the deploy/seed/screenshot scripts; deleted the
   Meet recording design note and the Spaces/Meetings demo seeding + screenshots.
 
-Ofisi's sidebar keeps an **external** launcher link to Talk (`talk.vulos.org`) — a
+Diwan's sidebar keeps an **external** launcher link to Talk (`talk.vulos.org`) — a
 cross-product link, not an in-process surface.
 
 ### Added (Google-parity Wave H — Sheets/Slides/Docs polish)
@@ -493,7 +535,7 @@ cross-product link, not an in-process surface.
 - **DEEP-LINK ROUTING**: Wired in `App.jsx`.
   - `/meet/:meetId` route resolves a meeting ID → session → `/room/:sessionId` (works
     both public-prefix and authenticated).
-  - `web+vulosoffice://` protocol handler registered on mount via
+  - `web+diwan://` protocol handler registered on mount via
     `navigator.registerProtocolHandler`; `?goto=<path>` query param parsed and navigated on load.
   - `/pdf/:id` route added (was missing from the main monolithic app router).
 - **Build-time version injection** via `-ldflags "-X main.Version=vX.Y.Z"`.
@@ -585,12 +627,12 @@ cross-product link, not an in-process surface.
 - Storage interface extended with file versioning (OFFICE-08): `ListVersions`,
   `GetVersion`, `RestoreVersion`, `PruneVersions`, `LabelVersion`.
 - Observability: `backend/obs/` provides Prometheus metrics
-  (`vulos_office_*`) and OpenTelemetry tracing.
+  (`diwan_*`) and OpenTelemetry tracing.
 
 ---
 
-[Unreleased]: https://github.com/vul-os/ofisi/compare/v0.3.0...HEAD
-[0.3.0]: https://github.com/vul-os/ofisi/compare/v0.2.1...v0.3.0
-[0.2.1]: https://github.com/vul-os/ofisi/compare/v0.2.0...v0.2.1
-[0.2.0]: https://github.com/vul-os/ofisi/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/vul-os/ofisi/releases/tag/v0.1.0
+[Unreleased]: https://github.com/vul-os/diwan/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/vul-os/diwan/compare/v0.2.1...v0.3.0
+[0.2.1]: https://github.com/vul-os/diwan/compare/v0.2.0...v0.2.1
+[0.2.0]: https://github.com/vul-os/diwan/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/vul-os/diwan/releases/tag/v0.1.0

@@ -85,6 +85,46 @@ describe('Share links + transfer ownership (MSW integration)', () => {
       expect(screen.getByText(/\/view\/tok_/)).toBeInTheDocument())
   })
 
+  // The server keeps only a SHA-256 of the token, so a link's URL exists in
+  // exactly one place: the mint response. These two tests pin both halves — the
+  // URL is there right after minting, and it is gone (with a plain explanation,
+  // not a broken URL) for any link the session did not mint.
+  it('shows no URL and no copy button for a link this session did not mint', async () => {
+    // Seed a link exactly as the server would return it on GET: no token field.
+    mockState.shareLinks.doc1 = [{
+      id: 'link-preexisting',
+      file_id: 'doc1',
+      created_by: 'you@vulos.test',
+      has_password: false,
+      expires_at: null,
+      revoked: false,
+      created_at: new Date().toISOString(),
+    }]
+    openShare()
+
+    expect(await screen.findByText(/URL shown only when created/i)).toBeInTheDocument()
+    // Nothing that looks like a share URL is rendered…
+    expect(screen.queryByText(/\/view\//)).not.toBeInTheDocument()
+    // …and there is no copy affordance to paste an empty one from.
+    expect(screen.queryByRole('button', { name: /Copy link URL/i })).not.toBeInTheDocument()
+    // Revoke still works without the token — the owner can always kill a leak.
+    expect(screen.getByRole('button', { name: /Revoke link/i })).toBeInTheDocument()
+  })
+
+  it('copies the minted URL from the mint response, not from the list', async () => {
+    openShare()
+    fireEvent.click(await screen.findByRole('button', { name: /Create link/i }))
+    const copyBtn = await screen.findByRole('button', { name: /Copy link URL/i })
+
+    // The list response carries no token, so a copy that worked off the list
+    // would copy `/view/undefined`. It must copy the minted URL instead.
+    const url = screen.getByText(/\/view\/tok_/).textContent
+    fireEvent.click(copyBtn)
+    await waitFor(() =>
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(url))
+    expect(url).not.toMatch(/undefined/)
+  })
+
   it('mints a password + expiring link (flags surface in the list)', async () => {
     openShare()
     const pwInput = await screen.findByLabelText(/Optional link password/i)

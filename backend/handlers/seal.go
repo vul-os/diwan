@@ -31,9 +31,9 @@ import (
 	"strings"
 	"time"
 
-	"vulos-office/backend/billing"
-	"vulos-office/backend/models"
-	"vulos-office/backend/storage"
+	"diwan/backend/billing"
+	"diwan/backend/models"
+	"diwan/backend/storage"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"

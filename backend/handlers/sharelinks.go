@@ -8,6 +8,11 @@ package handlers
 //     collaborator or stranger cannot create or enumerate links.
 //   - The token is 256 bits of randomness (signing.GenerateShareLinkToken):
 //     unguessable, so possession == access, and revocable so a leaked link dies.
+//   - The token itself is stored ONLY as a SHA-256 hash, the same discipline
+//     backend/invites applies to registration tokens. It is returned to the
+//     owner exactly once — in the mint response — and never again, because no
+//     backend can produce it. Reading the share-link store therefore yields
+//     hashes, not working capabilities.
 //   - A password, when set, is stored ONLY as a bcrypt hash; the plaintext never
 //     touches disk and the view route rejects access until the correct password
 //     is supplied. The hash is never serialized to any client.
@@ -23,11 +28,11 @@ import (
 	"net/http"
 	"time"
 
-	"vulos-office/backend/audit"
-	"vulos-office/backend/fileacl"
-	"vulos-office/backend/models"
-	"vulos-office/backend/signing"
-	"vulos-office/backend/storage"
+	"diwan/backend/audit"
+	"diwan/backend/fileacl"
+	"diwan/backend/models"
+	"diwan/backend/signing"
+	"diwan/backend/storage"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -113,12 +118,19 @@ func (h *ShareLinkHandler) Create(c *gin.Context) {
 	}
 	recordAudit(h.audit, requesterID(c), audit.ActionShareLinkMint, id, "link="+link.ID)
 
-	// Return the link (token included so the owner can build the URL). PasswordHash
-	// is json:"-", so it is never serialized.
+	// This response is the ONLY place the raw token is ever emitted — the store
+	// kept only its hash, so List can never return it again. PasswordHash is
+	// json:"-", so it is never serialized at all.
 	c.JSON(http.StatusCreated, link)
 }
 
 // List handles GET /api/files/:id/share-links.
+//
+// The returned records carry NO token (models.ShareLink.Token is omitempty and
+// the store has only a hash), so this endpoint cannot be used to recover a link
+// URL — by the owner or by anyone who reaches it. It is a management view:
+// which links exist, whether they are password-gated, when they expire, and the
+// id needed to revoke them.
 func (h *ShareLinkHandler) List(c *gin.Context) {
 	id := c.Param("id")
 	if !h.authz.requireOwner(c, id) {

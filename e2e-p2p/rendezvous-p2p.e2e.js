@@ -2,19 +2,19 @@
  * rendezvous-p2p.e2e.js — proving the single biggest architectural claim in the
  * repo, end to end, with nothing mocked:
  *
- *   "A STANDALONE Ofisi (no Vulos OS, no account, no /api/peering/*) does real
+ *   "A STANDALONE Diwan (no Vulos OS, no account, no /api/peering/*) does real
  *    peer-to-peer collaboration through any self-hosted vulos-relayd."
  *
  * Everything else about that claim was covered only by selector unit tests with
  * a fake fabric. This suite runs the real thing: a real `vulos-relayd` binary
  * built from the sibling Ephor checkout with the rendezvous role enabled,
- * two real standalone `vulos-office` servers (separate ports, separate data
+ * two real standalone `diwan` servers (separate ports, separate data
  * dirs — no shared state whatsoever), two real browser contexts, and a real
  * WebRTC data channel.
  *
  * ── What "proven" means here ────────────────────────────────────────────────
  *
- * The two peers are served by two DIFFERENT Ofisi servers that share no storage
+ * The two peers are served by two DIFFERENT Diwan servers that share no storage
  * and no document endpoint. The only things they have in common are (a) the one
  * relayd both are configured to discover through, and (b) the room key, which
  * lives in the invite link's URL fragment and is never sent to any server. So
@@ -32,7 +32,7 @@
  *
  * ── The browser calls the relayd DIRECTLY ───────────────────────────────────
  *
- * There is no Ofisi server in the discovery path: the pages fetch the relay's
+ * There is no Diwan server in the discovery path: the pages fetch the relay's
  * own origin cross-origin, which works because relayd's rendezvous role serves
  * CORS. That is asserted below as a measured fact about the relay (not assumed),
  * including from a real browser, since only a browser enforces CORS. It also
@@ -126,7 +126,7 @@ function recordRequests(page) {
   return seen
 }
 
-/** Wait for the editor of an Ofisi docs page to be interactive. */
+/** Wait for the editor of an Diwan docs page to be interactive. */
 async function openDoc(page, url) {
   await page.goto(url)
   await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 60_000 })
@@ -157,11 +157,11 @@ test('relayd rendezvous is browser-reachable cross-origin — the guarantee the 
 
   // ── The CORS contract, asserted as a REQUIREMENT ──────────────────────────
   //
-  // Ofisi's browser code calls this relayd's origin directly. That only works
+  // Diwan's browser code calls this relayd's origin directly. That only works
   // because relayd's rendezvous role sends CORS headers, so this suite pins the
   // exact posture the transport depends on: a relayd that regressed it would
   // break every standalone deployment, and this test is what catches that here
-  // rather than in the field. (Ofisi carried a same-origin proxy until relayd
+  // rather than in the field. (Diwan carried a same-origin proxy until relayd
   // shipped this; see docs/COLLABORATION.md §3.)
   const ice = await request.get(`${stack.relayUrl}/rendezvous/ice`, {
     headers: { Origin: stack.offices[0].url },
@@ -192,7 +192,7 @@ test('relayd rendezvous is browser-reachable cross-origin — the guarantee the 
   // ── …and the same thing from a REAL browser on a DIFFERENT origin ─────────
   //
   // Header assertions above are necessary but not sufficient: only a browser
-  // enforces CORS. This runs the actual fetches from an Ofisi page, so a
+  // enforces CORS. This runs the actual fetches from an Diwan page, so a
   // preflight that a raw HTTP client accepts but Chromium rejects cannot pass.
   const ctx = await browser.newContext()
   const page = await ctx.newPage()
@@ -230,22 +230,22 @@ test('relayd rendezvous is browser-reachable cross-origin — the guarantee the 
   }
 })
 
-test('a standalone Ofisi advertises the rendezvous and mounts no host-box peering', async ({ request }) => {
+test('a standalone Diwan advertises the rendezvous and mounts no host-box peering', async ({ request }) => {
   const [a] = stack.offices
 
   // The premise of the whole claim: this binary serves no /api/peering/*.
   const peering = await request.get(`${a.url}/api/peering/ice`)
-  expect(peering.status(), 'a standalone Ofisi must not serve host-box peering').toBe(404)
+  expect(peering.status(), 'a standalone Diwan must not serve host-box peering').toBe(404)
 
   const reach = await (await request.get(`${a.url}/api/reachability`)).json()
   expect(reach.rendezvous_url).toBe(stack.relayUrl)
   // The browser is given the relay's own origin and calls it directly; this
   // server mounts nothing for the rendezvous protocol.
   expect((await request.get(`${a.url}/api/rendezvous/healthz`)).status(),
-    'Ofisi must not mount a rendezvous proxy — the browser talks to the relay').toBe(404)
+    'Diwan must not mount a rendezvous proxy — the browser talks to the relay').toBe(404)
 })
 
-test('THE PAYOFF — two standalone Ofisi servers collaborate P2P through the relayd', async ({ browser }) => {
+test('THE PAYOFF — two standalone Diwan servers collaborate P2P through the relayd', async ({ browser }) => {
   const [a, b] = stack.offices
   const docA = await createDoc(a.url, 'P2P Proof A')
   const docB = await createDoc(b.url, 'P2P Proof B')
@@ -274,7 +274,7 @@ test('THE PAYOFF — two standalone Ofisi servers collaborate P2P through the re
 
     // Both sides must announce themselves to the relay — directly, cross-origin
     // — before anything can connect. Note the URLs matched here are the RELAY's
-    // origin, not either Ofisi's: that is the whole point.
+    // origin, not either Diwan's: that is the whole point.
     await expect
       .poll(() => reqA.filter((r) => r.url.startsWith(`${stack.relayUrl}/rendezvous/`)).length, {
         message: 'peer A never spoke the rendezvous protocol',
@@ -446,7 +446,7 @@ test('offline divergence — both peers edit disconnected, then converge on reco
   }
 })
 
-test('NEGATIVE — with no rendezvous configured, standalone Ofisi reports local-only and never fakes a session', async ({ browser, request }) => {
+test('NEGATIVE — with no rendezvous configured, standalone Diwan reports local-only and never fakes a session', async ({ browser, request }) => {
   const lo = stack.localOnly
   expect(lo, 'the local-only instance must be booted for this test').toBeTruthy()
 

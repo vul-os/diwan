@@ -8,11 +8,11 @@ import (
 	"sync"
 	"testing"
 
-	"vulos-office/backend/billing"
-	"vulos-office/backend/fileacl"
-	"vulos-office/backend/middleware"
-	"vulos-office/backend/seam"
-	"vulos-office/backend/updatelog"
+	"diwan/backend/billing"
+	"diwan/backend/fileacl"
+	"diwan/backend/middleware"
+	"diwan/backend/seam"
+	"diwan/backend/updatelog"
 
 	"github.com/gin-gonic/gin"
 )

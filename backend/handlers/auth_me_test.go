@@ -14,8 +14,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"vulos-office/backend/config"
-	"vulos-office/backend/middleware"
+	"diwan/backend/config"
+	"diwan/backend/middleware"
 
 	"github.com/gin-gonic/gin"
 )

@@ -1,8 +1,8 @@
-# Threat Model — Ofisi
+# Threat Model — Diwan
 
 STRIDE pass. Last updated: 2026-06-26.
 
-> **Scope:** Ofisi is the **documents-only** product (Docs, Sheets, Slides,
+> **Scope:** Diwan is the **documents-only** product (Docs, Sheets, Slides,
 > PDF/Signing). Calendar/Contacts come from the bring-your-own-mailbox PIM connector
 > (lilmail, CalDAV/CardDAV), and chat/video are third-party (Matrix/Element; Element
 > Call / Jitsi) — those surfaces are out of scope here.

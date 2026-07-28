@@ -26,8 +26,8 @@ import (
 	"strings"
 	"time"
 
-	"vulos-office/backend/signing"
-	"vulos-office/backend/storage"
+	"diwan/backend/signing"
+	"diwan/backend/storage"
 
 	"github.com/gin-gonic/gin"
 )

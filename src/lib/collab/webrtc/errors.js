@@ -1,5 +1,5 @@
 /**
- * errors.js — Ofisi's first-party WebRTC/fabric structured error types.
+ * errors.js — Diwan's first-party WebRTC/fabric structured error types.
  *
  * Exported from the barrel so consumers can instanceof-check:
  *

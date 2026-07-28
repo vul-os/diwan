@@ -1,27 +1,27 @@
 /**
  * transportSelection.js — the three-way collaboration transport decision.
  *
- * Every FabricClient construction site in Ofisi (useCollabFabric.js for
+ * Every FabricClient construction site in Diwan (useCollabFabric.js for
  * presence/Sheets/Slides doc-sync, useP2PCollab.js for Docs/Whiteboard invite
  * links) needs the same answer to "how do we reach a peer?", in the same
  * priority order:
  *
  *   1. HOST_PEERING  — this server itself mounts `/api/peering/*` (a Vulos OS
- *      or Ephor host is in front of Ofisi). Preferred when present:
- *      unchanged from Ofisi's original behaviour, and it is the one transport
+ *      or Ephor host is in front of Diwan). Preferred when present:
+ *      unchanged from Diwan's original behaviour, and it is the one transport
  *      that can carry an authToken tied to an account session.
  *   2. RENDEZVOUS    — no host-box peering, but this deployment has a
  *      configured rendezvous URL (config.yaml `collab.rendezvous_url` /
  *      VULOS_RENDEZVOUS_URL, see backend/config/config.go): any self-hosted
  *      `vulos-relayd`'s open announce/resolve/signal/mailbox + ICE surface —
  *      no Vulos OS, no account. THE PAYOFF: this is what makes standalone
- *      Ofisi capable of real P2P.
+ *      Diwan capable of real P2P.
  *
- *      The browser calls that relayd's origin DIRECTLY, cross-origin. Ofisi's
+ *      The browser calls that relayd's origin DIRECTLY, cross-origin. Diwan's
  *      server is not in the discovery path at all, so it never sees even the
  *      (already content-blind) rendezvous envelopes. This relies on relayd's
  *      rendezvous role serving CORS, which e2e-p2p/ asserts against a real
- *      relayd and a real browser. Ofisi previously pass-through-proxied the
+ *      relayd and a real browser. Diwan previously pass-through-proxied the
  *      protocol on its own origin because relayd sent no CORS headers and 405'd
  *      the preflight; that proxy is gone. See docs/COLLABORATION.md §3.
  *   3. LOCAL_ONLY    — neither is available. The editor keeps working; it
@@ -92,7 +92,7 @@ export async function selectCollabTransport({
   }
   if (!url) return none
 
-  // Straight at the relay: no Ofisi origin in the discovery path.
+  // Straight at the relay: no Diwan origin in the discovery path.
   return {
     transport: TRANSPORT_RENDEZVOUS,
     rendezvousBaseUrl: url.replace(/\/+$/, ''),

@@ -6,22 +6,24 @@
  *
  * WHY
  * ---
- * `grid.js` is a perfectly good LWW-map CRDT — and it is also the fifth such
- * engine in the Vulos suite, each with its own clock, its own total order, and
- * its own set of bugs to find. `substrate/SYNC.md` §4.4 specifies exactly this
- * data type (an LWW register keyed by `(target, field)`, resolved by HLC), and
- * `dmtap-sync-wasm` is the *same compiled implementation* a Rust server runs,
- * proven byte-identical across both surfaces against 22 frozen conformance
- * vectors. Adopting it here retires one engine and makes Sheets' merge
- * semantics interoperable with every other product that adopts the substrate.
+ * `grid.js` is a perfectly good LWW-map CRDT — and it is also one of several
+ * such engines across the Vulos suite, each with its own clock, its own total
+ * order, and its own set of bugs to find. `substrate/SYNC.md` §4.4 specifies
+ * exactly this data type (an LWW register keyed by `(target, field)`, resolved
+ * by HLC), and `dmtap-sync-wasm` is the *same compiled implementation* a Rust
+ * server runs — upstream reports it byte-identical across its native and WASM
+ * surfaces against its frozen conformance vectors. Running Sheets on it makes
+ * the grid's merge semantics interoperable with every other product that adopts
+ * the substrate.
  *
- * This class is a DROP-IN for `GridSession`: same constructor options, same
- * methods, same events. Which one the editor builds is chosen by the
- * `VITE_SUBSTRATE_SYNC` flag (see `src/lib/flags.js`); the `grid.js` path is
- * untouched and remains the default, exactly as `VITE_UPDATE_LOG` gated
- * CRDT-native persistence.
+ * It does NOT retire `grid.js`. This class is a DROP-IN for `GridSession` —
+ * same constructor options, same methods, same events — and which one the
+ * editor builds is chosen by the `VITE_SUBSTRATE_SYNC` flag (see
+ * `src/lib/flags.js`). The `grid.js` path is untouched, remains the DEFAULT,
+ * and is still the fallback when the WASM load fails, exactly as
+ * `VITE_UPDATE_LOG` gated CRDT-native persistence. Two engines, both live.
  *
- * THE MAPPING (Ofisi's grid → SYNC.md §4.4)
+ * THE MAPPING (Diwan's grid → SYNC.md §4.4)
  * -----------------------------------------
  *   namespace  'sheet'
  *   target     `cell:<r>,<c>`   — one LWW object per cell
@@ -35,7 +37,7 @@
  * WHY `clear` IS NOT A DEATH CERTIFICATE. The substrate has a purpose-built
  * remove-wins delete (§4.5, `kind 4`), and it is the wrong tool here. A death
  * certificate DOMINATES: once a cell is deleted, no ordinary `lww-set` can
- * revive it, however much later it happens. Ofisi's grid is plain LWW — clear a
+ * revive it, however much later it happens. Diwan's grid is plain LWW — clear a
  * cell, type into it again, and the value comes back. Modelling clear as a
  * death certificate would silently swallow the second edit. Using the LWW
  * register for both preserves the existing, user-visible behaviour exactly.
@@ -50,7 +52,7 @@
  * migration: within one deployment every replica runs the same path.
  *
  * AUTHENTICATION. Ops go in through `ingest_ambient_authenticated` — the §5.6
- * path for ops whose authenticity was established out of band. Ofisi's grid ops
+ * path for ops whose authenticity was established out of band. Diwan's grid ops
  * are unsigned today (they ride an authenticated fabric room / the server's own
  * update log), so this is the honest mapping and NOT a downgrade. It is also a
  * real hole on a multi-author untrusted transport, which is why the substrate
@@ -94,7 +96,7 @@ export function substrateSyncReady() {
 }
 
 /**
- * A 32-byte HLC author key derived from Ofisi's short replica id.
+ * A 32-byte HLC author key derived from Diwan's short replica id.
  *
  * §3 requires a fixed-width author, and it participates in the HLC total order
  * and in every op's identity. SHA-256 of the replica id gives a deterministic,
@@ -123,10 +125,10 @@ function parseCellTarget(target) {
 }
 
 /**
- * The wire form of a substrate op inside an existing Ofisi frame.
+ * The wire form of a substrate op inside an existing Diwan frame.
  *
  * The CANONICAL OP BYTES are the durable artifact (the upstream README's rule:
- * the engine is a fold over them). Ofisi's update-log frames and fabric
+ * the engine is a fold over them). Diwan's update-log frames and fabric
  * messages are JSON, which cannot carry a `Uint8Array`, so the bytes travel
  * base64-wrapped. Nothing else is added — the envelope is transport, the bytes
  * are the semantics.

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	"vulos-office/backend/models"
+	"diwan/backend/models"
 )
 
 // P2 — optimistic concurrency (lost-update prevention).

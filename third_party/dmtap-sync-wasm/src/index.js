@@ -61,7 +61,7 @@ function isNode() {
  */
 async function wasmBytes() {
   // Both branches locate the module RELATIVE TO THIS FILE, so both need
-  // `import.meta.url`. Ofisi's library build (vite.config.lib.js) also emits a
+  // `import.meta.url`. Diwan's library build (vite.config.lib.js) also emits a
   // CommonJS artifact, in which the bundler replaces `import.meta` with `{}` —
   // there is no module URL to resolve against and no way to invent one. Say so
   // plainly instead of failing later with a confusing `undefined` base URL:

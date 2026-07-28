@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"vulos-office/backend/fileacl"
+	"diwan/backend/fileacl"
 )
 
 func runStoreContract(t *testing.T, s fileacl.Store) {

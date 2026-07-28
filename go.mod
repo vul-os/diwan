@@ -1,4 +1,4 @@
-module vulos-office
+module diwan
 
 go 1.25.0
 

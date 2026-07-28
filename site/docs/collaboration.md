@@ -1,12 +1,12 @@
-# Ofisi — How Collaboration Works
+# Diwan — How Collaboration Works
 
-This chapter explains real-time collaboration in Ofisi end to end: how documents merge concurrent edits (CRDTs), how edits travel **peer-to-peer** with no central document server, what is and is not encrypted, how rooms are gated, and what happens on conflicts. It is written for users who want to understand what they're trusting, and for admins who need to know what their server can and cannot see. Everything here describes the actual implementation in this repository.
+This chapter explains real-time collaboration in Diwan end to end: how documents merge concurrent edits (CRDTs), how edits travel **peer-to-peer** with no central document server, what is and is not encrypted, how rooms are gated, and what happens on conflicts. It is written for users who want to understand what they're trusting, and for admins who need to know what their server can and cannot see. Everything here describes the actual implementation in this repository.
 
 ---
 
 ## 1. The one-minute model
 
-- Collaboration in Ofisi is **always peer-to-peer**. There is **no central document server** — no server ever stores, relays, or reads your document's collaborative edits. This is the defining difference from server-mediated office suites (Collabora, OnlyOffice), where every keystroke passes through a document server.
+- Collaboration in Diwan is **always peer-to-peer**. There is **no central document server** — no server ever stores, relays, or reads your document's collaborative edits. This is the defining difference from server-mediated office suites (Collabora, OnlyOffice), where every keystroke passes through a document server.
 - Every edit becomes a small **CRDT update**. CRDT updates are commutative and idempotent: peers can receive them in any order, more than once, over more than one channel, and still converge to the same document.
 - The document you see is always your **local** copy, hydrated from your own saved content. Collaboration never blocks typing: if no peer is reachable, you keep editing locally and your changes autosave to your own storage.
 - When you collaborate, edits ride an **end-to-end-encrypted peer-to-peer room**. Peers connect **directly** to each other over WebRTC; a relay is used only as a last-resort fallback for hard NATs, and even then it is **content-blind** (it moves ciphertext it cannot read).
@@ -36,22 +36,22 @@ All CRDT code lives in `src/lib/crdt/` (frontend).
 
 ## 3. The transport — direct peer-to-peer first, content-blind relay only as fallback
 
-Ofisi uses its own first-party `FabricClient` (`src/lib/collab/webrtc/fabric.js` — re-homed from the vendored relay-client SDK so Ofisi depends on no other Vulos product's package) to move CRDT updates between peers. Its connection strategy, in order:
+Diwan uses its own first-party `FabricClient` (`src/lib/collab/webrtc/fabric.js` — re-homed from the vendored relay-client SDK so Diwan depends on no other Vulos product's package) to move CRDT updates between peers. Its connection strategy, in order:
 
-1. **Direct WebRTC data channel (the default).** For each peer, the client negotiates an `RTCPeerConnection` and opens a data channel. Once connected (`connectionState === 'connected'`), edits flow **directly browser-to-browser** — nothing in the middle. NAT traversal uses **ICE/STUN** servers (and, when a peer pair needs it, **TURN** — a WebRTC-layer relay of already-encrypted traffic, still content-blind) from either the host's ICE endpoint or Ofisi's own configurable fallback (`VITE_STUN_URLS`/`VITE_TURN_*`, see [CONFIGURATION.md](CONFIGURATION.md)). Self-hosting your own TURN server (no other Vulos product required) is covered in [COTURN.md](COTURN.md).
+1. **Direct WebRTC data channel (the default).** For each peer, the client negotiates an `RTCPeerConnection` and opens a data channel. Once connected (`connectionState === 'connected'`), edits flow **directly browser-to-browser** — nothing in the middle. NAT traversal uses **ICE/STUN** servers (and, when a peer pair needs it, **TURN** — a WebRTC-layer relay of already-encrypted traffic, still content-blind) from either the host's ICE endpoint or Diwan's own configurable fallback (`VITE_STUN_URLS`/`VITE_TURN_*`, see [CONFIGURATION.md](CONFIGURATION.md)). Self-hosting your own TURN server (no other Vulos product required) is covered in [COTURN.md](COTURN.md).
 2. **Content-blind relay circuit (fallback only).** If the direct connection *fails outright* — no ICE candidate pair works at all, TURN included, within a short timeout — the client falls back to a separate, application-level relay circuit built into `FabricClient` itself (HTTP deposit/pickup against the host box's `/api/peering/relay/*`, or a configured rendezvous relayd's mailbox surface). Payloads on this path are sealed with a per-session X25519 box, so the relay **routes ciphertext it cannot read**. This is the one fallback that does depend on a host box or a self-hosted `vulos-relayd` being present; it still never sees plaintext, and with a TURN server configured it should rarely trigger at all.
 
-Both of the above need peer discovery: a place to exchange WebRTC offer/answer/ICE candidates, and ICE/STUN-TURN config. Ofisi picks **one of three transports** for that discovery, in this priority order (`src/lib/collab/transportSelection.js`, resolved fresh for every collab session):
+Both of the above need peer discovery: a place to exchange WebRTC offer/answer/ICE candidates, and ICE/STUN-TURN config. Diwan picks **one of three transports** for that discovery, in this priority order (`src/lib/collab/transportSelection.js`, resolved fresh for every collab session):
 
-1. **Host-box peering (`/api/peering/*`)** — this Ofisi server itself is fronted by a **Vulos OS / Ephor** deployment, which mounts:
+1. **Host-box peering (`/api/peering/*`)** — this Diwan server itself is fronted by a **Vulos OS / Ephor** deployment, which mounts:
    - Signaling: `wss://<host>/api/peering/stream` — exchanges offer/answer/ICE candidates.
    - ICE config: `GET /api/peering/ice` — returns the STUN/TURN servers to use.
 
    This is the original, unchanged default. It carries no document content, and it is the one transport that can bind an authenticated account session (an `authToken`) to the peer identity.
 
-2. **Any relayd rendezvous (no Vulos OS / host box needed).** When host-box peering isn't reachable — most notably a **standalone** Ofisi binary, which mounts no `/api/peering/*` at all (see `main.go`) — Ofisi checks for a configured **rendezvous URL**: `config.yaml` `collab.rendezvous_url` / env `VULOS_RENDEZVOUS_URL` (see [CONFIGURATION.md](CONFIGURATION.md)). When set, the session uses that relayd's OPEN announce/resolve/signal/mailbox + ICE surface (`RendezvousClient` / `RendezvousSignalingClient`, part of Ofisi's first-party `src/lib/collab/webrtc/`) — any self-hosted `vulos-relayd` is enough, with **no Vulos OS and no account**. Everything else about the session is identical: direct WebRTC first, the same content-blind relay-circuit fallback, the same E2E crypto. **This is what makes a bare standalone Ofisi capable of real peer-to-peer collaboration** — and it is proven end to end, against a real relayd binary in a real browser, by `e2e-p2p/` (`npm run test:e2e:p2p`).
+2. **Any relayd rendezvous (no Vulos OS / host box needed).** When host-box peering isn't reachable — most notably a **standalone** Diwan binary, which mounts no `/api/peering/*` at all (see `main.go`) — Diwan checks for a configured **rendezvous URL**: `config.yaml` `collab.rendezvous_url` / env `VULOS_RENDEZVOUS_URL` (see [CONFIGURATION.md](CONFIGURATION.md)). When set, the session uses that relayd's OPEN announce/resolve/signal/mailbox + ICE surface (`RendezvousClient` / `RendezvousSignalingClient`, part of Diwan's first-party `src/lib/collab/webrtc/`) — any self-hosted `vulos-relayd` is enough, with **no Vulos OS and no account**. Everything else about the session is identical: direct WebRTC first, the same content-blind relay-circuit fallback, the same E2E crypto. **This is what makes a bare standalone Diwan capable of real peer-to-peer collaboration** — and it is proven end to end, against a real relayd binary in a real browser, by `e2e-p2p/` (`npm run test:e2e:p2p`).
 
-   **How the browser reaches it.** The browser calls the configured relayd's origin **directly**, cross-origin — Ofisi's server is not in the discovery path at all and never sees even the (already content-blind) rendezvous envelopes. What is in the loop is the relayd you chose, and nothing else. Stated plainly:
+   **How the browser reaches it.** The browser calls the configured relayd's origin **directly**, cross-origin — Diwan's server is not in the discovery path at all and never sees even the (already content-blind) rendezvous envelopes. What is in the loop is the relayd you chose, and nothing else. Stated plainly:
 
    - The **relayd** sees discovery metadata: a room's derived id, Ed25519 addresses, timing, sizes, IPs. Metadata only, and only the relay's.
    - It is **content-blind**: every signal/mailbox payload is sealed under the room key, which lives in the invite link's URL fragment and reaches no server.
@@ -60,9 +60,9 @@ Both of the above need peer discovery: a place to exchange WebRTC offer/answer/I
 
    This works because relayd's rendezvous role serves **CORS** (`Access-Control-Allow-Origin: *` on reads, a preflight that answers `POST` + `Content-Type`, and — deliberately — **never** `Allow-Credentials`, since the protocol authenticates with Ed25519 signatures in the body rather than with ambient cookies). `e2e-p2p/` asserts that posture against a real relayd *and* from a real browser on a different origin, so a relay that regressed it fails the suite instead of the field.
 
-   Two operator consequences: the relay must be reachable from wherever users load Ofisi, and an **https** page cannot call an **http** relay — a public deployment needs TLS on the relay.
+   Two operator consequences: the relay must be reachable from wherever users load Diwan, and an **https** page cannot call an **http** relay — a public deployment needs TLS on the relay.
 
-   > **History.** Until Ephor shipped CORS on the rendezvous role, its surface sent no CORS headers and answered the preflight with `405`, so a direct call was impossible in a browser. Ofisi carried a same-origin pass-through proxy at `/api/rendezvous/*` as a workaround. That proxy — and the `rendezvous_proxy_path` field it was advertised through — has been **removed**; the server-side of discovery is now nothing at all.
+   > **History.** Until Ephor shipped CORS on the rendezvous role, its surface sent no CORS headers and answered the preflight with `405`, so a direct call was impossible in a browser. Diwan carried a same-origin pass-through proxy at `/api/rendezvous/*` as a workaround. That proxy — and the `rendezvous_proxy_path` field it was advertised through — has been **removed**; the server-side of discovery is now nothing at all.
 
 3. **Local-only.** Neither of the above is reachable (or reaches a network at all): peers cannot discover each other, so collaboration stays **local-only** (you keep editing; your work autosaves) and the UI says so honestly — an "Offline" pill and a plain explanation in the share dialog, never a false "Live".
 
@@ -146,8 +146,8 @@ All four editors are wired: **Docs** and **Whiteboard** are plain Y.Docs and use
 
 ## 7. Access control — admin summary
 
-- **Account sharing (the ACL)** — `backend/fileacl/`: roles `viewer` < `commenter` < `editor`, plus `owner`. Grants are owner-gated server-side, land in the append-only **audit log**, and no-access responses are `404` to avoid existence leaks. Read-only **share links** (256-bit token, optional bcrypt-hashed password, expiry capped at one year) reach *only* the anonymous read path. This governs who may open the document from **your storage** — it does **not** put a server in the live-collaboration path.
-- **Live collaboration** — possession of the invite fragment. The host cannot enumerate, join, or read rooms; it also cannot audit their content. If your compliance posture requires all collaboration to be server-auditable, note that Ofisi's collaboration is deliberately end-to-end and peer-to-peer — auditing happens at the account-save and version-history layer, not in the wire.
+- **Account sharing (the ACL)** — `backend/fileacl/`: roles `viewer` < `commenter` < `editor`, plus `owner`. Grants are owner-gated server-side, land in the append-only **audit log**, and no-access responses are `404` to avoid existence leaks. Read-only **share links** (256-bit token stored only as a SHA-256 hash and shown to the owner once at mint, optional bcrypt-hashed password, expiry capped at one year) reach *only* the anonymous read path. This governs who may open the document from **your storage** — it does **not** put a server in the live-collaboration path.
+- **Live collaboration** — possession of the invite fragment. The host cannot enumerate, join, or read rooms; it also cannot audit their content. If your compliance posture requires all collaboration to be server-auditable, note that Diwan's collaboration is deliberately end-to-end and peer-to-peer — auditing happens at the account-save and version-history layer, not in the wire.
 - **Peer discovery** is available where either a host provides the peering fabric (Vulos OS / Ephor) **or** this deployment has a rendezvous URL configured (§3) — a self-hosted `vulos-relayd` with no Vulos OS or account. Neither present ⇒ no live P2P, automatically — the editor stays local-only.
 
 ---
@@ -165,7 +165,7 @@ All four editors are wired: **Docs** and **Whiteboard** are plain Y.Docs and use
 You can confirm the serverless property from the outside:
 
 ```bash
-# 0. Or just run the proof: a real relayd + two standalone Ofisi servers +
+# 0. Or just run the proof: a real relayd + two standalone Diwan servers +
 #    two browsers, asserting convergence, the transport used, and that an
 #    unconfigured deployment stays honestly local-only.
 npm run test:e2e:p2p
@@ -174,17 +174,17 @@ npm run test:e2e:p2p
 curl -i "https://office.example.org/v1/documents/<id>/collab/stream"   # expect 404
 curl -i "https://office.example.org/v1/documents/<id>/collab/ops"      # expect 404
 
-# 2. Is the peering fabric present? (host-provided, not the Ofisi binary)
+# 2. Is the peering fabric present? (host-provided, not the Diwan binary)
 curl -i "https://office.example.org/api/peering/ice"   # 404 ⇒ standalone, no host-box discovery
 
 # 3. Is a rendezvous URL configured instead (no host box needed)?
 curl -i "https://office.example.org/api/reachability"  # rendezvous_url: "" ⇒ not configured (local-only)
 
 # 4. When one IS configured, the browser calls that relayd DIRECTLY (§3), so
-#    check the RELAY — Ofisi mounts nothing for discovery (this 404s by design):
+#    check the RELAY — Diwan mounts nothing for discovery (this 404s by design):
 curl -i "https://office.example.org/api/rendezvous/healthz"   # expect 404
 curl -i "https://relay.example.org/rendezvous/healthz"        # {"role":"rendezvous"}
-# …and that a browser on Ofisi's origin may call it (the CORS guarantee §3):
+# …and that a browser on Diwan's origin may call it (the CORS guarantee §3):
 curl -i -H "Origin: https://office.example.org" "https://relay.example.org/rendezvous/ice"
 #   expect: Access-Control-Allow-Origin: *   and NO Access-Control-Allow-Credentials
 ```
@@ -205,9 +205,9 @@ In the browser, DevTools → Network shows the truth: opening a `#vp2p=` link op
 
 **Is there a maximum number of collaborators?** No explicit cap in the collab code; the practical bound is WebRTC mesh fan-out (each peer connects to the others) and your discovery/relay capacity.
 
-**Does collaboration work across two different Ofisi servers?** Yes, as long as the peers can reach the same discovery surface — either both point at the same host-box peering fabric, or both resolve the same rendezvous URL — collaboration is between *browsers*, not servers. The document does not live on either server for the purpose of the live session.
+**Does collaboration work across two different Diwan servers?** Yes, as long as the peers can reach the same discovery surface — either both point at the same host-box peering fabric, or both resolve the same rendezvous URL — collaboration is between *browsers*, not servers. The document does not live on either server for the purpose of the live session.
 
-**Does live P2P collaboration require a Vulos OS or a Vulos account?** No. A configured rendezvous URL (config.yaml `collab.rendezvous_url` / `VULOS_RENDEZVOUS_URL`, see [CONFIGURATION.md](CONFIGURATION.md)) gets a bare standalone Ofisi real peer-to-peer collaboration against any self-hosted `vulos-relayd` — no Vulos OS, no account. The standalone binary does carry the *discovery* traffic on its own origin (§3), because the relay serves no CORS; it stays content-blind, and the document never touches it. This is not a claim on paper: `npm run test:e2e:p2p` boots a real relayd and two standalone servers and makes two browsers converge through them.
+**Does live P2P collaboration require a Vulos OS or a Vulos account?** No. A configured rendezvous URL (config.yaml `collab.rendezvous_url` / `VULOS_RENDEZVOUS_URL`, see [CONFIGURATION.md](CONFIGURATION.md)) gets a bare standalone Diwan real peer-to-peer collaboration against any self-hosted `vulos-relayd` — no Vulos OS, no account. The standalone binary does carry the *discovery* traffic on its own origin (§3), because the relay serves no CORS; it stays content-blind, and the document never touches it. This is not a claim on paper: `npm run test:e2e:p2p` boots a real relayd and two standalone servers and makes two browsers converge through them.
 
 **What happens with no network at all?** You keep editing; the CRDT applies locally and an IndexedDB draft protects your work. It syncs to peers when you reconnect, and autosaves to your storage.
 
@@ -221,7 +221,7 @@ In the browser, DevTools → Network shows the truth: opening a `#vp2p=` link op
 | Live collaboration edits | **Nowhere central** — only in the peers' browsers, in transit E2E-encrypted | The session; the host holds nothing |
 | Presence (who's here, cursors) | In the peers' browsers only | Seconds — never written anywhere |
 | Room recovery snapshot | Participant's browser `localStorage` | Per-browser; the server holds nothing for the room |
-| Crash-safety drafts | Browser IndexedDB (`vulos-office-drafts`) | Until the next successful save |
+| Crash-safety drafts | Browser IndexedDB (`diwan-drafts`) | Until the next successful save |
 
 Consequences: server backups capture your saved documents and version history; they never capture live collaboration traffic (there is nothing to capture). Clearing a browser's site data erases drafts and local snapshots but never the saved document.
 
@@ -232,8 +232,8 @@ Consequences: server backups capture your saved documents and version history; t
 - **CRDT** — Conflict-free Replicated Data Type: a data structure whose operations commute, so replicas converge without coordination or locks.
 - **Yjs** — the CRDT library backing the Docs document; carries structure and formatting, not just text.
 - **Update** — one atomic Yjs change, carried as an envelope `{ y:1, u:<base64> }`.
-- **Fabric** — Ofisi's own first-party peering transport (`src/lib/collab/webrtc/fabric.js`, re-homed from the vendored relay-client SDK): direct WebRTC first (with STUN, and optionally a self-hosted TURN server — see [COTURN.md](COTURN.md)), content-blind relay fallback, discovery via either the host box's `/api/peering/*` or a configured relayd's open rendezvous surface (see §3).
-- **Rendezvous URL** — `config.yaml` `collab.rendezvous_url` / `VULOS_RENDEZVOUS_URL`: the base URL of a self-hosted `vulos-relayd`'s open rendezvous surface, letting a standalone Ofisi (no host box, no account) still discover peers. The browser calls that relayd **directly**, cross-origin — Ofisi's server is not in the discovery path — see §3 for what the relay does and does not see, and for the CORS/TLS requirements that puts on it.
+- **Fabric** — Diwan's own first-party peering transport (`src/lib/collab/webrtc/fabric.js`, re-homed from the vendored relay-client SDK): direct WebRTC first (with STUN, and optionally a self-hosted TURN server — see [COTURN.md](COTURN.md)), content-blind relay fallback, discovery via either the host box's `/api/peering/*` or a configured relayd's open rendezvous surface (see §3).
+- **Rendezvous URL** — `config.yaml` `collab.rendezvous_url` / `VULOS_RENDEZVOUS_URL`: the base URL of a self-hosted `vulos-relayd`'s open rendezvous surface, letting a standalone Diwan (no host box, no account) still discover peers. The browser calls that relayd **directly**, cross-origin — Diwan's server is not in the discovery path — see §3 for what the relay does and does not see, and for the CORS/TLS requirements that puts on it.
 - **Room** — an E2E-encrypted collaboration session identified by a key-derived `roomId`; membership = possession of the invite key.
 - **Capability (`rw`/`ro`)** — what an invite link grants; `rw` links carry MAC authority to write, `ro` links can only decrypt.
 - **Rotation** — minting a fresh room + key to revoke all previously shared links.

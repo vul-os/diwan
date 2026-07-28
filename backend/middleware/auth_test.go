@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"vulos-office/backend/config"
+	"diwan/backend/config"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"

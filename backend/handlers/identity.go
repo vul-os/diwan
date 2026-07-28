@@ -1,7 +1,7 @@
 package handlers
 
 import (
-	"vulos-office/backend/middleware"
+	"diwan/backend/middleware"
 
 	"github.com/gin-gonic/gin"
 )

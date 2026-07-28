@@ -1,4 +1,4 @@
-# Ofisi — Documentation Index
+# Diwan — Documentation Index
 
 | Document | Description |
 |----------|-------------|

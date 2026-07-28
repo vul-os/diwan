@@ -9,7 +9,7 @@ import (
 	"errors"
 	"testing"
 
-	"vulos-office/backend/models"
+	"diwan/backend/models"
 )
 
 func TestLocalUpdateFileRevCAS(t *testing.T) {

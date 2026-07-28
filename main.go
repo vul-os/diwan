@@ -12,19 +12,19 @@ import (
 	"strings"
 	"time"
 
-	"vulos-office/backend/apikey"
-	"vulos-office/backend/billing"
-	"vulos-office/backend/config"
-	"vulos-office/backend/deploymode"
-	"vulos-office/backend/handlers"
-	"vulos-office/backend/integration/cloud"
-	"vulos-office/backend/middleware"
-	"vulos-office/backend/obs"
-	"vulos-office/backend/seam"
-	"vulos-office/backend/session"
-	"vulos-office/backend/storage"
-	"vulos-office/backend/updatelog"
-	"vulos-office/backend/userauth"
+	"diwan/backend/apikey"
+	"diwan/backend/billing"
+	"diwan/backend/config"
+	"diwan/backend/deploymode"
+	"diwan/backend/handlers"
+	"diwan/backend/integration/cloud"
+	"diwan/backend/middleware"
+	"diwan/backend/obs"
+	"diwan/backend/seam"
+	"diwan/backend/session"
+	"diwan/backend/storage"
+	"diwan/backend/updatelog"
+	"diwan/backend/userauth"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -41,7 +41,7 @@ func main() {
 	// One-shot CLI subcommand: migrate a legacy shared-password deploy to a
 	// per-user credential so an upgrade doesn't silently lock everyone out.
 	//
-	//   vulos-office migrate-credential -admin you@vulos.org [-password PW]
+	//   diwan migrate-credential -admin you@vulos.org [-password PW]
 	//
 	// If -password is omitted the shared password from config.yaml (auth.password)
 	// is used. Safe to run repeatedly: it is a no-op once any user exists.
@@ -64,7 +64,7 @@ func main() {
 	configPath := flag.String("config", "config.yaml", "path to config file")
 	flag.Parse()
 
-	log.Printf("vulos-office %s starting", Version)
+	log.Printf("diwan %s starting", Version)
 	obs.Init()
 
 	// Typed DEPLOY_MODE (standalone|os): read once, validate coherent config,
@@ -82,7 +82,7 @@ func main() {
 	}
 
 	// Fail closed: when auth is enabled, refuse to start unless a JWT signing
-	// secret is configured (VULOS_OFFICE_JWT_SECRET, or VULOS_OFFICE_DEV=1 for
+	// secret is configured (DIWAN_JWT_SECRET, or DIWAN_DEV=1 for
 	// local development). This prevents shipping with a predictable key.
 	if cfg.Auth.Enabled && !middleware.JWTSecretConfigured() {
 		log.Fatalf("auth is enabled but no JWT signing secret is configured: set %s "+
@@ -158,7 +158,7 @@ func main() {
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
 
-	// CORS: prefer an explicit origin allowlist (VULOS_OFFICE_CORS_ORIGINS, a
+	// CORS: prefer an explicit origin allowlist (DIWAN_CORS_ORIGINS, a
 	// comma-separated list) so credentialed cross-origin requests are restricted
 	// to trusted front-ends. When unset we fall back to AllowAllOrigins WITHOUT
 	// credentials (the SPA is same-origin embedded, so this is safe for self-host
@@ -171,7 +171,7 @@ func main() {
 		// caller cannot read them — and a warning nobody can read is a silent loss.
 		ExposeHeaders: []string{"Content-Disposition", "X-Export-Fidelity", "X-Export-Warnings"},
 	}
-	if raw := strings.TrimSpace(os.Getenv("VULOS_OFFICE_CORS_ORIGINS")); raw != "" {
+	if raw := strings.TrimSpace(os.Getenv("DIWAN_CORS_ORIGINS")); raw != "" {
 		var origins []string
 		for _, o := range strings.Split(raw, ",") {
 			if o = strings.TrimSpace(o); o != "" {
@@ -183,7 +183,7 @@ func main() {
 		log.Printf("[cors] explicit origin allowlist: %v (credentials allowed)", origins)
 	} else {
 		corsCfg.AllowAllOrigins = true // no credentials → safe wildcard
-		log.Printf("[cors] no VULOS_OFFICE_CORS_ORIGINS set; allowing all origins WITHOUT credentials")
+		log.Printf("[cors] no DIWAN_CORS_ORIGINS set; allowing all origins WITHOUT credentials")
 	}
 	r.Use(cors.New(corsCfg))
 
@@ -261,7 +261,7 @@ func main() {
 	api.GET("/reachability", systemHandler.Reachability)
 	// OS-free P2P discovery needs no route here: the browser calls the
 	// operator-configured vulos-relayd's rendezvous surface DIRECTLY, using the
-	// `rendezvous_url` that /api/reachability reports. Ofisi carried a
+	// `rendezvous_url` that /api/reachability reports. Diwan carried a
 	// same-origin pass-through proxy for exactly as long as relayd's rendezvous
 	// role sent no CORS headers; it does now, so the server is out of that path
 	// entirely and never sees the discovery envelopes. See
@@ -564,7 +564,7 @@ func main() {
 		addr = ":8080"
 	}
 
-	log.Printf("Ofisi running → http://localhost%s", addr)
+	log.Printf("Diwan running → http://localhost%s", addr)
 	if err := r.Run(addr); err != nil {
 		log.Fatal(err)
 	}

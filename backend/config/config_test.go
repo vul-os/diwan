@@ -3,7 +3,7 @@ package config
 import "testing"
 
 // config_test.go — collab.rendezvous_url plumbing (VULOS_RENDEZVOUS_URL /
-// OFISI_RENDEZVOUS_URL). Default() must leave it empty (unchanged current
+// DIWAN_RENDEZVOUS_URL). Default() must leave it empty (unchanged current
 // behaviour — the browser stays on host-box /api/peering/* or local-only), and
 // the env override must win over whatever config.yaml set, mirroring the
 // existing persistence.updatelog override.
@@ -25,11 +25,11 @@ func TestApplyEnvOverrides_RendezvousURL_FromPrimaryVar(t *testing.T) {
 }
 
 func TestApplyEnvOverrides_RendezvousURL_FromAltVar(t *testing.T) {
-	t.Setenv("OFISI_RENDEZVOUS_URL", "https://relay.alt.example.org")
+	t.Setenv("DIWAN_RENDEZVOUS_URL", "https://relay.alt.example.org")
 	cfg := Default()
 	applyEnvOverrides(cfg)
 	if cfg.Collab.RendezvousURL != "https://relay.alt.example.org" {
-		t.Fatalf("expected OFISI_RENDEZVOUS_URL to set RendezvousURL, got %q", cfg.Collab.RendezvousURL)
+		t.Fatalf("expected DIWAN_RENDEZVOUS_URL to set RendezvousURL, got %q", cfg.Collab.RendezvousURL)
 	}
 }
 

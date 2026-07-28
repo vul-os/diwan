@@ -1,4 +1,4 @@
-# Ofisi — Screenshots
+# Diwan — Screenshots
 
 This document describes the screenshot gallery, how screenshots are captured, and the seed data used to produce populated views.
 
@@ -30,7 +30,7 @@ The screenshotter is self-contained — it:
 2. Builds the Go binary (which embeds the frontend via `//go:embed`)
 3. Starts the binary on port 8083 pointed at the demo data dir
 4. Captures every surface at 1440×900 @2x (retina), in **light and dark** —
-   Ofisi is light-first, so each surface is shot as both `<name>-light.png`
+   Diwan is light-first, so each surface is shot as both `<name>-light.png`
    and `<name>-dark.png`
 5. Stops the server
 
@@ -50,8 +50,8 @@ Demo data is committed in `scripts/seed-demo.mjs` and never touches `./data` —
 |---------|-------------|
 | **Docs** | "Q2 2026 Product Update" — headings, prose, bullet lists, table; "ADR-014: Sync Layer" — decision record |
 | **Sheets** | "Revenue Tracker H1 2026" — 6 months × 5 columns, SUM + margin formulas, 2 sheets |
-| **Slides** | "Ofisi Product Overview" — 5 slides, Reveal.js obsidian theme |
-| **Whiteboards** | "Ofisi — Architecture Sketch" — Excalidraw scene: labelled boxes + E2E/relay arrows |
+| **Slides** | "Diwan Product Overview" — 5 slides, Reveal.js obsidian theme |
+| **Whiteboards** | "Diwan — Architecture Sketch" — Excalidraw scene: labelled boxes + E2E/relay arrows |
 
 ---
 
@@ -82,7 +82,7 @@ and shows a light/dark pair.
 ![Home — light](screenshots/home-light.png)
 ![Home — dark](screenshots/home-dark.png)
 
-The Ofisi workspace — "Start something new" launchers, seeded recents, and the
+The Diwan workspace — "Start something new" launchers, seeded recents, and the
 local-drive scan — in the warm light theme and its dark counterpart.
 
 ### Docs file list
@@ -109,13 +109,13 @@ The Spreadsheets editor (Fortune Sheet) with the "Revenue Tracker H1 2026" — 6
 
 ![Slides Editor](screenshots/slides-editor-light.png)
 
-The Presentations editor open on the 5-slide "Ofisi Product Overview" deck — masters, themes, transitions, and presenter view.
+The Presentations editor open on the 5-slide "Diwan Product Overview" deck — masters, themes, transitions, and presenter view.
 
 ### Whiteboard Editor
 
 ![Whiteboard Editor](screenshots/whiteboard-editor-light.png)
 
-The Whiteboard editor — the MIT [Excalidraw](https://github.com/excalidraw/excalidraw) canvas mounted on Ofisi's own distributed peer-to-peer collab engine (the same Yjs/E2E-encrypted room Docs uses, no central whiteboard server). Shown open on the seeded "Architecture Sketch". Note the "Excalidraw · MIT" attribution in the top bar.
+The Whiteboard editor — the MIT [Excalidraw](https://github.com/excalidraw/excalidraw) canvas mounted on Diwan's own distributed peer-to-peer collab engine (the same Yjs/E2E-encrypted room Docs uses, no central whiteboard server). Shown open on the seeded "Architecture Sketch". Note the "Excalidraw · MIT" attribution in the top bar.
 
 ### PDF Editor
 

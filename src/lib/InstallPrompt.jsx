@@ -126,7 +126,7 @@ export default function InstallPrompt() {
       {visible && (
         <div
           role="dialog"
-          aria-label="Install Ofisi"
+          aria-label="Install Diwan"
           data-testid="install-prompt"
           style={{
             position: 'fixed',

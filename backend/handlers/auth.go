@@ -10,13 +10,13 @@ import (
 	"sync"
 	"time"
 
-	"vulos-office/backend/audit"
-	"vulos-office/backend/billing"
-	"vulos-office/backend/config"
-	"vulos-office/backend/invites"
-	"vulos-office/backend/middleware"
-	"vulos-office/backend/models"
-	"vulos-office/backend/userauth"
+	"diwan/backend/audit"
+	"diwan/backend/billing"
+	"diwan/backend/config"
+	"diwan/backend/invites"
+	"diwan/backend/middleware"
+	"diwan/backend/models"
+	"diwan/backend/userauth"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -57,7 +57,7 @@ type AuthHandler struct {
 	// authenticated account (no longer self-asserted by the client).
 	creds userauth.Store
 	// invites mints/consumes single-use registration invite tokens (additive to
-	// the static VULOS_OFFICE_REGISTRATION_TOKEN + admin-JWT paths).
+	// the static DIWAN_REGISTRATION_TOKEN + admin-JWT paths).
 	invites invites.Store
 	// audit records registration / invite-consume events (append-only).
 	audit audit.Store
@@ -356,7 +356,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 // gates registration once the instance is bootstrapped (≥1 user) so a stranger
 // cannot register new accounts on a running multi-user instance. The token is
 // supplied by the client via the X-Registration-Token header.
-const EnvRegistrationToken = "VULOS_OFFICE_REGISTRATION_TOKEN"
+const EnvRegistrationToken = "DIWAN_REGISTRATION_TOKEN"
 
 // reservedPrivilegedID reports whether accountID looks like a privileged /
 // system identity that must NOT be self-registered by an unauthenticated or

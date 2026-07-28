@@ -1,7 +1,7 @@
 /**
  * manifest.test.js — vitest tests for /public/manifest.webmanifest
  *
- * Validates that the PWA manifest for Vulos Office:
+ * Validates that the PWA manifest for Diwan:
  *   1. Parses as valid JSON.
  *   2. Contains the required fields: name, short_name, start_url, display, theme_color, icons.
  *   3. Has at least two icon entries with src, sizes, and type.
@@ -17,7 +17,7 @@ import { fileURLToPath } from 'url'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const manifestPath = resolve(__dirname, '../public/manifest.webmanifest')
 
-describe('Vulos Office manifest.webmanifest', () => {
+describe('Diwan manifest.webmanifest', () => {
   let manifest
 
   it('parses as valid JSON', () => {
@@ -30,8 +30,8 @@ describe('Vulos Office manifest.webmanifest', () => {
     const raw = readFileSync(manifestPath, 'utf-8')
     manifest = JSON.parse(raw)
 
-    expect(manifest.name).toBe('Ofisi')
-    expect(manifest.short_name).toBe('Ofisi')
+    expect(manifest.name).toBe('Diwan')
+    expect(manifest.short_name).toBe('Diwan')
     expect(manifest.start_url).toBe('/')
     expect(manifest.display).toBe('standalone')
     expect(manifest.theme_color).toBe('#D0471F')

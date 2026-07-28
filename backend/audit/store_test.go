@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"vulos-office/backend/audit"
+	"diwan/backend/audit"
 )
 
 func runContract(t *testing.T, s audit.Store) {

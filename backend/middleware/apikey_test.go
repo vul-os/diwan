@@ -7,8 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"vulos-office/backend/apikey"
-	"vulos-office/backend/config"
+	"diwan/backend/apikey"
+	"diwan/backend/config"
 
 	"github.com/gin-gonic/gin"
 )

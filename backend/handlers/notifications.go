@@ -11,8 +11,8 @@ import (
 	"os"
 	"sync"
 
-	"vulos-office/backend/models"
-	"vulos-office/backend/notify"
+	"diwan/backend/models"
+	"diwan/backend/notify"
 
 	"github.com/gin-gonic/gin"
 )

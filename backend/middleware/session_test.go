@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"vulos-office/backend/config"
-	"vulos-office/backend/session"
+	"diwan/backend/config"
+	"diwan/backend/session"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"

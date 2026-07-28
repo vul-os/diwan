@@ -1,7 +1,7 @@
-// Package seam defines the integration "seam" between vulos-office's core and
+// Package seam defines the integration "seam" between diwan's core and
 // any external control plane (e.g. an optional gateway / "cp").
 //
-// GOAL: vulos-office must run COMPLETELY STANDALONE as an open-source project
+// GOAL: diwan must run COMPLETELY STANDALONE as an open-source project
 // with NO dependency on any external control plane. The standalone path is the
 // default and works with zero cloud configuration.
 //

@@ -1,5 +1,5 @@
 /**
- * Playwright E2E config — Vulos Office (WAVE-28).
+ * Playwright E2E config — Diwan (WAVE-28).
  *
  * Runs browser-level end-to-end tests against a production `vite preview`
  * build. Every `/api` and doc endpoint is mocked in-browser via `page.route`

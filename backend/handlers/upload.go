@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"vulos-office/backend/billing"
-	"vulos-office/backend/config"
+	"diwan/backend/billing"
+	"diwan/backend/config"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"

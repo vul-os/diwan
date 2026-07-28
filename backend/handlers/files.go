@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"vulos-office/backend/audit"
-	"vulos-office/backend/billing"
-	"vulos-office/backend/fileacl"
-	"vulos-office/backend/models"
-	"vulos-office/backend/storage"
+	"diwan/backend/audit"
+	"diwan/backend/billing"
+	"diwan/backend/fileacl"
+	"diwan/backend/models"
+	"diwan/backend/storage"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"

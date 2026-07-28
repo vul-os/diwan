@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"vulos-office/backend/config"
-	"vulos-office/backend/models"
-	"vulos-office/backend/storage"
+	"diwan/backend/config"
+	"diwan/backend/models"
+	"diwan/backend/storage"
 )
 
 func newTestLocalStorage(t *testing.T) storage.Storage {

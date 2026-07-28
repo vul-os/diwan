@@ -2,8 +2,8 @@
  * useTheme — tiny hook for explicit light/dark/system theme toggling.
  *
  * Storage:
- *   localStorage 'ofisi.theme' = 'light' | 'dark' | 'system'
- *   DEFAULT is 'light' — Ofisi ships light out of the box (a workspace should
+ *   localStorage 'diwan.theme' = 'light' | 'dark' | 'system'
+ *   DEFAULT is 'light' — Diwan ships light out of the box (a workspace should
  *   feel like daylight). System/Dark are opt-in via the selector.
  *
  * Side-effects:
@@ -13,7 +13,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 
-const STORE_KEY = 'ofisi.theme'
+const STORE_KEY = 'diwan.theme'
 // Back-compat: honour a previously-persisted key from the old brand.
 const LEGACY_KEY = 'vulos.theme'
 

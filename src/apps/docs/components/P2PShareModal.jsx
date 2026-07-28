@@ -1,7 +1,7 @@
 /**
  * P2PShareModal — "Share → collaborate via link (P2P)" (WAVE-25).
  *
- * The invite-flow UI for Ofisi's secure local/P2P collaboration mode.
+ * The invite-flow UI for Diwan's secure local/P2P collaboration mode.
  * Generates rw/ro invite links for a document. Opening one of these links (route
  * /docs/collab#vp2p=…) joins the room; this modal is only the SHARER side.
  *

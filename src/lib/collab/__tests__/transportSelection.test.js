@@ -9,7 +9,7 @@
  *
  * The rendezvous case pins the DIRECT shape: the browser is pointed at the
  * operator-configured relayd's own origin and relayd's own `/rendezvous` prefix,
- * with no Ofisi origin anywhere in the discovery path. Ofisi used to route this
+ * with no Diwan origin anywhere in the discovery path. Diwan used to route this
  * through a same-origin proxy because relayd served no CORS; it does now, and
  * e2e-p2p/ asserts that against a real relayd and a real browser.
  */

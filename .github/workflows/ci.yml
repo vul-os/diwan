@@ -1,4 +1,4 @@
-# .github/workflows/ci.yml — build, test, and vet vulos-office (Go + frontend)
+# .github/workflows/ci.yml — build, test, and vet diwan (Go + frontend)
 #
 # Triggers on:
 #   - push to any branch
@@ -154,7 +154,7 @@ jobs:
   # ── Real P2P integration E2E (relayd + two standalone servers) ──────────────
   # The opposite of the job above: nothing is mocked. It builds a real
   # `vulos-relayd` from the sibling checkout (READ-ONLY — only `go build`), runs
-  # two standalone `vulos-office` servers pointed at its rendezvous role, and
+  # two standalone `diwan` servers pointed at its rendezvous role, and
   # proves that two browsers collaborate peer-to-peer through it with no Vulos
   # OS and no account — the repo's central architectural claim. Deliberately a
   # SEPARATE job so its heavier, WebRTC-dependent runtime can never destabilise

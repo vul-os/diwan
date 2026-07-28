@@ -7,7 +7,7 @@
  * the SHARED DMTAP Sync substrate engine instead of `crdt/grid.js`.
  *
  * Deliberately reusing that shape is the point: if the substrate could not
- * reproduce Ofisi's behaviour under the tests Ofisi already trusts, the honest
+ * reproduce Diwan's behaviour under the tests Diwan already trusts, the honest
  * conclusion would be that it does not fit yet.
  *
  * The convergence assertion here is STRONGER than the one the hand-rolled path

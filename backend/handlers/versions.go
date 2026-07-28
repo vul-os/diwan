@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"time"
 
-	"vulos-office/backend/docindex"
-	"vulos-office/backend/models"
-	"vulos-office/backend/storage"
+	"diwan/backend/docindex"
+	"diwan/backend/models"
+	"diwan/backend/storage"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"

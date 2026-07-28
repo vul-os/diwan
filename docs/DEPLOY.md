@@ -1,4 +1,4 @@
-# Ofisi – Deployment Guide
+# Diwan – Deployment Guide
 
 ## Requirements
 
@@ -11,24 +11,24 @@
 
 ```sh
 docker run -d \
-  --name vulos-office \
+  --name diwan \
   -p 8080:8080 \
   -v office-data:/data \
-  ghcr.io/vul-os/ofisi:latest
+  ghcr.io/vul-os/diwan:latest
 ```
 
 ## Building from Source
 
 ```sh
-git clone https://github.com/vul-os/ofisi.git
-cd ofisi
+git clone https://github.com/vul-os/diwan.git
+cd diwan
 
 # Build frontend
 npm ci && npm run build
 
 # Build backend (no CGO required)
-CGO_ENABLED=0 go build -trimpath -o vulos-office .
-./vulos-office
+CGO_ENABLED=0 go build -trimpath -o diwan .
+./diwan
 ```
 
 ## Configuration
@@ -52,8 +52,8 @@ database:
 | Variable | Description |
 |----------|-------------|
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTel OTLP endpoint (optional) |
-| `VULOS_OFFICE_JWT_SECRET` | HS256 signing secret (required when auth enabled) |
-| `VULOS_OFFICE_REGISTRATION_TOKEN` | Static fallback registration token (optional; prefer invite tokens) |
+| `DIWAN_JWT_SECRET` | HS256 signing secret (required when auth enabled) |
+| `DIWAN_REGISTRATION_TOKEN` | Static fallback registration token (optional; prefer invite tokens) |
 | `VULOS_USERAUTH_DB` | Per-user credential SQLite DSN (default `./data/userauth.db`) |
 | `VULOS_INVITES_DB` | Invite-token SQLite DSN (default `./data/invites.db`) |
 | `VULOS_AUDIT_DB` | Append-only audit-log SQLite DSN (default `./data/audit.db`) |
@@ -65,7 +65,7 @@ database:
   users are registered, the instance is in OSS single-user mode and the legacy
   shared `auth.password` still authenticates.
 - **Registration** on a bootstrapped instance (≥1 user) requires authorization:
-  an admin JWT, the static `VULOS_OFFICE_REGISTRATION_TOKEN`, **or** a
+  an admin JWT, the static `DIWAN_REGISTRATION_TOKEN`, **or** a
   single-use/expiring **invite token** minted by an admin
   (`POST /api/admin/invites`, or the Admin Console UI). Invite tokens are stored
   hashed; the raw token is shown once at mint time.
@@ -74,7 +74,7 @@ database:
 
 ## Observability
 
-- `GET /metrics` — Prometheus `vulos_office_*` metrics.
+- `GET /metrics` — Prometheus `diwan_*` metrics.
 - OTel traces when `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
 
 ## Upgrading
@@ -93,10 +93,10 @@ to seed the first per-user credential from your existing shared password:
 
 ```bash
 # Uses auth.password from config.yaml unless -password is given.
-./vulos-office migrate-credential -admin you@vulos.org
+./diwan migrate-credential -admin you@vulos.org
 
 # Or pass an explicit password / DB path:
-./vulos-office migrate-credential -admin you@vulos.org -password 's3cret' -db /data/userauth.db
+./diwan migrate-credential -admin you@vulos.org -password 's3cret' -db /data/userauth.db
 ```
 
 The command is **idempotent** — it is a no-op once any user exists, so it is

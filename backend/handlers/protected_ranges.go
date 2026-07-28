@@ -35,7 +35,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"vulos-office/backend/middleware"
+	"diwan/backend/middleware"
 
 	"github.com/gin-gonic/gin"
 )

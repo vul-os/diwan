@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"vulos-office/backend/services/sheets_export"
-	"vulos-office/backend/storage"
+	"diwan/backend/services/sheets_export"
+	"diwan/backend/storage"
 
 	"github.com/gin-gonic/gin"
 )

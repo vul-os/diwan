@@ -1,19 +1,19 @@
 package main
 
-// cmd_migrate.go — `vulos-office migrate` subcommand.
+// cmd_migrate.go — `diwan migrate` subcommand.
 //
 // Usage:
 //
-//	vulos-office migrate up     — connect to the configured storage backend
+//	diwan migrate up     — connect to the configured storage backend
 //	                              and apply all schema migrations (idempotent).
-//	vulos-office migrate status — print which application tables are present.
+//	diwan migrate status — print which application tables are present.
 //
 // Both forms read config.yaml (same as the server). When no config is found,
 // sensible defaults are used (local sqlite storage).
 //
 // Cloud / ops usage (out-of-band, before first server boot or after an upgrade):
 //
-//	vulos-office migrate up
+//	diwan migrate up
 //	# → "migrate up: all postgres migrations applied"
 
 import (
@@ -23,8 +23,8 @@ import (
 	"os"
 	"sort"
 
-	"vulos-office/backend/config"
-	"vulos-office/backend/storage"
+	"diwan/backend/config"
+	"diwan/backend/storage"
 )
 
 // runMigrate is the entry point for the `migrate` subcommand.

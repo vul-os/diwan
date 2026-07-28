@@ -1,7 +1,7 @@
 /**
  * src/lib/crdt/p2pRoom.js — secure local/P2P collaboration room (WAVE-25).
  *
- * This is the ADDITIVE second collab mode for Ofisi: two OSS installs
+ * This is the ADDITIVE second collab mode for Diwan: two OSS installs
  * co-edit a document with NO cloud doc backend. It layers three things on top
  * of the existing FabricClient P2P transport (WebRTC data channels + relay-
  * circuit fallback) and the hand-rolled RGA TextCRDT (see ./text.js, ./index.js):
@@ -44,14 +44,14 @@
 
 const ROOM_MAGIC = 'VP2P1' // frame magic (versioned)
 const GCM_NONCE_LEN = 12
-const AEAD_AAD = 'vulos-office-p2p-room-v1'
+const AEAD_AAD = 'diwan-p2p-room-v1'
 
 // HKDF info labels — the invite carries ONE 32-byte roomKey; we derive three
 // independent sub-keys from it so a compromise of one purpose does not leak the
 // others, and so the RW send-MAC key is genuinely unavailable to ro peers.
-const INFO_ENC = 'vulos-office-p2p/enc'      // AES-GCM content key (rw + ro)
-const INFO_MAC_RW = 'vulos-office-p2p/mac-rw' // HMAC key proving RW authority
-const INFO_ROOMID = 'vulos-office-p2p/roomid' // derive roomId from roomKey (binding)
+const INFO_ENC = 'diwan-p2p/enc'      // AES-GCM content key (rw + ro)
+const INFO_MAC_RW = 'diwan-p2p/mac-rw' // HMAC key proving RW authority
+const INFO_ROOMID = 'diwan-p2p/roomid' // derive roomId from roomKey (binding)
 
 const CAP_RW = 'rw'
 const CAP_RO = 'ro'

@@ -9,12 +9,12 @@ import (
 	"strings"
 	"testing"
 
-	"vulos-office/backend/audit"
-	"vulos-office/backend/config"
-	"vulos-office/backend/fileacl"
-	"vulos-office/backend/invites"
-	"vulos-office/backend/middleware"
-	"vulos-office/backend/userauth"
+	"diwan/backend/audit"
+	"diwan/backend/config"
+	"diwan/backend/fileacl"
+	"diwan/backend/invites"
+	"diwan/backend/middleware"
+	"diwan/backend/userauth"
 
 	"github.com/gin-gonic/gin"
 )
@@ -161,7 +161,7 @@ func TestInviteRevokeBlocksRegistration(t *testing.T) {
 	}
 }
 
-// TestStaticTokenStillWorks — the legacy static VULOS_OFFICE_REGISTRATION_TOKEN
+// TestStaticTokenStillWorks — the legacy static DIWAN_REGISTRATION_TOKEN
 // path is preserved alongside invite tokens.
 func TestStaticTokenStillWorks(t *testing.T) {
 	t.Setenv(middleware.EnvDevMode, "1")

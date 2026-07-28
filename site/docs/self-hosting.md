@@ -1,8 +1,8 @@
-# Self-hosting Ofisi (standalone, no cloud)
+# Self-hosting Diwan (standalone, no cloud)
 
-Ofisi runs **completely standalone** as an open-source project with **no
+Diwan runs **completely standalone** as an open-source project with **no
 dependency on any external control plane** — Vulos operates no hosted control
-plane for Ofisi. The standalone path is the default and works with **zero
+plane for Diwan. The standalone path is the default and works with **zero
 external configuration**. Wiring up your own control-plane integration is
 **optional** and lives entirely behind a clean seam.
 
@@ -10,10 +10,10 @@ external configuration**. Wiring up your own control-plane integration is
 
 ```sh
 # Build (frontend is embedded in the binary under dist/)
-go build -o vulos-office .
+go build -o diwan .
 
 # Run — single-user / local mode, no auth, no cloud
-./vulos-office
+./diwan
 # → http://localhost:8080
 ```
 
@@ -36,11 +36,11 @@ signed HS256 session JWTs — no control plane involved.
 
 ```sh
 # config.yaml → auth.enabled: true
-export VULOS_OFFICE_JWT_SECRET="$(openssl rand -hex 32)"   # required when auth is on
-./vulos-office
+export DIWAN_JWT_SECRET="$(openssl rand -hex 32)"   # required when auth is on
+./diwan
 ```
 
-For local development only you may instead set `VULOS_OFFICE_DEV=1`, which uses
+For local development only you may instead set `DIWAN_DEV=1`, which uses
 a clearly-labelled insecure dev secret. **Never set that in production.**
 
 Bootstrap the first user via `POST /api/auth/register`, then mint invite tokens
@@ -81,6 +81,6 @@ When enabled:
   transient CP outage).
 - Usage events are posted fire-and-forget to `POST {CP}/api/usage`.
 
-With `VULOS_CP_BASE_URL` unset (the default), none of this runs and Ofisi is
+With `VULOS_CP_BASE_URL` unset (the default), none of this runs and Diwan is
 fully standalone. Vulos does not operate a control plane for you to point this
 at — this seam exists for anyone who wants to wire up their own.

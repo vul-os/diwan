@@ -1,7 +1,7 @@
 /**
- * offlineBootstrap.js — Ofisi's offline-first shell bootstrap.
+ * offlineBootstrap.js — Diwan's offline-first shell bootstrap.
  *
- * First-party (re-homed from the vendored relay-client copy so Ofisi
+ * First-party (re-homed from the vendored relay-client copy so Diwan
  * no longer depends on that package — see src/lib/endpoints/index.js).
  *
  * Three responsibilities, run once at app entry:

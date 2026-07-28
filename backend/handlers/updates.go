@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"vulos-office/backend/billing"
-	"vulos-office/backend/storage"
-	"vulos-office/backend/updatelog"
+	"diwan/backend/billing"
+	"diwan/backend/storage"
+	"diwan/backend/updatelog"
 
 	"github.com/gin-gonic/gin"
 )

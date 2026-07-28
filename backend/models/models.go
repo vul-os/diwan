@@ -138,8 +138,11 @@ type LabelVersionRequest struct {
 // password. It NEVER conveys write access and is independent of the ACL roster.
 //
 // Security invariants (enforced server-side, never by the client):
-//   - Token is a signed opaque credential minted server-side; possession alone
-//     grants access, so it MUST be unguessable and revocable.
+//   - Token is an opaque capability minted server-side from crypto/rand;
+//     possession alone grants access, so it MUST be unguessable and revocable.
+//   - The token is stored ONLY as a SHA-256 hash (TokenHash), never in the
+//     clear — reading the share-link store yields hashes, not usable links.
+//     The raw token exists in memory for exactly one request: the mint.
 //   - PasswordHash, when set, is a bcrypt hash — the plaintext is never stored
 //     and the view route rejects access until the correct password is supplied.
 //   - ExpiresAt, when non-nil, hard-bounds the link's lifetime; an expired link
@@ -150,10 +153,17 @@ type LabelVersionRequest struct {
 type ShareLink struct {
 	ID     string `json:"id"`
 	FileID string `json:"file_id"`
-	// Token is the opaque, signed credential embedded in the share URL. It is
-	// returned to the owner on mint (so they can copy the URL) and used to look
-	// the link up on the anonymous view route. It is the primary key for lookup.
-	Token string `json:"token"`
+	// Token is the raw opaque credential embedded in the share URL. It is
+	// populated on exactly one code path — the mint response, so the owner can
+	// copy the URL once — and is empty on every read path, because no backend
+	// stores it. `omitempty` therefore keeps it out of list/read JSON entirely
+	// rather than emitting a misleading `"token": ""`.
+	Token string `json:"token,omitempty"`
+	// TokenHash is the hex SHA-256 of Token (signing.HashShareLinkToken) and is
+	// the persisted lookup key. Never serialized to clients: it is not a secret
+	// in the token's sense, but it is also of no use to any client, and shipping
+	// it invites someone to treat it as the link.
+	TokenHash string `json:"-"`
 	// CreatedBy records the owner account that minted the link (audit/authz).
 	CreatedBy string `json:"created_by"`
 	// PasswordHash is the bcrypt hash of the link password, or "" for no password.

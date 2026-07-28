@@ -1,5 +1,5 @@
 /**
- * WAVE-52 — Tables in Vulos Office Docs.
+ * WAVE-52 — Tables in Diwan Docs.
  *
  * Coverage:
  *   1. Insert / edit ops on a real TipTap editor (insert N×M with header,

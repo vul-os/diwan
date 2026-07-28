@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"vulos-office/backend/models"
+	"diwan/backend/models"
 )
 
 // TestVersionSnapshotAndLabel proves a labelled snapshot round-trips and that

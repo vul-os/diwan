@@ -26,7 +26,7 @@ import (
 	"sync"
 	"time"
 
-	"vulos-office/backend/seam"
+	"diwan/backend/seam"
 )
 
 // Environment contract for the optional cloud adapter.

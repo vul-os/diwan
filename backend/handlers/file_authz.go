@@ -15,9 +15,9 @@ import (
 	"os"
 	"sync"
 
-	"vulos-office/backend/fileacl"
-	"vulos-office/backend/middleware"
-	"vulos-office/backend/storage"
+	"diwan/backend/fileacl"
+	"diwan/backend/middleware"
+	"diwan/backend/storage"
 
 	"github.com/gin-gonic/gin"
 )

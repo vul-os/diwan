@@ -12,8 +12,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"vulos-office/backend/config"
-	"vulos-office/backend/models"
+	"diwan/backend/config"
+	"diwan/backend/models"
 )
 
 func newTraversalStore(t *testing.T) (*LocalStorage, string) {

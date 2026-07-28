@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Vulos Office — demo data seeder
+ * Diwan — demo data seeder
  *
  * Writes static JSON files for docs/sheets/slides into a temp data directory.
  * (Calendar + Contacts moved to the Vulos Mail/PIM product, so they are no
@@ -73,7 +73,7 @@ export function seedStaticFiles() {
         {
           type: 'paragraph',
           content: [
-            { type: 'text', text: 'This document summarises the key milestones, shipped features, and upcoming priorities for Vulos Office during the second quarter of 2026. It is intended for internal distribution and review before the all-hands on Friday.' },
+            { type: 'text', text: 'This document summarises the key milestones, shipped features, and upcoming priorities for Diwan during the second quarter of 2026. It is intended for internal distribution and review before the all-hands on Friday.' },
           ],
         },
         {
@@ -178,7 +178,7 @@ export function seedStaticFiles() {
         },
         {
           type: 'paragraph',
-          content: [{ type: 'text', text: 'Vulos Office currently uses last-write-wins (LWW) for concurrent edits. This is adequate for single-user deployments but causes silent data loss when two users edit the same document simultaneously on a slow or partitioned network.' }],
+          content: [{ type: 'text', text: 'Diwan currently uses last-write-wins (LWW) for concurrent edits. This is adequate for single-user deployments but causes silent data loss when two users edit the same document simultaneously on a slow or partitioned network.' }],
         },
         {
           type: 'heading',
@@ -294,7 +294,7 @@ export function seedStaticFiles() {
   // ── Slide deck ────────────────────────────────────────────────────────────
   writeJSON(path.join(DEMO_DATA_DIR, 'demo-slides.json'), {
     id: 'demo-slides',
-    name: 'Vulos Office — Product Overview',
+    name: 'Diwan — Product Overview',
     type: 'slide',
     content: {
       themeId: 'obsidian',
@@ -306,9 +306,9 @@ export function seedStaticFiles() {
         {
           id: 'slide-1',
           master: 'title',
-          title: 'Vulos Office',
+          title: 'Diwan',
           content: '<p><strong>Open-source productivity suite</strong><br>Documents · Sheets · Slides · PDF</p>',
-          notes: 'Welcome! This deck gives a 5-minute overview of what Vulos Office is and why we built it.',
+          notes: 'Welcome! This deck gives a 5-minute overview of what Diwan is and why we built it.',
           bg: '',
         },
         {
@@ -368,7 +368,7 @@ export function seedStaticFiles() {
   })
   writeJSON(path.join(DEMO_DATA_DIR, 'demo-board.json'), {
     id: 'demo-board',
-    name: 'Vulos Office — Architecture Sketch',
+    name: 'Diwan — Architecture Sketch',
     type: 'whiteboard',
     content: {
       type: 'excalidraw',
@@ -400,7 +400,7 @@ export function seedStaticFiles() {
 // plain text stubs.
 export function seedLocalDriveFiles(homeDir = DEMO_HOME_DIR) {
   const stub = (label) =>
-    `Ofisi demo file — ${label}. Fabricated sample data for screenshots; not a real document.\n`
+    `Diwan demo file — ${label}. Fabricated sample data for screenshots; not a real document.\n`
 
   const layout = {
     Documents: [
@@ -437,7 +437,7 @@ export function seedLocalDriveFiles(homeDir = DEMO_HOME_DIR) {
 
 // ── Main (standalone) ─────────────────────────────────────────────────────────
 async function main() {
-  console.log('\nVulos Office — demo seeder')
+  console.log('\nDiwan — demo seeder')
   console.log(`  data dir : ${DEMO_DATA_DIR}`)
   console.log(`  home dir : ${DEMO_HOME_DIR}`)
 

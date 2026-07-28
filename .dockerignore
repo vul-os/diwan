@@ -1,6 +1,6 @@
 .git
 node_modules
-third_party/relay-client/node_modules
+third_party/*/node_modules
 dist
 dist-lib
 dist-office

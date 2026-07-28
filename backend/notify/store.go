@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"vulos-office/backend/models"
+	"diwan/backend/models"
 
 	"github.com/google/uuid"
 

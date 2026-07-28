@@ -1,11 +1,11 @@
-# Ofisi — Static Deploy Guide
+# Diwan — Static Deploy Guide
 
-Ofisi ships the `office` SPA, built with Vite and uploaded to Tigris
+Diwan ships the `office` SPA, built with Vite and uploaded to Tigris
 object storage for CDN delivery.
 
-> Ofisi is the **documents-only** product (Docs, Sheets, Slides, PDF/Signing).
+> Diwan is the **documents-only** product (Docs, Sheets, Slides, PDF/Signing).
 > Calendar and Contacts come from the bring-your-own-mailbox PIM connector
-> (**lilmail**), surfaced by the OS as standalone widgets — not from Ofisi.
+> (**lilmail**), surfaced by the OS as standalone widgets — not from Diwan.
 > Chat and video are third-party (Matrix/Element; Element Call / Jitsi), not
 > Vulos products. The **Vulos OS** is the shell that hosts the apps.
 
@@ -20,7 +20,7 @@ object storage for CDN delivery.
 |---|---|
 | `TIGRIS_ACCESS_KEY_ID` | Tigris access key |
 | `TIGRIS_SECRET_ACCESS_KEY` | Tigris secret key |
-| `TIGRIS_BUCKET` | Bucket name (e.g. `vulos-office-static`) |
+| `TIGRIS_BUCKET` | Bucket name (e.g. `diwan-static`) |
 | `TIGRIS_ENDPOINT` | Optional; defaults to `https://fly.storage.tigris.dev` |
 
 ## Usage

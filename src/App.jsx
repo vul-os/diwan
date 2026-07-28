@@ -46,13 +46,13 @@ export default function App() {
 
   // ── Protocol handler + deep-link ?goto= param ─────────────────────────────
   useEffect(() => {
-    // Register vulos-office:// protocol handler (web+ prefix required by browsers)
+    // Register diwan:// protocol handler (web+ prefix required by browsers)
     try {
-      navigator.registerProtocolHandler('web+vulosoffice', window.location.origin + '/?goto=%s', 'Ofisi')
+      navigator.registerProtocolHandler('web+diwan', window.location.origin + '/?goto=%s', 'Diwan')
     } catch { /* unsupported browser */ }
 
     // Handle incoming deep-link ?goto= param
-    // e.g. OS rewrites web+vulosoffice://docs/abc123 → https://app.vulos.org/?goto=docs%2Fabc123
+    // e.g. OS rewrites web+diwan://docs/abc123 → https://app.vulos.org/?goto=docs%2Fabc123
     const params = new URLSearchParams(window.location.search)
     const goto = params.get('goto')
     if (goto) {
@@ -76,7 +76,7 @@ export default function App() {
   if (loading) {
     return (
       <div className="h-screen flex items-center justify-center bg-bg">
-        <LoadingState label="Loading Ofisi…" />
+        <LoadingState label="Loading Diwan…" />
       </div>
     )
   }

@@ -24,7 +24,7 @@ import (
 	"io"
 	"log"
 
-	"vulos-office/backend/storage"
+	"diwan/backend/storage"
 
 	"github.com/gin-gonic/gin"
 )

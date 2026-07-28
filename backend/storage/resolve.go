@@ -14,7 +14,7 @@
 // object-store layer the OFFICE-STORE-01 deliverable shipped but never wired.
 //
 // No endpoint-selection logic lives here beyond the env→struct mapping that
-// OFFICE-STORE-01 explicitly requires: "vulos-office accepts the endpoint, it
+// OFFICE-STORE-01 explicitly requires: "diwan accepts the endpoint, it
 // does NOT decide between Tigris or MinIO".
 package storage
 

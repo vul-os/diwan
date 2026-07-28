@@ -1,4 +1,4 @@
-# .github/workflows/security-scan.yml — security scanning for vulos-office
+# .github/workflows/security-scan.yml — security scanning for diwan
 #
 # Triggers on:
 #   - push to any branch

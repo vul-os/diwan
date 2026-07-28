@@ -23,11 +23,11 @@ import (
 	"sync"
 	"testing"
 
-	"vulos-office/backend/billing"
-	"vulos-office/backend/fileacl"
-	"vulos-office/backend/middleware"
-	"vulos-office/backend/models"
-	"vulos-office/backend/seam"
+	"diwan/backend/billing"
+	"diwan/backend/fileacl"
+	"diwan/backend/middleware"
+	"diwan/backend/models"
+	"diwan/backend/seam"
 
 	"github.com/gin-gonic/gin"
 )

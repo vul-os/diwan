@@ -1,5 +1,5 @@
 /**
- * Button — Ofisi design system
+ * Button — Diwan design system
  * ----------------------------------------------------------------------------
  * Variants:
  *   - primary      Accent (deep teal) — the one "yes" affordance per surface

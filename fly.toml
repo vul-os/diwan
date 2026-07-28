@@ -1,6 +1,6 @@
-# fly.toml — Vulos Office (documents app: Docs/Sheets/Slides/PDF+Signing) on Fly.io
+# fly.toml — Diwan (documents app: Docs/Sheets/Slides/PDF+Signing) on Fly.io
 #
-# Vulos Office is a single Go binary that embeds its Vite SPA and serves the API
+# Diwan is a single Go binary that embeds its Vite SPA and serves the API
 # + static app on :8080. It runs standalone; with STORAGE_TYPE=postgres +
 # DATABASE_URL it uses a shared Postgres, otherwise local storage on the mounted
 # volume.
@@ -13,19 +13,19 @@
 # the image out-of-band and deploy by image reference rather than letting Fly
 # build:
 #
-#   # from the ofisi repo root
-#   docker build -t ghcr.io/vul-os/ofisi:latest .
-#   docker push ghcr.io/vul-os/ofisi:latest
-#   fly deploy -c fly.toml --image ghcr.io/vul-os/ofisi:latest
+#   # from the diwan repo root
+#   docker build -t ghcr.io/vul-os/diwan:latest .
+#   docker push ghcr.io/vul-os/diwan:latest
+#   fly deploy -c fly.toml --image ghcr.io/vul-os/diwan:latest
 #
 # (The [build].image below points Fly at that pushed image so a bare `fly deploy`
 # also works once the image is published.)
 
-app            = "vulos-office"
+app            = "diwan"
 primary_region = "PLACEHOLDER"   # Fly region code (e.g. "iad", "lhr", "fra")
 
 [build]
-  image = "ghcr.io/vul-os/ofisi:latest"
+  image = "ghcr.io/vul-os/diwan:latest"
 
 # Storage: local by default (data + uploads under /srv/{data,uploads}, since the
 # image's WORKDIR is /srv and the server's data_dir/uploads_dir default to

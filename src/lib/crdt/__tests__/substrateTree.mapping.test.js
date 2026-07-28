@@ -12,7 +12,7 @@
  * VERDICT (what these tests show)
  * ------------------------------
  * The structural half maps CLEANLY and is proven here:
- *   • Ofisi's slide order is a flat list under one root, addressed by the same
+ *   • Diwan's slide order is a flat list under one root, addressed by the same
  *     fractional `ordKey` strings — `tree-move`'s `(parent, ordering_key)` LWW
  *     register is precisely that, with the ordKeys carried unchanged.
  *   • Reordering a slide is a second `tree-move`; greater HLC wins (§4.8/§4.4).
@@ -108,7 +108,7 @@ function hex(bytes) {
 }
 
 describe('Slides structure maps onto SYNC.md §4.8 tree-move', () => {
-  it("carries Ofisi's fractional ordKeys unchanged and yields the same order", () => {
+  it("carries Diwan's fractional ordKeys unchanged and yields the same order", () => {
     const e = new sync.SyncEngine()
     const c = clockFor(1)
 

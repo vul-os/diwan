@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"vulos-office/backend/invites"
+	"diwan/backend/invites"
 )
 
 func runContract(t *testing.T, s invites.Store) {

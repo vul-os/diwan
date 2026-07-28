@@ -8,10 +8,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"vulos-office/backend/billing"
-	"vulos-office/backend/config"
-	"vulos-office/backend/middleware"
-	"vulos-office/backend/seam"
+	"diwan/backend/billing"
+	"diwan/backend/config"
+	"diwan/backend/middleware"
+	"diwan/backend/seam"
 
 	"github.com/gin-gonic/gin"
 )

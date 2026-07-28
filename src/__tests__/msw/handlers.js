@@ -1,5 +1,5 @@
 /**
- * MSW request handlers — an in-memory mock of the Vulos Office `/api` doc
+ * MSW request handlers — an in-memory mock of the Diwan `/api` doc
  * backend, used by the RTL + MSW integration layer (WAVE-28).
  *
  * These model the real endpoints exercised by HistoryPanel / CommentsPanel /
@@ -310,9 +310,17 @@ export const handlers = [
   }),
 
   // ── Share links (owner management) ─────────────────────────────────────────
+  //
+  // The server stores only a SHA-256 of each token, so the LIST endpoint can
+  // never return one — only the mint response can. The mock strips `token` here
+  // rather than storing token-free records, because the token still has to be
+  // resolvable by the anonymous view route below; stripping at the boundary is
+  // what the real handler does (models.ShareLink.Token is `omitempty` and the
+  // store has nothing to put in it).
   http.get('/api/files/:id/share-links', ({ params }) => {
     log('GET', `/files/${params.id}/share-links`)
-    return HttpResponse.json({ links: mockState.shareLinks[params.id] || [] })
+    const links = (mockState.shareLinks[params.id] || []).map(({ token: _token, ...rest }) => rest)
+    return HttpResponse.json({ links })
   }),
 
   http.post('/api/files/:id/share-links', async ({ params, request }) => {

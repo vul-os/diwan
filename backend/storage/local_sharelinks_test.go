@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"vulos-office/backend/models"
+	"diwan/backend/models"
 )
 
 func TestLocalShareLinks_RoundTripAndHashPersisted(t *testing.T) {

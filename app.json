@@ -1,6 +1,6 @@
 {
-  "id": "vulos-office",
-  "name": "Ofisi",
+  "id": "diwan",
+  "name": "Diwan",
   "icon": "📄",
   "description": "Documents, spreadsheets, slides, and PDF with server-side persistence",
   "version": "1.0.0",

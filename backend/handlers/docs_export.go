@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"vulos-office/backend/services/docs_export"
-	"vulos-office/backend/storage"
+	"diwan/backend/services/docs_export"
+	"diwan/backend/storage"
 
 	"github.com/gin-gonic/gin"
 )

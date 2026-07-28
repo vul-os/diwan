@@ -46,7 +46,7 @@ const EXPIRY_OPTIONS = [
 ]
 
 // Build the absolute anonymous view URL for a link token. Prefers Office's
-// externally-reachable base (VULOS_OFFICE_PUBLIC_URL via /api/reachability) so a
+// externally-reachable base (DIWAN_PUBLIC_URL via /api/reachability) so a
 // link handed to an external viewer targets a reachable URL even when the box is
 // behind NAT and the owner loaded Office over a LAN address; falls back to the
 // current origin (standalone/cloud where the origin is already public).
@@ -365,8 +365,21 @@ function PersonRow({ accountId, role, isMe, editable, onChangeRole, onRevoke }) 
 
 // ─── ShareLinksSection ───────────────────────────────────────────────────────
 // Owner-only: mint expiring / password-protected read-only links, list them,
-// copy their URL, and revoke. Access is granted by the server on the anonymous
-// view route — the UI never conveys access itself.
+// and revoke. Access is granted by the server on the anonymous view route — the
+// UI never conveys access itself.
+//
+// SHOWN ONCE. The server stores only a SHA-256 of each link token, so
+// GET /files/:id/share-links returns no token for any link — not even one
+// minted a second ago. A URL is therefore copyable only while the mint response
+// that carried it is still in this component's state: `mintedUrls` below, keyed
+// by link id and never persisted. Reopen the modal and the URL is gone.
+//
+// This is a deliberate, visible trade. Previously the store held live tokens, so
+// anyone who could read it held working links; now nobody can re-derive a URL,
+// including the owner. Links already in circulation keep working — the server
+// hashes what the visitor presents — and revoke works from the link id, so the
+// owner never needs the token to kill a leaked link. The list says all of this
+// rather than rendering a dead or empty URL.
 function ShareLinksSection({ fileId, onError, showToast }) {
   const [links, setLinks] = useState([])
   const [loading, setLoading] = useState(false)
@@ -374,6 +387,9 @@ function ShareLinksSection({ fileId, onError, showToast }) {
   const [password, setPassword] = useState('')
   const [expiry, setExpiry] = useState(0)
   const [copiedId, setCopiedId] = useState(null)
+  // { [linkId]: absoluteUrl } — populated only by mint(), only for this modal
+  // session. Never written to storage: it is the one copy of a live capability.
+  const [mintedUrls, setMintedUrls] = useState({})
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -393,11 +409,17 @@ function ShareLinksSection({ fileId, onError, showToast }) {
     setMinting(true)
     onError?.('')
     try {
-      await api.createShareLink(fileId, { password: password.trim(), expiresInSeconds: expiry })
+      const created = await api.createShareLink(fileId, { password: password.trim(), expiresInSeconds: expiry })
+      // The mint response is the ONLY time the server hands over the token.
+      // Hold the built URL here so the owner can copy it before the modal
+      // closes; after that it is unrecoverable by design.
+      if (created?.id && created?.token) {
+        setMintedUrls((m) => ({ ...m, [created.id]: shareLinkUrl(created.token) }))
+      }
       setPassword('')
       setExpiry(0)
       await refresh()
-      showToast?.('Link created', 'success')
+      showToast?.('Link created — copy it now, the URL is shown only once', 'success')
     } catch (e) {
       onError?.(e.message || 'Could not create link')
     } finally {
@@ -417,7 +439,8 @@ function ShareLinksSection({ fileId, onError, showToast }) {
   }
 
   const copy = async (link) => {
-    const url = shareLinkUrl(link.token)
+    const url = mintedUrls[link.id]
+    if (!url) return // no URL to copy; the button is not rendered in that case
     try {
       await navigator.clipboard.writeText(url)
       setCopiedId(link.id)
@@ -478,7 +501,15 @@ function ShareLinksSection({ fileId, onError, showToast }) {
             <li key={l.id} className="flex items-center gap-2 px-2.5 py-1.5">
               <Link2 size={12} className="text-ink-faint flex-shrink-0" />
               <div className="flex-1 min-w-0">
-                <p className="text-2xs text-ink truncate font-mono">{shareLinkUrl(l.token)}</p>
+                {mintedUrls[l.id] ? (
+                  <p className="text-2xs text-ink truncate font-mono">{mintedUrls[l.id]}</p>
+                ) : (
+                  // Say what happened. An empty line, or a URL built from an
+                  // absent token, would read as a bug or — worse — get pasted.
+                  <p className="text-2xs text-ink-faint italic">
+                    URL shown only when created — this link still works, but cannot be re-read
+                  </p>
+                )}
                 <p className="text-2xs text-ink-faint flex items-center gap-2 mt-px">
                   {l.has_password && <span className="flex items-center gap-0.5"><Lock size={9} /> password</span>}
                   {l.expires_at
@@ -486,14 +517,16 @@ function ShareLinksSection({ fileId, onError, showToast }) {
                     : <span className="flex items-center gap-0.5"><Clock size={9} /> never expires</span>}
                 </p>
               </div>
-              <button
-                onClick={() => copy(l)}
-                aria-label="Copy link URL"
-                title="Copy link"
-                className="p-1 rounded-sm text-ink-faint hover:text-accent hover:bg-accent-tint focus:outline-none focus-visible:shadow-focus"
-              >
-                {copiedId === l.id ? <Check size={13} className="text-success" /> : <Copy size={13} />}
-              </button>
+              {mintedUrls[l.id] && (
+                <button
+                  onClick={() => copy(l)}
+                  aria-label="Copy link URL"
+                  title="Copy link"
+                  className="p-1 rounded-sm text-ink-faint hover:text-accent hover:bg-accent-tint focus:outline-none focus-visible:shadow-focus"
+                >
+                  {copiedId === l.id ? <Check size={13} className="text-success" /> : <Copy size={13} />}
+                </button>
+              )}
               <button
                 onClick={() => revoke(l.id)}
                 aria-label="Revoke link"

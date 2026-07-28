@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"vulos-office/backend/signing"
+	"diwan/backend/signing"
 )
 
 // setupKey initialises (or reuses) the in-memory dev key for each test.

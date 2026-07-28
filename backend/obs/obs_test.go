@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	dto "github.com/prometheus/client_model/go"
-	"vulos-office/backend/obs"
+	"diwan/backend/obs"
 )
 
 func TestMetricIncrement(t *testing.T) {

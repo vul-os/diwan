@@ -1,5 +1,5 @@
 /**
- * WhiteboardEditor — Ofisi's whiteboard document type.
+ * WhiteboardEditor — Diwan's whiteboard document type.
  *
  * A whiteboard is an Excalidraw canvas (MIT — https://github.com/excalidraw/excalidraw)
  * backed by a Y.Doc, mounted on Office's OWN distributed peer-to-peer collab
@@ -7,7 +7,7 @@
  *
  *   • The scene is a Yjs CRDT: elements live one-per-id in a Y.Map so concurrent
  *     edits to different shapes merge cleanly (see lib/crdt/boardYdoc.js).
- *   • It syncs over an E2E-encrypted P2P room via Ofisi's own first-party
+ *   • It syncs over an E2E-encrypted P2P room via Diwan's own first-party
  *     src/lib/collab/webrtc/fabric.js FabricClient — DIRECT WebRTC data
  *     channels, relay/TURN only on hard-NAT
  *     failure and content-blind even then. The room key lives in the URL

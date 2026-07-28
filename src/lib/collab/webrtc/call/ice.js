@@ -6,9 +6,9 @@
 // fallback behaviour is defined once.
 //
 // STUN/TURN configuration (no other Vulos product required):
-//   Ofisi's default collaboration transport is direct WebRTC (see
+//   Diwan's default collaboration transport is direct WebRTC (see
 //   docs/COLLABORATION.md). A host box (Vulos OS / Ephor) can supply its
-//   own ICE servers via /api/peering/ice, but a standalone/self-hosted Ofisi
+//   own ICE servers via /api/peering/ice, but a standalone/self-hosted Diwan
 //   with no host box in front of it needs somewhere else to get STUN (NAT
 //   discovery) and, for the ~10-20% of peer pairs behind a symmetric NAT that
 //   can't hole-punch at all, TURN (a relay of last resort). resolveIceServers()
@@ -63,7 +63,7 @@ function _csv(s) {
 /**
  * Resolve the STUN/TURN ICE servers to use when the host endpoint (host box's
  * /api/peering/ice, or a configured rendezvous relayd's ICE surface) is
- * unreachable or yields nothing — most notably a standalone Ofisi with
+ * unreachable or yields nothing — most notably a standalone Diwan with
  * neither. See the module doc above and docs/COTURN.md.
  *
  * @returns {Array<RTCIceServer>} ICE server objects to fall back to (may be

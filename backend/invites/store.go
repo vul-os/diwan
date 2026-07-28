@@ -3,7 +3,7 @@
 // Motivation
 // ----------
 // Registration on a bootstrapped instance was previously gated behind a single
-// static VULOS_OFFICE_REGISTRATION_TOKEN (a shared secret that never expires
+// static DIWAN_REGISTRATION_TOKEN (a shared secret that never expires
 // and can be reused indefinitely). This package adds proper invite tokens that
 // an admin mints on demand:
 //

@@ -1,4 +1,4 @@
-# Ofisi Configuration
+# Diwan Configuration
 
 server:
   addr: ":8080"
@@ -20,7 +20,7 @@ storage:
     port: 5432
     user: "postgres"
     password: ""
-    database: "vulos_office"
+    database: "diwan"
     sslmode: "disable"
 
 persistence:
@@ -31,17 +31,17 @@ persistence:
   # this never loses a document. The store backend follows storage.type
   # (local/s3 -> filesystem <data_dir>/updates/<id>/; postgres -> office.file_updates
   # + office.file_update_snapshots). Frame appends are storage-quota metered.
-  # Env override: VULOS_PERSISTENCE_UPDATELOG / OFISI_UPDATE_LOG.
+  # Env override: VULOS_PERSISTENCE_UPDATELOG / DIWAN_UPDATE_LOG.
   updatelog: false
 
 collab:
   # Base URL of any vulos-relayd's OPEN rendezvous surface (announce/resolve/
   # signal/mailbox + ICE), consumed DIRECTLY by the browser. Set this and a
-  # STANDALONE Ofisi (which serves no /api/peering/*, see main.go) gets real
+  # STANDALONE Diwan (which serves no /api/peering/*, see main.go) gets real
   # peer-to-peer collaboration with NO Vulos OS / host box required — any
   # self-hosted relayd is enough (e.g. "https://relay.example.org"). Leave
   # blank (default) to keep today's behaviour: host-box /api/peering/* when
   # present, local-only otherwise. Exposed read-only to the browser at
-  # GET /api/reachability. Env override: VULOS_RENDEZVOUS_URL / OFISI_RENDEZVOUS_URL.
+  # GET /api/reachability. Env override: VULOS_RENDEZVOUS_URL / DIWAN_RENDEZVOUS_URL.
   # See docs/COLLABORATION.md §3 and docs/CONFIGURATION.md.
   rendezvous_url: ""

@@ -26,9 +26,9 @@ import (
 	"sort"
 	"strings"
 
-	"vulos-office/backend/docindex"
-	"vulos-office/backend/middleware"
-	"vulos-office/backend/storage"
+	"diwan/backend/docindex"
+	"diwan/backend/middleware"
+	"diwan/backend/storage"
 
 	"github.com/gin-gonic/gin"
 )

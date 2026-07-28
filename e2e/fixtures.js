@@ -2,7 +2,7 @@
  * e2e/fixtures.js — in-browser API mocking for the Playwright E2E layer.
  *
  * Installs a `page.route('**\/api/**')` handler that serves a small, stateful
- * mock of the Vulos Office backend so the browser app runs with no Go server.
+ * mock of the Diwan backend so the browser app runs with no Go server.
  * The mock mirrors src/__tests__/msw/handlers.js: auth, files, versions (with a
  * role-gated restore — wave-14), comments and suggestions.
  *

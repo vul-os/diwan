@@ -14,8 +14,9 @@ import (
 	"os"
 	"testing"
 
-	"vulos-office/backend/config"
-	"vulos-office/backend/models"
+	"diwan/backend/config"
+	"diwan/backend/models"
+	"diwan/backend/signing"
 )
 
 // testStorageContract is a backend-agnostic verification of the core Storage
@@ -150,6 +151,63 @@ func testStorageContract(t *testing.T, store Storage) {
 	}
 	if err := store.DeleteSuggestion(f.ID, sg.ID); err != nil {
 		t.Fatalf("DeleteSuggestion: %v", err)
+	}
+
+	// ── Share links — the token is stored HASHED on every backend ─────────────
+	//
+	// This lives in the shared contract rather than in the local-backend test
+	// because the defect it guards was a per-backend one: the file store wrote
+	// the live token while backend/invites (SQLite) hashed. Any backend that
+	// implements Storage must hash, so the assertion belongs where both run.
+	linkToken := "Q29udHJhY3RUb2tlbl9ub3RSYW5kb21fNDNjaGFyc19va2F5"
+	linkHash := signing.HashShareLinkToken(linkToken)
+	sl := &models.ShareLink{
+		ID:           "sl-contract-1",
+		FileID:       f.ID,
+		Token:        linkToken,
+		CreatedBy:    "alice",
+		PasswordHash: "$2a$10$fakehashfakehashfakehashfakehashfakehashfakehashfa",
+	}
+	if err := store.CreateShareLink(sl); err != nil {
+		t.Fatalf("CreateShareLink: %v", err)
+	}
+	if sl.TokenHash != linkHash {
+		t.Fatalf("CreateShareLink must derive TokenHash itself: got %q", sl.TokenHash)
+	}
+	gotLink, err := store.GetShareLinkByToken(linkToken)
+	if err != nil {
+		t.Fatalf("GetShareLinkByToken(raw): %v", err)
+	}
+	if gotLink.Token != "" {
+		t.Fatalf("a read path returned a live token %q — the store must not be able to", gotLink.Token)
+	}
+	if gotLink.TokenHash != linkHash {
+		t.Fatalf("TokenHash round-trip: got %q, want %q", gotLink.TokenHash, linkHash)
+	}
+	if !gotLink.HasPassword || gotLink.PasswordHash != sl.PasswordHash {
+		t.Fatalf("bcrypt password gate did not round-trip: %+v", gotLink)
+	}
+	// The stored hash must not itself open the link.
+	if _, err := store.GetShareLinkByToken(linkHash); err == nil {
+		t.Fatal("the stored hash must not work as a token")
+	}
+	listed, err := store.ListShareLinks(f.ID)
+	if err != nil || len(listed) != 1 {
+		t.Fatalf("ListShareLinks: err=%v n=%d", err, len(listed))
+	}
+	if listed[0].Token != "" {
+		t.Fatalf("ListShareLinks leaked a token: %q", listed[0].Token)
+	}
+	if err := store.RevokeShareLink(f.ID, "sl-contract-1"); err != nil {
+		t.Fatalf("RevokeShareLink: %v", err)
+	}
+	revoked, err := store.GetShareLinkByToken(linkToken)
+	if err != nil || !revoked.Revoked {
+		t.Fatalf("link should read back revoked: err=%v link=%+v", err, revoked)
+	}
+	// Minting without a token is a caller bug, not a silently keyless record.
+	if err := store.CreateShareLink(&models.ShareLink{ID: "sl-contract-2", FileID: f.ID}); err == nil {
+		t.Fatal("CreateShareLink with an empty token must error")
 	}
 
 	// ── Delete ────────────────────────────────────────────────────────────────

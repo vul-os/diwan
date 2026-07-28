@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Vulos Office — Playwright screenshotter
+ * Diwan — Playwright screenshotter
  *
  * Captures every major app surface at 1440×900 into docs/screenshots/.
  *
@@ -44,7 +44,7 @@ const SCREENSHOT_BASE = EXTERNAL_URL ?? LOCAL_BASE
 const API_SEED_BASE   = EXTERNAL_URL ?? LOCAL_BASE
 
 // ── Routes to capture ─────────────────────────────────────────────────────────
-// Every surface is shot in BOTH light and dark (Ofisi is light-first) at retina
+// Every surface is shot in BOTH light and dark (Diwan is light-first) at retina
 // (deviceScaleFactor 2) into `<name>-light.png` / `<name>-dark.png`.
 const ROUTES = [
   { name: 'home',          path: '/',               description: 'Home / workspace' },
@@ -130,13 +130,13 @@ async function startLocalServer() {
   }
 
   // 3. Build Go binary
-  const binPath = '/tmp/vulos-office-screenshots-bin'
+  const binPath = '/tmp/diwan-screenshots-bin'
   console.log('  building Go binary …')
   execSync(`go build -o "${binPath}" .`, { cwd: ROOT, stdio: 'pipe' })
   console.log('  Go binary built')
 
   // 4. Write a minimal config.yaml into a temp workdir
-  const tmpWD = '/tmp/vulos-office-ss-wd'
+  const tmpWD = '/tmp/diwan-ss-wd'
   mkdirSync(tmpWD, { recursive: true })
   mkdirSync(`${DEMO_DATA_DIR}/uploads`, { recursive: true })
   writeFileSync(`${tmpWD}/config.yaml`, [
@@ -213,7 +213,7 @@ async function capture(page, route, theme) {
 }
 
 // A theme-pinned browser context at retina scale. The app resolves its palette
-// from `[data-theme]`, driven by localStorage 'ofisi.theme' (set before any page
+// from `[data-theme]`, driven by localStorage 'diwan.theme' (set before any page
 // script runs) and backstopped by the OS-level colorScheme.
 async function makeThemeContext(browser, theme) {
   const ctx = await browser.newContext({
@@ -224,7 +224,7 @@ async function makeThemeContext(browser, theme) {
   })
   await ctx.addInitScript((t) => {
     try {
-      localStorage.setItem('ofisi.theme', t)
+      localStorage.setItem('diwan.theme', t)
       localStorage.setItem('vulos.theme', t) // legacy key, still honoured
     } catch {}
   }, theme)
@@ -238,7 +238,7 @@ async function main() {
 
   const usingExternal = Boolean(EXTERNAL_URL)
 
-  console.log('\nVulos Office screenshotter')
+  console.log('\nDiwan screenshotter')
   console.log(`  screenshots → ${SCREENSHOT_BASE}`)
   console.log(`  output      : ${path.relative(ROOT, OUT)}/`)
   console.log(`  viewport    : 1440×900 @2x (retina), light + dark`)
@@ -300,7 +300,7 @@ async function main() {
     '',
     '- **Docs** `demo`: "Q2 2026 Product Update" — prose, table, bullet lists',
     '- **Sheets** `demo-sheet`: "Revenue Tracker H1 2026" — 6 months, SUM + margin formulas, 2 sheets',
-    '- **Slides** `demo-slides`: "Ofisi Product Overview" — 5 slides',
+    '- **Slides** `demo-slides`: "Diwan Product Overview" — 5 slides',
   ].join('\n')
 
   writeFileSync(path.join(OUT, 'README.md'), notes + '\n')

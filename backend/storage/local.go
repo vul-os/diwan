@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"vulos-office/backend/config"
-	"vulos-office/backend/models"
+	"diwan/backend/config"
+	"diwan/backend/models"
 )
 
 type LocalStorage struct {
@@ -35,7 +35,7 @@ func NewLocalStorage(cfg *config.Config) (*LocalStorage, error) {
 			return nil, fmt.Errorf("create dir %s: %w", d, err)
 		}
 	}
-	return &LocalStorage{
+	s := &LocalStorage{
 		dataDir:        dir,
 		versionsDir:    filepath.Join(dir, "versions"),
 		envelopesDir:   filepath.Join(dir, "envelopes"),
@@ -46,7 +46,16 @@ func NewLocalStorage(cfg *config.Config) (*LocalStorage, error) {
 		sealedDir:      filepath.Join(dir, "sealed"),
 		suggestionsDir: filepath.Join(dir, "suggestions"),
 		foldersDir:     filepath.Join(dir, "folders"),
-	}, nil
+	}
+	// Convert any pre-fix share-link record still keyed by its PLAINTEXT token,
+	// so a deployment stops storing live capabilities the moment it starts this
+	// binary — not the first time somebody happens to open a share link. This is
+	// a hard error: a half-converted directory is exactly the state that would
+	// make links disappear, and it must not be started over silently.
+	if err := s.migrateShareLinks(); err != nil {
+		return nil, err
+	}
+	return s, nil
 }
 
 // ---- helpers ----

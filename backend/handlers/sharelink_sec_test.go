@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"vulos-office/backend/middleware"
-	"vulos-office/backend/models"
+	"diwan/backend/middleware"
+	"diwan/backend/models"
 
 	"github.com/gin-gonic/gin"
 )

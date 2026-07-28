@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"testing"
 
-	"vulos-office/backend/fileacl"
-	"vulos-office/backend/middleware"
-	"vulos-office/backend/models"
-	"vulos-office/backend/notify"
+	"diwan/backend/fileacl"
+	"diwan/backend/middleware"
+	"diwan/backend/models"
+	"diwan/backend/notify"
 
 	"github.com/gin-gonic/gin"
 )

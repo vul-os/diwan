@@ -1,19 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="Ofisi">
-  <defs>
-    <linearGradient id="ofisi-ember" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#E8703F"/>
-      <stop offset="0.55" stop-color="#D0471F"/>
-      <stop offset="1" stop-color="#B23A16"/>
-    </linearGradient>
-    <linearGradient id="ofisi-sheen" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.20"/>
-      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0"/>
-    </linearGradient>
-  </defs>
-  <rect x="1" y="1" width="30" height="30" rx="8.5" fill="url(#ofisi-ember)"/>
-  <rect x="1" y="1" width="30" height="30" rx="8.5" fill="url(#ofisi-sheen)"/>
-  <!-- the "O" — a warm ivory ring -->
-  <circle cx="16" cy="16" r="8.4" fill="none" stroke="#FBF3E9" stroke-width="4.4"/>
-  <!-- a small ember bead centred in the counter for warmth -->
-  <circle cx="16" cy="16" r="2.2" fill="#FBF3E9"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="32" height="32" role="img" aria-labelledby="diwan-title">
+  <title id="diwan-title">Diwan</title>
+  <!-- An iwan — the vaulted portal. A quarter turn makes it a D. -->
+  <path d="M12 55 L12 31 A22.1 22.1 0 0 1 32 9 A22.1 22.1 0 0 1 52 31 L52 55 L44 55 L44 31 A14.17 14.17 0 0 0 32 17 A14.17 14.17 0 0 0 20 31 L20 55 Z" fill="#D0471F"/>
+  <rect x="20" y="47" width="24" height="8" fill="#0E8B86"/>
 </svg>

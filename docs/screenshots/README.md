@@ -30,4 +30,4 @@ Against a live instance: `BASE_URL=https://... npm run screenshots`
 
 - **Docs** `demo`: "Q2 2026 Product Update" — prose, table, bullet lists
 - **Sheets** `demo-sheet`: "Revenue Tracker H1 2026" — 6 months, SUM + margin formulas, 2 sheets
-- **Slides** `demo-slides`: "Ofisi Product Overview" — 5 slides
+- **Slides** `demo-slides`: "Diwan Product Overview" — 5 slides

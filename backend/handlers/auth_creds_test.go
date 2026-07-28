@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"vulos-office/backend/config"
-	"vulos-office/backend/middleware"
-	"vulos-office/backend/userauth"
+	"diwan/backend/config"
+	"diwan/backend/middleware"
+	"diwan/backend/userauth"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"

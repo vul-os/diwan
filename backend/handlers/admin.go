@@ -14,11 +14,11 @@ import (
 	"sync"
 	"time"
 
-	"vulos-office/backend/audit"
-	"vulos-office/backend/billing"
-	"vulos-office/backend/invites"
-	"vulos-office/backend/middleware"
-	"vulos-office/backend/userauth"
+	"diwan/backend/audit"
+	"diwan/backend/billing"
+	"diwan/backend/invites"
+	"diwan/backend/middleware"
+	"diwan/backend/userauth"
 
 	"github.com/gin-gonic/gin"
 )

@@ -1,5 +1,5 @@
 /**
- * secureTransport.js — Ofisi's WebRTC fabric credential-transport guard (internal).
+ * secureTransport.js — Diwan's WebRTC fabric credential-transport guard (internal).
  *
  * The fabric client is a TRUST-BOUNDARY participant: it holds a short-lived
  * Bearer JWT (the box/app session token) and attaches it to two kinds of

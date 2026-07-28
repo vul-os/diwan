@@ -13,9 +13,9 @@ import (
 	"strings"
 	"testing"
 
-	"vulos-office/backend/fileacl"
-	"vulos-office/backend/middleware"
-	"vulos-office/backend/models"
+	"diwan/backend/fileacl"
+	"diwan/backend/middleware"
+	"diwan/backend/models"
 
 	"github.com/gin-gonic/gin"
 )

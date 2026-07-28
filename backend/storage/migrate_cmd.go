@@ -1,6 +1,6 @@
 package storage
 
-// migrate_cmd.go — exported helpers for the `vulos-office migrate` subcommand.
+// migrate_cmd.go — exported helpers for the `diwan migrate` subcommand.
 //
 // RunMigrations opens the configured storage backend and applies every
 // migration; it is idempotent (all DDL uses CREATE … IF NOT EXISTS).
@@ -14,10 +14,10 @@ import (
 	"context"
 	"fmt"
 
-	"vulos-office/backend/config"
+	"diwan/backend/config"
 )
 
-// knownTables is the full set of tables vulos-office creates across all
+// knownTables is the full set of tables diwan creates across all
 // migration passes. The migrate up subcommand verifies all are present after
 // applying migrations.
 var knownTables = []string{
@@ -39,7 +39,7 @@ var knownTables = []string{
 // inline, so this is a no-op with a success log.
 //
 // DATABASE_URL / VULOS_DATABASE_URL override the config.yaml storage.type so
-// that `vulos-office migrate up` works in the cloud environment without editing
+// that `diwan migrate up` works in the cloud environment without editing
 // config files.
 func RunMigrations(cfg *config.Config) error {
 	// Apply env override (same logic as storage.New so migrate up is consistent).
@@ -100,7 +100,7 @@ func MigrationStatus(cfg *config.Config) (map[string]bool, error) {
 		return nil, fmt.Errorf("migrate status (postgres): %w", err)
 	}
 
-	// Query the "office" schema — all vulos-office tables live there so the
+	// Query the "office" schema — all diwan tables live there so the
 	// product can share a single Neon database with other VulOS products.
 	rows, err := s.pool.Query(context.Background(),
 		`SELECT table_name FROM information_schema.tables

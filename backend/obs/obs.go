@@ -1,4 +1,4 @@
-// Package obs wires Prometheus metrics and OTel tracing for vulos-office.
+// Package obs wires Prometheus metrics and OTel tracing for diwan.
 // No-op when OTEL_EXPORTER_OTLP_ENDPOINT is unset.
 package obs
 
@@ -18,32 +18,32 @@ import (
 	"go.opentelemetry.io/otel/trace/noop"
 )
 
-const serviceName = "vulos-office"
+const serviceName = "diwan"
 
 var (
 	RequestCount = prometheus.NewCounter(prometheus.CounterOpts{
-		Namespace: "vulos_office",
+		Namespace: "diwan",
 		Name:      "request_count_total",
 		Help:      "Total HTTP requests handled.",
 	})
 	RequestDuration = prometheus.NewHistogram(prometheus.HistogramOpts{
-		Namespace: "vulos_office",
+		Namespace: "diwan",
 		Name:      "request_duration_seconds",
 		Help:      "HTTP request latency.",
 		Buckets:   prometheus.DefBuckets,
 	})
 	ErrorCount = prometheus.NewCounter(prometheus.CounterOpts{
-		Namespace: "vulos_office",
+		Namespace: "diwan",
 		Name:      "error_count_total",
 		Help:      "Total error responses.",
 	})
 	QueueDepth = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "vulos_office",
+		Namespace: "diwan",
 		Name:      "queue_depth",
 		Help:      "Pending WebSocket signaling operations.",
 	})
 	CacheHitRatio = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "vulos_office",
+		Namespace: "diwan",
 		Name:      "cache_hit_ratio",
 		Help:      "CRDT op cache hit ratio (0–1).",
 	})

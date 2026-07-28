@@ -45,7 +45,7 @@ function manualChunks(id) {
   }
 }
 
-// Default config: monolithic vulos-office build (dist/).
+// Default config: monolithic diwan build (dist/).
 // For the subdomain build use vite.config.office.js.
 // (Chat/video are third-party per the VulOS standard, not built by Office;
 // Calendar/Contacts are bring-your-own PIM via lilmail.)

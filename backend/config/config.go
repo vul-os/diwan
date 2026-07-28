@@ -16,14 +16,14 @@ type Config struct {
 }
 
 // CollabConfig configures the browser-side P2P collaboration transport (see
-// docs/COLLABORATION.md §3). Ofisi's OWN backend never mediates live
+// docs/COLLABORATION.md §3). Diwan's OWN backend never mediates live
 // collaboration — this section exists only to tell the BROWSER where to find a
 // peering/rendezvous surface when this server doesn't serve its own.
 type CollabConfig struct {
 	// RendezvousURL is the base URL of any vulos-relayd's OPEN rendezvous
 	// surface (announce/resolve/signal/mailbox + ICE), consumed DIRECTLY by the
 	// browser — no Vulos OS / host-box `/api/peering/*` required. When set, a
-	// STANDALONE Ofisi (which mounts no `/api/peering/*` — see main.go) still
+	// STANDALONE Diwan (which mounts no `/api/peering/*` — see main.go) still
 	// gets real peer-to-peer collaboration: any self-hosted relayd is enough.
 	// When unset (default), every collab session stays on the existing
 	// host-box `/api/peering/*` path when one is present, or local-only when it
@@ -32,12 +32,12 @@ type CollabConfig struct {
 	// Because the browser calls this URL CROSS-ORIGIN, the relayd behind it must
 	// serve its rendezvous role with CORS (every Ephor since the role
 	// shipped with CORS does; e2e-p2p/ asserts the posture against a real one).
-	// It must also be reachable from wherever users load Ofisi — an https page
+	// It must also be reachable from wherever users load Diwan — an https page
 	// cannot call an http relay, so a public deployment needs TLS on the relay.
 	//
 	// Read-only from the browser's perspective: exposed at the unauthenticated
 	// GET /api/reachability as `rendezvous_url` so it can be picked up without a
-	// frontend rebuild. Env override: VULOS_RENDEZVOUS_URL / OFISI_RENDEZVOUS_URL.
+	// frontend rebuild. Env override: VULOS_RENDEZVOUS_URL / DIWAN_RENDEZVOUS_URL.
 	RendezvousURL string `yaml:"rendezvous_url"`
 }
 
@@ -50,7 +50,7 @@ type PersistenceConfig struct {
 	// only durability path — nothing about existing behaviour changes. During
 	// the transition the frontend DUAL-WRITES: it keeps autosaving the whole
 	// document AND appends CRDT frames, so enabling or disabling the flag never
-	// loses a document. Env override: VULOS_PERSISTENCE_UPDATELOG / OFISI_UPDATE_LOG.
+	// loses a document. Env override: VULOS_PERSISTENCE_UPDATELOG / DIWAN_UPDATE_LOG.
 	UpdateLog bool `yaml:"updatelog"`
 }
 
@@ -104,10 +104,10 @@ func Load(path string) (*Config, error) {
 // box) without editing the checked-in config.yaml. Only additive, opt-in flags
 // are honoured here.
 func applyEnvOverrides(cfg *Config) {
-	if v, ok := boolEnv("VULOS_PERSISTENCE_UPDATELOG", "OFISI_UPDATE_LOG"); ok {
+	if v, ok := boolEnv("VULOS_PERSISTENCE_UPDATELOG", "DIWAN_UPDATE_LOG"); ok {
 		cfg.Persistence.UpdateLog = v
 	}
-	if v, ok := stringEnv("VULOS_RENDEZVOUS_URL", "OFISI_RENDEZVOUS_URL"); ok {
+	if v, ok := stringEnv("VULOS_RENDEZVOUS_URL", "DIWAN_RENDEZVOUS_URL"); ok {
 		cfg.Collab.RendezvousURL = v
 	}
 }

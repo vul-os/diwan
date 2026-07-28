@@ -1,138 +1,332 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Ofisi docs</title>
-<meta name="description" content="Ofisi documentation">
-<link rel="icon" href="./assets/ofisi-logo.png">
-<style>*,*::before,*::after{box-sizing:border-box}
+<title>Diwan docs</title>
+<meta name="description" content="Diwan documentation — getting started, architecture, collaboration, configuration, API, self-hosting, deploy, threat model and more.">
+<meta name="theme-color" content="#FBF7F1">
+<link rel="icon" href="./assets/diwan-mark.svg">
+<link rel="preload" href="./assets/fonts/bricolage-grotesque-latin-opsz-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="./assets/fonts/schibsted-grotesk-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<script>
+  (function () {
+    try {
+      var s = localStorage.getItem('diwan.site-theme');
+      var t = s || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', t);
+    } catch (e) { document.documentElement.setAttribute('data-theme', 'light'); }
+  })();
+</script>
+<style>
+/* ══════════════════════════════════════════════════════════════════════════
+   Diwan — docs viewer
+   Same "Warm Workshop" theme as site/index.html (src/design/tokens.css):
+   warm ivory paper, ember terracotta, exactly one accent, soft geometry.
+   Fonts are vendored locally — nothing is fetched at runtime.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+@font-face{font-family:'Bricolage Grotesque Variable';font-style:normal;font-display:swap;font-weight:200 800;
+  src:url(./assets/fonts/bricolage-grotesque-latin-opsz-normal.woff2) format('woff2-variations')}
+@font-face{font-family:'Fraunces Variable';font-style:normal;font-display:swap;font-weight:100 900;
+  src:url(./assets/fonts/fraunces-latin-opsz-normal.woff2) format('woff2-variations')}
+@font-face{font-family:'Schibsted Grotesk Variable';font-style:normal;font-display:swap;font-weight:400 900;
+  src:url(./assets/fonts/schibsted-grotesk-latin-wght-normal.woff2) format('woff2-variations')}
+@font-face{font-family:'JetBrains Mono Variable';font-style:normal;font-display:swap;font-weight:100 800;
+  src:url(./assets/fonts/jetbrains-mono-latin-wght-normal.woff2) format('woff2-variations')}
+
+*,*::before,*::after{box-sizing:border-box}
+
 :root{
-  --bg:#09090B; --bg-soft:#0E0E10; --panel:#131316; --panel-2:#18181B;
-  --border:rgba(255,255,255,.08); --border-2:rgba(255,255,255,.13);
-  --text:#FAFAFA; --muted:#A1A1AA; --faint:#71717A;
-  --radius:16px; --max:1120px;
-  --mono:ui-monospace,SFMono-Regular,"SF Mono","Geist Mono",Menlo,Consolas,monospace;
-  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+  /* ── Ember: the one accent ───────────────────────────────────────────── */
+  --ember-500:#E15A31; --ember-600:#D0471F; --ember-700:#AE3917;
+  --accent:var(--ember-600); --accent-hover:var(--ember-700);
+  --accent-tint:#FBEADF; --accent-tint-2:#F7D8C6;
+  --teal:#0E8B86;
+
+  /* ── Warm paper surfaces ─────────────────────────────────────────────── */
+  --canvas:#FBF7F1; --paper:#FFFFFF; --sand:#F3ECE0; --sunk:#EDE6D9;
+  --ink:#2A2723; --ink-muted:#6B655C; --ink-faint:#8B8378; --ink-ghost:#BBB2A6;
+  --line:#ECE4D6; --line-strong:#DFD6C6; --line-emph:#CDC2AF;
+
+  /* ── Per-surface tints, straight from the app rail ───────────────────── */
+  --docs:#3B6FD6; --sheets:#1E9E57; --slides:#D69314; --pdf:#D6455C; --board:#7B5BD1;
+
+  /* ── Warm elevation: the paper rests, it doesn't float ───────────────── */
+  --elev-1:0 1px 1px rgba(74,52,30,.05), 0 2px 4px -1px rgba(74,52,30,.07);
+  --elev-2:0 1px 2px rgba(74,52,30,.06), 0 6px 16px -4px rgba(74,52,30,.12);
+  --elev-3:0 2px 6px rgba(60,40,20,.08), 0 24px 48px -12px rgba(60,40,20,.26);
+
+  --sans:'Schibsted Grotesk Variable',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --display:'Bricolage Grotesque Variable','Schibsted Grotesk Variable',system-ui,sans-serif;
+  --serif:'Fraunces Variable','Iowan Old Style',Charter,Cambria,Georgia,serif;
+  --mono:'JetBrains Mono Variable',ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+  --arabic:'SF Arabic','Geeza Pro','Noto Naskh Arabic',Amiri,'Traditional Arabic','Segoe UI',serif;
+
+  --grain:.04; --grain-blend:multiply;
+  --max:1160px;
+  --ease:cubic-bezier(.16,1,.3,1);
+  color-scheme:light;
 }
+
+[data-theme="dark"]{
+  --accent:var(--ember-600); --accent-hover:var(--ember-500);
+  --accent-tint:#2E1C12; --accent-tint-2:#3E2417;
+  --teal:#2CB5AE;
+
+  --canvas:#17130E; --paper:#201B15; --sand:#2A241C; --sunk:#120F0A;
+  --ink:#F1EBE0; --ink-muted:#C3BAAC; --ink-faint:#8E8677; --ink-ghost:#6A6358;
+  --line:#2E2820; --line-strong:#3A332A; --line-emph:#4A4236;
+
+  --docs:#6F9FE6; --sheets:#4FC486; --slides:#E9B84A; --pdf:#EC7183; --board:#A487E0;
+
+  --elev-1:0 1px 2px rgba(0,0,0,.40), 0 1px 3px rgba(0,0,0,.30);
+  --elev-2:0 4px 14px -2px rgba(0,0,0,.55), 0 2px 5px -2px rgba(0,0,0,.40);
+  --elev-3:0 20px 44px -12px rgba(0,0,0,.70), 0 6px 16px -8px rgba(0,0,0,.45);
+
+  --grain:.022; --grain-blend:screen;
+  color-scheme:dark;
+}
+/* On the warm dark canvas the ember needs to brighten to stay legible as text. */
+[data-theme="dark"] .accent-text{color:#FF8759}
+
 html{scroll-behavior:smooth}
-body{margin:0;font-family:var(--sans);background:var(--bg);color:var(--text);line-height:1.6;-webkit-font-smoothing:antialiased;font-size:16px}
-body::before{content:"";position:fixed;inset:0;z-index:-1;background:
-  radial-gradient(1100px 600px at 80% -10%, color-mix(in srgb,var(--accent) 10%, transparent), transparent 60%),
-  radial-gradient(900px 500px at -10% 10%, color-mix(in srgb,var(--accent-2) 8%, transparent), transparent 55%),
-  var(--bg);}
+body{
+  margin:0;background:var(--canvas);color:var(--ink);
+  font-family:var(--sans);font-size:16.5px;line-height:1.6;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+  overflow-x:hidden;
+}
+/* A fine paper grain over everything — printed matter, not a screen. */
+body::after{
+  content:"";position:fixed;inset:0;z-index:9999;pointer-events:none;
+  opacity:var(--grain);mix-blend-mode:var(--grain-blend);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
 a{color:inherit;text-decoration:none}
 img{max-width:100%;display:block}
-.wrap{max-width:var(--max);margin:0 auto;padding:0 24px}
-.accent{color:var(--accent)}
+::selection{background:color-mix(in srgb,var(--accent) 24%,transparent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:4px}
 
-/* Header */
-.site-header{position:sticky;top:0;z-index:50;backdrop-filter:blur(12px);background:color-mix(in srgb,var(--bg) 72%, transparent);border-bottom:1px solid var(--border)}
-.nav{display:flex;align-items:center;gap:18px;height:64px}
-.brand{display:flex;align-items:center;gap:11px;font-weight:600;font-size:18px;letter-spacing:-.03em}
-.brand .tile{width:34px;height:34px;border-radius:9px;overflow:hidden;box-shadow:0 1px 0 rgba(255,255,255,.12) inset, 0 4px 14px rgba(0,0,0,.35)}
-.brand .tile img{width:100%;height:100%;object-fit:contain}
-.nav-spacer{flex:1}
-.nav-links{display:flex;align-items:center;gap:22px}
-.nav-links a{color:var(--muted);font-size:14.5px;font-weight:500;transition:color .15s}
-.nav-links a:hover{color:var(--text)}
-.vulos-badge{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border:1px solid var(--border-2);border-radius:999px;font-size:13px;color:var(--muted);transition:border-color .15s,color .15s}
-.vulos-badge:hover{border-color:var(--accent);color:var(--text)}
-.vulos-badge img{width:16px;height:16px;border-radius:4px}
-@media(max-width:760px){.nav-links{display:none}}
+.wrap{max-width:var(--max);margin:0 auto;padding:0 28px}
+.eyebrow{
+  font-family:var(--mono);font-size:11.5px;font-weight:500;
+  letter-spacing:.14em;text-transform:uppercase;color:var(--ink-faint);
+}
 
-/* Footer */
-.site-footer{border-top:1px solid var(--border);margin-top:40px;padding:40px 0}
-.foot{display:flex;flex-wrap:wrap;gap:18px;align-items:center;justify-content:space-between}
-.foot .left{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:14px}
-.foot .left img{width:20px;height:20px;border-radius:5px}
-.foot .links{display:flex;gap:20px;flex-wrap:wrap}
-.foot .links a{color:var(--muted);font-size:14px}
-.foot .links a:hover{color:var(--text)}
+/* ══ Header — identical chrome to the landing page ═════════════════════════ */
+.topbar{
+  position:sticky;top:0;z-index:50;
+  background:color-mix(in srgb,var(--canvas) 86%,transparent);
+  backdrop-filter:saturate(1.4) blur(14px);
+  border-bottom:1px solid var(--line);
+}
+.bar{display:flex;align-items:center;gap:16px;height:62px;max-width:var(--max);margin:0 auto;padding:0 28px}
+.brand{display:flex;align-items:center;gap:11px;font-family:var(--display);font-weight:600;font-size:19.5px;letter-spacing:-.02em}
+/* The iwan is a flat glyph on transparency — no tile, so no shadow. */
+.brand .tile{width:30px;height:30px;flex:none}
+.brand .ar{font-family:var(--arabic);font-size:15.5px;color:var(--ink-ghost);font-weight:400;letter-spacing:0;padding-bottom:2px}
+.spacer{flex:1}
+.navlinks{display:flex;align-items:center;gap:26px}
+.navlinks a{font-size:14.5px;font-weight:500;color:var(--ink-muted);transition:color .18s}
+.navlinks a:hover,.navlinks a[aria-current="page"]{color:var(--accent)}
+@media(max-width:920px){.navlinks{display:none}}
 
-/* Docs viewer */
-.docs-shell{display:grid;grid-template-columns:248px 1fr;gap:36px;align-items:start;padding:34px 0 70px}
-@media(max-width:860px){.docs-shell{grid-template-columns:1fr}}
-.docs-nav{position:sticky;top:84px;border:1px solid var(--border);border-radius:var(--radius);background:var(--panel);padding:14px}
-.docs-nav .label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);padding:6px 10px}
-.docs-nav a{display:block;padding:8px 11px;border-radius:9px;color:var(--muted);font-size:14.5px;font-weight:500;transition:.15s}
-.docs-nav a:hover{background:rgba(255,255,255,.04);color:var(--text)}
-.docs-nav a.active{background:color-mix(in srgb,var(--accent) 14%, transparent);color:var(--text)}
-@media(max-width:860px){.docs-nav{position:static}}
+.iconbtn{
+  width:34px;height:34px;display:grid;place-items:center;flex:none;cursor:pointer;
+  background:transparent;border:1px solid var(--line-strong);border-radius:9px;
+  color:var(--ink-muted);transition:border-color .18s,color .18s,background .18s;
+}
+.iconbtn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-tint)}
+.iconbtn svg{width:16px;height:16px}
+[data-theme="light"] .moon,[data-theme="dark"] .sun{display:none}
+
+.vulos-badge{
+  display:inline-flex;align-items:center;gap:8px;padding:6px 12px;
+  border:1px solid var(--line-strong);border-radius:999px;
+  font-size:12.5px;color:var(--ink-muted);transition:border-color .18s,color .18s;
+}
+.vulos-badge:hover{border-color:var(--accent);color:var(--ink)}
+.vulos-badge img{width:15px;height:15px;border-radius:4px}
+@media(max-width:640px){.vulos-badge span{display:none}}
+
+/* ══ Docs shell ═════════════════════════════════════════════════════════════ */
+.docs-shell{display:grid;grid-template-columns:262px 1fr;gap:38px;align-items:start;padding:40px 0 84px}
+@media(max-width:860px){.docs-shell{grid-template-columns:1fr;padding-top:28px}}
+
+.docs-rail{
+  background:var(--paper);border:1px solid var(--line);border-radius:12px;
+  padding:8px;box-shadow:var(--elev-1);position:sticky;top:82px;
+  max-height:calc(100vh - 104px);overflow-y:auto;
+}
+@media(max-width:860px){.docs-rail{position:static;max-height:none}}
+.rail-label{
+  font-family:var(--mono);font-size:10.5px;font-weight:500;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--ink-ghost);padding:12px 12px 8px;
+}
+.drow{
+  display:block;padding:10px 12px;border-radius:9px;position:relative;
+  color:var(--ink-muted);font-family:var(--sans);font-size:14.5px;font-weight:500;
+  transition:background .18s,color .18s;
+}
+.drow:hover{background:var(--sand);color:var(--ink)}
+.drow.active{background:var(--accent-tint);color:var(--ink);font-weight:600}
+.drow.active::before{
+  content:"";position:absolute;left:0;top:7px;bottom:7px;width:3px;
+  border-radius:0 3px 3px 0;background:var(--accent);
+}
+
 .docs-main{min-width:0}
-.markdown{font-size:16px}
+.docs-crumb{margin:0 0 8px}
+.docs-error{
+  color:var(--pdf);background:var(--accent-tint);border:1px solid var(--accent-tint-2);
+  padding:14px 16px;border-radius:10px;font-size:14.5px;
+}
+
+/* ══ Markdown typography ════════════════════════════════════════════════════ */
+.markdown{font-size:16.5px;color:var(--ink)}
 .markdown>*:first-child{margin-top:0}
-.markdown h1{font-size:34px;letter-spacing:-.03em;margin:.2em 0 .5em;border-bottom:1px solid var(--border);padding-bottom:.3em}
-.markdown h2{font-size:25px;letter-spacing:-.02em;margin:1.6em 0 .6em;border-bottom:1px solid var(--border);padding-bottom:.25em}
-.markdown h3{font-size:19px;margin:1.4em 0 .5em}
-.markdown h4{font-size:16px;margin:1.3em 0 .4em;color:var(--text)}
-.markdown p,.markdown li{color:#D4D4D8}
-.markdown a{color:var(--accent);text-decoration:none}
+.markdown h1{
+  font-family:var(--display);font-weight:700;letter-spacing:-.03em;line-height:1.12;
+  font-variation-settings:'opsz' 60;
+  font-size:clamp(28px,4vw,38px);margin:.2em 0 .5em;
+  border-bottom:1px solid var(--line);padding-bottom:.35em;
+}
+.markdown h2{
+  font-family:var(--display);font-weight:600;letter-spacing:-.022em;
+  font-variation-settings:'opsz' 32;
+  font-size:24px;margin:1.7em 0 .6em;border-bottom:1px solid var(--line);padding-bottom:.3em;
+}
+.markdown h3{font-family:var(--display);font-weight:600;font-size:18.5px;margin:1.5em 0 .5em;letter-spacing:-.01em}
+.markdown h4{font-family:var(--sans);font-weight:700;font-size:15.5px;margin:1.3em 0 .4em;color:var(--ink)}
+.markdown p,.markdown li{color:var(--ink-muted)}
+.markdown strong{color:var(--ink)}
+.markdown p{margin:0 0 1.05em}
+.markdown ul,.markdown ol{padding-left:1.4em;margin:0 0 1.05em}
+.markdown li{margin:.3em 0}
+.markdown a{color:var(--accent);text-decoration:none;text-underline-offset:3px}
 .markdown a:hover{text-decoration:underline}
-.markdown code{font-family:var(--mono);font-size:.88em;background:rgba(255,255,255,.07);padding:2px 6px;border-radius:6px}
-.markdown pre{background:#0C0C0E;border:1px solid var(--border-2);border-radius:12px;padding:16px 18px;overflow:auto}
-.markdown pre code{background:none;padding:0;font-size:13.5px;line-height:1.7;color:#D4D4D8}
-.markdown blockquote{margin:1em 0;padding:.4em 1em;border-left:3px solid var(--accent);background:rgba(255,255,255,.03);color:var(--muted);border-radius:0 8px 8px 0}
-.markdown table{border-collapse:collapse;width:100%;margin:1.2em 0;font-size:14.5px;display:block;overflow:auto}
-.markdown th,.markdown td{border:1px solid var(--border-2);padding:9px 12px;text-align:left}
-.markdown th{background:var(--panel);font-weight:600}
-.markdown img{border-radius:10px;margin:1em 0;border:1px solid var(--border)}
-.markdown hr{border:none;border-top:1px solid var(--border);margin:2em 0}
-.markdown .mermaid{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px;margin:1.2em 0;text-align:center;overflow:auto}
-.docs-title{font-size:13px;color:var(--faint);margin-bottom:6px}
-.docs-error{color:#FCA5A5;background:rgba(220,38,38,.08);border:1px solid rgba(220,38,38,.25);padding:14px 16px;border-radius:10px}
+.markdown code{
+  font-family:var(--mono);font-size:.87em;background:var(--sand);color:var(--ink);
+  padding:2px 6px;border-radius:5px;
+}
+.markdown pre{
+  background:var(--sunk);border:1px solid var(--line-strong);border-radius:12px;
+  padding:16px 18px;overflow-x:auto;box-shadow:var(--elev-1);
+}
+[data-theme="dark"] .markdown pre{background:#0E0B07}
+.markdown pre code{background:none;padding:0;font-size:13.5px;line-height:1.7;color:var(--ink)}
+.markdown blockquote{
+  margin:1.1em 0;padding:.5em 1.1em;border-left:3px solid var(--accent);
+  background:var(--accent-tint);color:var(--ink-muted);border-radius:0 8px 8px 0;
+}
+.markdown blockquote p:last-child{margin-bottom:0}
+.markdown table{border-collapse:collapse;width:100%;margin:1.3em 0;font-size:14.5px;display:block;overflow-x:auto}
+.markdown th,.markdown td{border:1px solid var(--line-strong);padding:9px 13px;text-align:left}
+.markdown th{background:var(--sand);font-weight:600;color:var(--ink);font-family:var(--display)}
+.markdown td{color:var(--ink-muted)}
+.markdown img{border-radius:10px;margin:1.1em 0;border:1px solid var(--line-strong);box-shadow:var(--elev-1)}
+.markdown hr{border:none;border-top:1px solid var(--line);margin:2.2em 0}
+.markdown .mermaid{
+  background:var(--paper);border:1px solid var(--line);border-radius:12px;
+  padding:20px;margin:1.3em 0;text-align:center;overflow-x:auto;box-shadow:var(--elev-1);
+}
+
+/* ══ Footer ═════════════════════════════════════════════════════════════════ */
+.foot{border-top:1px solid var(--line);padding:40px 0 60px}
+.foot .row{display:flex;flex-wrap:wrap;gap:20px;align-items:center;justify-content:space-between}
+.foot .links{display:flex;flex-wrap:wrap;gap:22px}
+.foot .links a{font-size:14.5px;color:var(--ink-muted)}
+.foot .links a:hover{color:var(--accent)}
+.foot .set{
+  margin:26px 0 0;padding-top:22px;border-top:1px solid var(--line);
+  font-family:var(--mono);font-size:11.5px;line-height:1.9;letter-spacing:.05em;
+  color:var(--ink-ghost);max-width:80ch;
+}
+
+@media(prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *{transition-duration:.001ms !important;animation-duration:.001ms !important}
+}
 </style>
-<style>:root{--accent:#d0471f;--accent-2:#e07a5f}</style>
-<script src="./assets/vendor/marked.umd.js"></script>
-<script src="./assets/vendor/mermaid.min.js"></script>
 </head>
 <body>
-<header class="site-header"><div class="wrap nav">
-    <a class="brand" href="./index.html"><span class="tile"><img src="./assets/ofisi-logo.png" alt="Ofisi mark"></span>Ofisi</a>
-    <div class="nav-spacer"></div>
-    <nav class="nav-links">
-      <a href="./index.html#features">Features</a>
-      <a href="./index.html#collaboration">Collaboration</a>
-      <a href="./docs.html">Docs</a>
-      <a href="https://github.com/vul-os/ofisi" target="_blank" rel="noopener">GitHub</a>
-    </nav>
-    <a class="vulos-badge" href="https://vulos.org" target="_blank" rel="noopener" title="Part of Vulos">
-      <img src="./assets/vulos-logo.png" alt="Vulos">Part of Vulos
+
+<!-- ═══ Header ════════════════════════════════════════════════════════════ -->
+<header class="topbar">
+  <div class="bar">
+    <a class="brand" href="./index.html">
+      <span class="tile"><img src="./assets/diwan-mark.svg" alt=""></span>Diwan
+      <span class="ar" lang="ar" dir="rtl">ديوان</span>
     </a>
-  </div></header>
+    <div class="spacer"></div>
+    <nav class="navlinks">
+      <a href="./index.html#surfaces">Surfaces</a>
+      <a href="./index.html#collaboration">Collaboration</a>
+      <a href="./index.html#install">Install</a>
+      <a href="./docs.html" aria-current="page">Docs</a>
+      <a href="https://github.com/vul-os/diwan" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+    <button class="iconbtn" id="theme" type="button" aria-label="Toggle light and dark theme" title="Toggle theme">
+      <svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4"/></svg>
+      <svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    </button>
+    <a class="vulos-badge" href="https://vulos.org" target="_blank" rel="noopener" title="Part of Vulos">
+      <img src="./assets/vulos-logo.png" alt=""><span>Part of Vulos</span>
+    </a>
+  </div>
+</header>
+
+<main>
 <div class="wrap docs-shell">
-  <aside class="docs-nav">
-    <div class="label">Ofisi docs</div>
-        <a data-slug="getting-started" href="#getting-started">Getting started</a>
-        <a data-slug="install" href="#install">Install</a>
-        <a data-slug="architecture" href="#architecture">Architecture</a>
-        <a data-slug="collaboration" href="#collaboration">Collaboration</a>
-        <a data-slug="configuration" href="#configuration">Configuration</a>
-        <a data-slug="api" href="#api">API</a>
-        <a data-slug="self-hosting" href="#self-hosting">Self-hosting</a>
-        <a data-slug="user-guide" href="#user-guide">User guide</a>
-        <a data-slug="admin-guide" href="#admin-guide">Admin guide</a>
-        <a data-slug="deploy" href="#deploy">Deploy</a>
-        <a data-slug="threat-model" href="#threat-model">Threat model</a>
-        <a data-slug="troubleshooting" href="#troubleshooting">Troubleshooting</a>
-        <a data-slug="screenshots" href="#screenshots">Screenshots</a>
-        <a data-slug="roadmap" href="#roadmap">Roadmap</a>
-        <a data-slug="changelog" href="#changelog">Changelog</a>
+  <aside class="docs-rail" aria-label="Documentation chapters">
+    <div class="rail-label">Diwan docs</div>
+    <nav aria-label="Chapters">
+      <a class="drow" data-slug="getting-started" href="#getting-started">Getting started</a>
+      <a class="drow" data-slug="install" href="#install">Install</a>
+      <a class="drow" data-slug="architecture" href="#architecture">Architecture</a>
+      <a class="drow" data-slug="collaboration" href="#collaboration">Collaboration</a>
+      <a class="drow" data-slug="configuration" href="#configuration">Configuration</a>
+      <a class="drow" data-slug="api" href="#api">API</a>
+      <a class="drow" data-slug="self-hosting" href="#self-hosting">Self-hosting</a>
+      <a class="drow" data-slug="user-guide" href="#user-guide">User guide</a>
+      <a class="drow" data-slug="admin-guide" href="#admin-guide">Admin guide</a>
+      <a class="drow" data-slug="deploy" href="#deploy">Deploy</a>
+      <a class="drow" data-slug="threat-model" href="#threat-model">Threat model</a>
+      <a class="drow" data-slug="troubleshooting" href="#troubleshooting">Troubleshooting</a>
+      <a class="drow" data-slug="screenshots" href="#screenshots">Screenshots</a>
+      <a class="drow" data-slug="roadmap" href="#roadmap">Roadmap</a>
+      <a class="drow" data-slug="changelog" href="#changelog">Changelog</a>
+    </nav>
   </aside>
-  <main class="docs-main">
-    <div class="docs-title" id="crumb"></div>
+  <div class="docs-main">
+    <p class="eyebrow docs-crumb" id="crumb"></p>
     <article class="markdown" id="content">Loading…</article>
-  </main>
+  </div>
 </div>
-<footer class="site-footer"><div class="wrap foot">
-    <div class="left"><img src="./assets/vulos-logo.png" alt="Vulos"> <span>Part of <a href="https://vulos.org" target="_blank" rel="noopener" style="color:var(--text)">Vulos</a> — open, self-hostable apps. Standalone by design.</span></div>
-    <div class="links">
-      <a href="./docs.html">Docs</a>
-      <a href="https://github.com/vul-os/ofisi" target="_blank" rel="noopener">GitHub</a>
-      <a href="./LICENSE.txt">License</a>
-      <a href="https://vulos.org" target="_blank" rel="noopener">vulos.org</a>
+</main>
+
+<!-- ═══ Footer ════════════════════════════════════════════════════════════ -->
+<footer class="foot">
+  <div class="wrap">
+    <div class="row">
+      <a class="brand" href="./index.html">
+        <span class="tile"><img src="./assets/diwan-mark.svg" alt=""></span>Diwan
+        <span class="ar" lang="ar" dir="rtl">ديوان</span>
+      </a>
+      <div class="links">
+        <a href="./docs.html">Docs</a>
+        <a href="https://github.com/vul-os/diwan" target="_blank" rel="noopener">GitHub</a>
+        <a href="./LICENSE.txt">Licence</a>
+        <a href="https://vulos.org" target="_blank" rel="noopener">vulos.org</a>
+      </div>
     </div>
-  </div></footer>
+    <p class="set">Part of <a href="https://vulos.org" target="_blank" rel="noopener">Vulos</a> — open, self-hostable apps. Standalone by design.<br>
+    Set in Bricolage Grotesque, Fraunces, Schibsted Grotesk and JetBrains Mono, all self-hosted and none fetched at runtime.</p>
+  </div>
+</footer>
+
+<script src="./assets/vendor/marked.umd.js"></script>
 <script>
 // The site is served from the repo root; docs render straight from the repo's own markdown.
 const DOCS = [
@@ -154,28 +348,94 @@ const DOCS = [
 ];
 const bySlug = Object.fromEntries(DOCS.map(d=>[d.slug,d]));
 const byFile = Object.fromEntries(DOCS.map(d=>[d.path.split('/').pop().toLowerCase(),d]));
+// One docs/ source is published under a different name than it has in the repo,
+// so a cross-doc link written against the repo layout misses byFile by string
+// equality and would leave the site with a 404. Alias it. (Every other page's
+// repo name lowercases to its published name already.)
+byFile['selfhost.md'] = bySlug['self-hosting'];
+// Docs that exist in the repo but are NOT published here (COTURN.md,
+// SECURITY-TESTING.md, TESTING.md, RELEASING.md, SLOs.md, DEPLOY-STATIC.md,
+// SECURITY.md). Send those links to the repo rather than to a page that is not
+// on this site — a dead in-page link reads as a broken site, an outbound one
+// reads as what it is.
+const REPO_BLOB = 'https://github.com/vul-os/diwan/blob/main/';
+const UNPUBLISHED = {
+  'coturn.md': 'docs/COTURN.md',
+  'security-testing.md': 'docs/SECURITY-TESTING.md',
+  'testing.md': 'docs/TESTING.md',
+  'releasing.md': 'docs/RELEASING.md',
+  'slos.md': 'docs/SLOs.md',
+  'deploy-static.md': 'docs/DEPLOY-STATIC.md',
+  'security.md': 'SECURITY.md',
+};
 const content = document.getElementById('content');
 const crumb = document.getElementById('crumb');
-let mermaidReady = false;
-try { mermaid.initialize({ startOnLoad:false, theme:'dark', securityLevel:'loose', themeVariables:{ fontFamily:'var(--sans)' } }); mermaidReady = true; } catch(e){}
 
 if (window.marked && marked.setOptions) marked.setOptions({ gfm:true, breaks:false });
 
-function setActive(slug){
-  document.querySelectorAll('.docs-nav a').forEach(a=>a.classList.toggle('active', a.dataset.slug===slug));
+/* ── Mermaid: warm-themed, loaded lazily only when a doc actually uses it ──── */
+const MERMAID_FONT = "'Schibsted Grotesk Variable', system-ui, sans-serif";
+const MERMAID_VARS = {
+  light: {
+    background:'#FFFFFF', primaryColor:'#F3ECE0', primaryTextColor:'#2A2723',
+    primaryBorderColor:'#DFD6C6', lineColor:'#8B8378', secondaryColor:'#FBEADF',
+    tertiaryColor:'#FBF7F1', mainBkg:'#F3ECE0', nodeBorder:'#DFD6C6',
+    clusterBkg:'#FBF7F1', clusterBorder:'#ECE4D6', edgeLabelBackground:'#FFFFFF',
+    textColor:'#2A2723', nodeTextColor:'#2A2723', errorBkgColor:'#FBEADF', errorTextColor:'#AE3917',
+  },
+  dark: {
+    background:'#201B15', primaryColor:'#2A241C', primaryTextColor:'#F1EBE0',
+    primaryBorderColor:'#3A332A', lineColor:'#8E8677', secondaryColor:'#2E1C12',
+    tertiaryColor:'#17130E', mainBkg:'#2A241C', nodeBorder:'#3A332A',
+    clusterBkg:'#17130E', clusterBorder:'#2E2820', edgeLabelBackground:'#201B15',
+    textColor:'#F1EBE0', nodeTextColor:'#F1EBE0', errorBkgColor:'#2E1C12', errorTextColor:'#FF8759',
+  },
+};
+function currentTheme(){ return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'; }
+function mermaidConfigFor(theme){
+  return { startOnLoad:false, theme:'base', securityLevel:'loose', fontFamily:MERMAID_FONT,
+    themeVariables: Object.assign({ fontFamily:MERMAID_FONT }, MERMAID_VARS[theme] || MERMAID_VARS.light) };
 }
-
-async function renderMermaid(){
-  if(!mermaidReady) return;
-  const blocks = [...content.querySelectorAll('code.language-mermaid')];
-  blocks.forEach((code,i)=>{
+let mermaidLoadPromise = null;
+function ensureMermaid(){
+  if (mermaidLoadPromise) return mermaidLoadPromise;
+  mermaidLoadPromise = new Promise((resolve, reject)=>{
+    const s = document.createElement('script');
+    s.src = './assets/vendor/mermaid.min.js';
+    s.onload = function(){
+      try { mermaid.initialize(mermaidConfigFor(currentTheme())); resolve(); }
+      catch(e){ reject(e); }
+    };
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+  return mermaidLoadPromise;
+}
+async function paintMermaid(){
+  // Turn freshly-parsed ```mermaid fences into diagram containers, keeping the
+  // original source on the node so a later theme toggle can repaint them.
+  content.querySelectorAll('pre > code.language-mermaid').forEach(code=>{
     const div = document.createElement('div');
-    div.className='mermaid';
+    div.className = 'mermaid';
+    div.dataset.src = code.textContent;
     div.textContent = code.textContent;
     code.closest('pre').replaceWith(div);
   });
-  const nodes = content.querySelectorAll('.mermaid');
-  if(nodes.length){ try { await mermaid.run({ nodes }); } catch(e){ console.warn('mermaid', e); } }
+  await repaintMermaid();
+}
+async function repaintMermaid(){
+  const nodes = [...content.querySelectorAll('.mermaid[data-src]')];
+  if (!nodes.length) return;
+  try {
+    await ensureMermaid();
+    mermaid.initialize(mermaidConfigFor(currentTheme()));
+    nodes.forEach(n=>{ n.removeAttribute('data-processed'); n.removeAttribute('id'); n.textContent = n.dataset.src; });
+    await mermaid.run({ nodes });
+  } catch(e) { console.warn('mermaid', e); }
+}
+
+function setActive(slug){
+  document.querySelectorAll('.docs-rail a').forEach(a=>a.classList.toggle('active', a.dataset.slug===slug));
 }
 
 async function load(slug){
@@ -199,11 +459,26 @@ async function load(slug){
       const h=a.getAttribute('href')||'';
       if(/^(https?:|#|mailto:)/i.test(h)) return;
       const m=h.match(/([^\/]+\.md)(#.*)?$/i);
-      const target = m && byFile[m[1].toLowerCase()];
-      if(target) a.setAttribute('href','#'+target.slug);
+      if(!m){
+        // A repo-relative pointer at source (e.g. ../backend/storage/*.go).
+        // There is no such file on this site, so send it to the repo.
+        if(/^\.{0,2}\//.test(h)){
+          a.setAttribute('href', REPO_BLOB+h.replace(/^(\.\.\/|\.\/)+/,''));
+          a.target='_blank'; a.rel='noopener';
+        }
+        return;
+      }
+      const name = m[1].toLowerCase();
+      const target = byFile[name];
+      if(target){ a.setAttribute('href','#'+target.slug); return; }
+      const repoPath = UNPUBLISHED[name];
+      if(repoPath){
+        a.setAttribute('href', REPO_BLOB+repoPath+(m[2]||''));
+        a.target='_blank'; a.rel='noopener';
+      }
     });
     content.querySelectorAll('a[href^="http"]').forEach(a=>{a.target='_blank';a.rel='noopener';});
-    await renderMermaid();
+    if (content.querySelector('code.language-mermaid')) await paintMermaid();
     window.scrollTo({top:0});
   } catch(err){
     content.innerHTML = '<div class="docs-error">Could not load <code>'+doc.path.split('/').pop()+'</code> — '+err.message+'</div>';
@@ -213,6 +488,21 @@ async function load(slug){
 function current(){ return (location.hash||'').replace('#','') || DOCS[0].slug; }
 window.addEventListener('hashchange', ()=>load(current()));
 load(current());
+
+/* ── Theme toggle — same key and behaviour as the landing page ────────────── */
+(function () {
+  var root = document.documentElement;
+  var btn = document.getElementById('theme');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    var next = root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    root.setAttribute('data-theme', next);
+    try { localStorage.setItem('diwan.site-theme', next); } catch (e) {}
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', next === 'dark' ? '#17130E' : '#FBF7F1');
+    repaintMermaid();
+  });
+})();
 </script>
 </body>
 </html>

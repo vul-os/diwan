@@ -14,10 +14,10 @@
  *
  * The box's operator surfaces the real public origin (a public domain, or an
  * Ephor tunnel URL when the box is behind NAT/CGNAT) via the backend env
- * VULOS_OFFICE_PUBLIC_URL, exposed at the unauthenticated `GET /api/reachability`
+ * DIWAN_PUBLIC_URL, exposed at the unauthenticated `GET /api/reachability`
  * endpoint (see backend/handlers/system.go).
  *
- * When VULOS_OFFICE_PUBLIC_URL is unset (a directly-reachable standalone box, or
+ * When DIWAN_PUBLIC_URL is unset (a directly-reachable standalone box, or
  * the cloud deployment where the origin IS public) the resolved base is empty
  * and callers fall back to `window.location.origin` — byte-identical to today.
  *
@@ -27,9 +27,9 @@
  * `collab.rendezvous_url` / VULOS_RENDEZVOUS_URL — see backend/config/config.go):
  * the base URL of any vulos-relayd's OPEN rendezvous surface (announce/resolve/
  * signal/mailbox + ICE) that the BROWSER talks to DIRECTLY — cross-origin, with
- * no host-box `/api/peering/*` and no Ofisi server in the loop at all (relayd's
+ * no host-box `/api/peering/*` and no Diwan server in the loop at all (relayd's
  * rendezvous role serves CORS, so our origin never sees the discovery
- * envelopes). When set, a standalone Ofisi binary
+ * envelopes). When set, a standalone Diwan binary
  * (which mounts no `/api/peering/*`, see main.go) can still get real
  * peer-to-peer collaboration — see transportSelection.js for how this and
  * host-box peering combine, and docs/COLLABORATION.md §3 for the full picture.

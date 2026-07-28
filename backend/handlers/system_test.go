@@ -5,7 +5,7 @@ package handlers
 // The browser's collab layer (src/lib/collab/reachableBase.js) fetches this
 // unauthenticated endpoint to learn a deploy-time fact it cannot discover on
 // its own: the base URL of a self-hosted relayd's OPEN rendezvous surface, so
-// a STANDALONE Ofisi (no `/api/peering/*` — see main.go) can still offer real
+// a STANDALONE Diwan (no `/api/peering/*` — see main.go) can still offer real
 // P2P collaboration. Pin the field's presence, its config.yaml/env source, and
 // that it is trimmed the same way public_base_url is.
 
@@ -15,7 +15,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"vulos-office/backend/config"
+	"diwan/backend/config"
 
 	"github.com/gin-gonic/gin"
 )

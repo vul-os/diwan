@@ -16,31 +16,31 @@
     <!-- PWA / Android -->
     <link rel="manifest" href="/manifest.webmanifest" />
     <!-- theme-color tracks the warm ivory canvas (light) and warm espresso
-         (dark) so the mobile chrome agrees with Ofisi's warm palette. -->
+         (dark) so the mobile chrome agrees with Diwan's warm palette. -->
     <meta name="theme-color" content="#FBF7F1" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#17130E" media="(prefers-color-scheme: dark)" />
 
     <!-- Primary Meta -->
-    <title>Ofisi</title>
-    <meta name="application-name" content="Ofisi" />
-    <meta name="description" content="Ofisi — a warm, real-time collaborative office suite: documents, spreadsheets, slides and whiteboards." />
+    <title>Diwan</title>
+    <meta name="application-name" content="Diwan" />
+    <meta name="description" content="Diwan — a warm, real-time collaborative office suite: documents, spreadsheets, slides and whiteboards." />
 
     <!-- Open Graph -->
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="Ofisi" />
-    <meta property="og:description" content="Ofisi — a warm, real-time collaborative office suite: documents, spreadsheets, slides and whiteboards." />
+    <meta property="og:title" content="Diwan" />
+    <meta property="og:description" content="Diwan — a warm, real-time collaborative office suite: documents, spreadsheets, slides and whiteboards." />
     <meta property="og:image" content="/og-image.png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
 
     <!-- Twitter / X card -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Ofisi" />
-    <meta name="twitter:description" content="Ofisi — a warm, real-time collaborative office suite: documents, spreadsheets, slides and whiteboards." />
+    <meta name="twitter:title" content="Diwan" />
+    <meta name="twitter:description" content="Diwan — a warm, real-time collaborative office suite: documents, spreadsheets, slides and whiteboards." />
     <meta name="twitter:image" content="/og-image.png" />
 
     <!--
-      Fonts: Ofisi's display/UI/document/mono quartet (Bricolage Grotesque ·
+      Fonts: Diwan's display/UI/document/mono quartet (Bricolage Grotesque ·
       Schibsted Grotesk · Fraunces · JetBrains Mono) is self-hosted via
       @fontsource and imported at the top of src/design/tokens.css — never
       fetched from Google at runtime, so a self-host install leaks no IP and
@@ -52,8 +52,8 @@
     <script>
       (function () {
         try {
-          // Ofisi defaults to LIGHT out of the box; System/Dark are opt-in.
-          var t = localStorage.getItem('ofisi.theme') || localStorage.getItem('vulos.theme') || 'light';
+          // Diwan defaults to LIGHT out of the box; System/Dark are opt-in.
+          var t = localStorage.getItem('diwan.theme') || localStorage.getItem('vulos.theme') || 'light';
           if (t === 'system') {
             t = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
           } else if (t !== 'dark') {

@@ -17,8 +17,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"vulos-office/backend/services/slides_export"
-	"vulos-office/backend/storage"
+	"diwan/backend/services/slides_export"
+	"diwan/backend/storage"
 
 	"github.com/gin-gonic/gin"
 )

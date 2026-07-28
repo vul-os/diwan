@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"vulos-office/backend/userauth"
+	"diwan/backend/userauth"
 )
 
 func runUserAuthContract(t *testing.T, s userauth.Store) {

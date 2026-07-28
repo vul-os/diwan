@@ -771,17 +771,24 @@ export function error_registry() {
 
 /**
  * The §5.2.1 caller-side sequence, steps 1–3: verify the snapshot, check it closes the gap, and
- * obtain and hash-verify the state body. Returns the **verified** observable-state bytes.
+ * obtain and verify the body. Returns the **verified** observable-state bytes.
+ *
+ * **The body is a [`SnapshotBody`](dmtap_sync::SnapshotBody) — a compacted set of signed ops, not
+ * a state document (§6.1.2).** It is verified by **fold-then-recompute**: every member is ingested
+ * through the ordinary §4 op path into a provisional state, that state's §6.1.1 projection is
+ * hashed, and the hash must equal `Snapshot.root`. Hashing the received bytes would prove only
+ * that the sender shipped what it promised; this proves the ops *produce* the committed state.
  *
  * `fetched_body` is what the host retrieved from `GET /sync/state/<root>`, or `undefined` if it
  * could not retrieve anything. **The fetch itself is the host's job** — this binding does no I/O
  * (see the crate docs), and keeping the network out of it is also what keeps this call
- * synchronous. An inline `state` in the FastJoin is tried first and held to exactly the same hash
- * check, then discarded on mismatch: it is a cache hint, never a second source of truth.
+ * synchronous. An inline `state` in the FastJoin is tried first and held to exactly the same
+ * fold-then-recompute, then discarded on failure: it is a cache hint, never a second source of
+ * truth.
  *
- * Throws `0x0A02`/`0x0A01`/`0x0A0A` for an unverifiable or out-of-scope snapshot, `0x0A09` if it
- * does not close the caller's gap or the body does not hash to `root`, and `0x0A0C` if no body
- * could be obtained at all.
+ * Throws `0x0A02`/`0x0A01`/`0x0A0A` for an unverifiable or out-of-scope snapshot or member,
+ * `0x0A09` if it does not close the caller's gap or the body does not reproduce `root`, and
+ * `0x0A0C` if no body could be obtained at all.
  *
  * **On any failure the caller MUST keep its old vector and MUST NOT fall back to the responder's
  * surviving suffix.** That fallback is the silent lost-write this whole path exists to prevent,
@@ -791,10 +798,11 @@ export function error_registry() {
  * @param {string} caller_vector_json
  * @param {string} subscribed_json
  * @param {string} admitted_hex_json
+ * @param {number} receiver_now_ms
  * @param {Uint8Array | null} [fetched_body]
  * @returns {Uint8Array}
  */
-export function fastjoin_adopt(fastjoin_bytes, caller_vector_json, subscribed_json, admitted_hex_json, fetched_body) {
+export function fastjoin_adopt(fastjoin_bytes, caller_vector_json, subscribed_json, admitted_hex_json, receiver_now_ms, fetched_body) {
     const ptr0 = passArray8ToWasm0(fastjoin_bytes, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passStringToWasm0(caller_vector_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
@@ -805,7 +813,7 @@ export function fastjoin_adopt(fastjoin_bytes, caller_vector_json, subscribed_js
     const len3 = WASM_VECTOR_LEN;
     var ptr4 = isLikeNone(fetched_body) ? 0 : passArray8ToWasm0(fetched_body, wasm.__wbindgen_malloc);
     var len4 = WASM_VECTOR_LEN;
-    const ret = wasm.fastjoin_adopt(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4);
+    const ret = wasm.fastjoin_adopt(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, receiver_now_ms, ptr4, len4);
     if (ret[3]) {
         throw takeFromExternrefTable0(ret[2]);
     }
@@ -823,10 +831,11 @@ export function fastjoin_adopt(fastjoin_bytes, caller_vector_json, subscribed_js
  * @param {string} caller_vector_json
  * @param {string} subscribed_json
  * @param {string} admitted_hex_json
+ * @param {number} receiver_now_ms
  * @param {Uint8Array | null} [fetched_body]
  * @returns {Uint8Array}
  */
-export function fastjoin_adopt_after(fastjoin_bytes, previous_root, previous_covers_json, caller_vector_json, subscribed_json, admitted_hex_json, fetched_body) {
+export function fastjoin_adopt_after(fastjoin_bytes, previous_root, previous_covers_json, caller_vector_json, subscribed_json, admitted_hex_json, receiver_now_ms, fetched_body) {
     const ptr0 = passArray8ToWasm0(fastjoin_bytes, wasm.__wbindgen_malloc);
     const len0 = WASM_VECTOR_LEN;
     var ptr1 = isLikeNone(previous_root) ? 0 : passArray8ToWasm0(previous_root, wasm.__wbindgen_malloc);
@@ -841,7 +850,7 @@ export function fastjoin_adopt_after(fastjoin_bytes, previous_root, previous_cov
     const len5 = WASM_VECTOR_LEN;
     var ptr6 = isLikeNone(fetched_body) ? 0 : passArray8ToWasm0(fetched_body, wasm.__wbindgen_malloc);
     var len6 = WASM_VECTOR_LEN;
-    const ret = wasm.fastjoin_adopt_after(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, ptr6, len6);
+    const ret = wasm.fastjoin_adopt_after(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4, ptr5, len5, receiver_now_ms, ptr6, len6);
     if (ret[3]) {
         throw takeFromExternrefTable0(ret[2]);
     }
@@ -983,8 +992,8 @@ export function fastjoin_naive_covers_lacks_floor_rejected(fastjoin_bytes) {
 }
 
 /**
- * The content address a fast-join's state body must be fetched from
- * (`GET /sync/state/<root>`) — what the host needs before it can call [`fastjoin_adopt`].
+ * The content address a fast-join's body must be fetched from (`GET /sync/state/<root>`) — what
+ * the host needs before it can call [`fastjoin_adopt`].
  * @param {Uint8Array} fastjoin_bytes
  * @returns {Uint8Array}
  */
@@ -1257,6 +1266,122 @@ export function snapshot_assemble(snapshot_json_no_sig, signature) {
     var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
     wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
     return v3;
+}
+
+/**
+ * Decode a [`SnapshotBody`](dmtap_sync::SnapshotBody) into its members: a JSON array of hex
+ * `COSE_Sign1(SyncOp)` envelopes, in wire order.
+ *
+ * A host adopts a body by feeding each member to [`SyncEngine::ingest_signed`] — the **ordinary op
+ * path**, which is the whole of §6.1.2: same signature check, same `ext-value` validation, same
+ * CRDT apply, same `op-id` dedup. There is deliberately **no** "load state" entry point on this
+ * binding, and §6.1.2 is explicit that an implementation exposing none is not thereby incomplete.
+ * @param {Uint8Array} body_bytes
+ * @returns {string}
+ */
+export function snapshot_body_decode(body_bytes) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const ptr0 = passArray8ToWasm0(body_bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.snapshot_body_decode(ptr0, len0);
+        var ptr2 = ret[0];
+        var len2 = ret[1];
+        if (ret[3]) {
+            ptr2 = 0; len2 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred3_0 = ptr2;
+        deferred3_1 = len2;
+        return getStringFromWasm0(ptr2, len2);
+    } finally {
+        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+    }
+}
+
+/**
+ * Encode a body from a JSON array of hex `COSE_Sign1` envelopes — the responder side of
+ * `GET /sync/state/<root>`.
+ *
+ * Members are embedded as CBOR **items**, never `bstr`-wrapped (§5.2's op-framing rule, which
+ * §5.2.1 says governs the ops inside a body too). A `bstr`-wrapped member is the C-06
+ * non-conformant framing and is refused on decode rather than unwrapped.
+ * @param {string} members_hex_json
+ * @returns {Uint8Array}
+ */
+export function snapshot_body_encode(members_hex_json) {
+    const ptr0 = passStringToWasm0(members_hex_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.snapshot_body_encode(ptr0, len0);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v2 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v2;
+}
+
+/**
+ * **The fold, without the recompute** (§6.1.2): ingest every member through the ordinary §4 op
+ * path and return the resulting `det_cbor(ObservableState)`.
+ *
+ * This is what a **responder** uses — it is building the body, so it has no root to check against
+ * yet; the root is *defined* as the hash of what this returns. A **caller** must use
+ * [`snapshot_body_verify_root`] instead: folding without checking the result against
+ * `Snapshot.root` is exactly the unverified adoption §5.2.1 step 3 forbids.
+ * @param {Uint8Array} body_bytes
+ * @param {string} ns
+ * @param {number} receiver_now_ms
+ * @returns {Uint8Array}
+ */
+export function snapshot_body_fold(body_bytes, ns, receiver_now_ms) {
+    const ptr0 = passArray8ToWasm0(body_bytes, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(ns, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.snapshot_body_fold(ptr0, len0, ptr1, len1, receiver_now_ms);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v3 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v3;
+}
+
+/**
+ * **Fold-then-recompute** (§6.1.2): ingest every member of `body_bytes` through the ordinary §4 op
+ * path into a **provisional** state, derive `ObservableState` per §6.1.1, and require its hash to
+ * equal `root`. Returns the canonical observable-state bytes on success.
+ *
+ * Throws `0x0A09` if the ops do not reproduce `root` — and then **nothing** is returned, because
+ * the body is discarded whole; the fold happened in a provisional state the host never saw. Pass
+ * `ns` (the snapshot's namespace) to reject a member from any other namespace with `0x0A0A`, or an
+ * empty string to skip that scoping.
+ *
+ * This is **not** `hash(body_bytes) == root`. That would prove only that someone shipped the bytes
+ * they promised; this proves the ops *produce* the committed state, which is what makes a body
+ * safe to resume from and what bounds a malicious signer to **omission** rather than fabrication.
+ * @param {Uint8Array} body_bytes
+ * @param {Uint8Array} root
+ * @param {string} ns
+ * @param {number} receiver_now_ms
+ * @returns {Uint8Array}
+ */
+export function snapshot_body_verify_root(body_bytes, root, ns, receiver_now_ms) {
+    const ptr0 = passArray8ToWasm0(body_bytes, wasm.__wbindgen_malloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passArray8ToWasm0(root, wasm.__wbindgen_malloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passStringToWasm0(ns, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len2 = WASM_VECTOR_LEN;
+    const ret = wasm.snapshot_body_verify_root(ptr0, len0, ptr1, len1, ptr2, len2, receiver_now_ms);
+    if (ret[3]) {
+        throw takeFromExternrefTable0(ret[2]);
+    }
+    var v4 = getArrayU8FromWasm0(ret[0], ret[1]).slice();
+    wasm.__wbindgen_free(ret[0], ret[1] * 1, 1);
+    return v4;
 }
 
 /**

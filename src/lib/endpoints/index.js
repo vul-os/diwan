@@ -1,13 +1,13 @@
 /**
- * src/lib/endpoints/index.js — Ofisi's cloud↔LAN endpoint failover.
+ * src/lib/endpoints/index.js — Diwan's cloud↔LAN endpoint failover.
  *
  * First-party (re-homed from the vendored relay-client package —
  * endpoint selection is not P2P/relay functionality, just failover between a
- * cloud route and a directly-reachable LAN box, so it lives in Ofisi's own
+ * cloud route and a directly-reachable LAN box, so it lives in Diwan's own
  * tree rather than depending on another product's package).
  *
  * Shared cloud↔LAN endpoint failover, historically duplicated across every
- * Vulos web surface (the OS shell, vulos-office). Promoted from the vulos OS
+ * Vulos web surface (the OS shell, diwan). Promoted from the vulos OS
  * copy (the richest — it owned `seedFromResolveBackend`) with two opt-in
  * config seams so each surface can migrate without disturbing existing user
  * state:

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * gen-logo-assets.mjs — rasterize the canonical Ofisi mark (public/logo.svg)
+ * gen-logo-assets.mjs — rasterize the canonical Diwan mark (public/logo.svg)
  * into every PNG the repo + PWA manifest need, using headless Chromium so the
  * output is pixel-identical to what browsers render (gradients, sheen, AA).
  *
@@ -20,33 +20,21 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const PUB = path.join(ROOT, 'public')
 const b64 = (p) => readFileSync(p).toString('base64')
 
-const EMBER_DEFS = `
-  <linearGradient id="ember" x1="0" y1="0" x2="0" y2="1">
-    <stop offset="0" stop-color="#E8703F"/>
-    <stop offset="0.55" stop-color="#D0471F"/>
-    <stop offset="1" stop-color="#B23A16"/>
-  </linearGradient>
-  <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
-    <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.20"/>
-    <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0"/>
-  </linearGradient>`
-
-// Rounded tile (transparent margin) — the browser-tab / README glyph
-const roundedSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <defs>${EMBER_DEFS}</defs>
-  <rect x="16" y="16" width="480" height="480" rx="136" fill="url(#ember)"/>
-  <rect x="16" y="16" width="480" height="480" rx="136" fill="url(#sheen)"/>
-  <circle cx="256" cy="256" r="134" fill="none" stroke="#FBF3E9" stroke-width="70"/>
-  <circle cx="256" cy="256" r="35" fill="#FBF3E9"/>
+// Rounded tile (transparent margin) — the browser-tab / README glyph.
+// The iwan is a flat glyph on transparency, so the raster icons give it a warm
+// paper ground to sit on rather than inverting its colours.
+const roundedSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect x="2" y="2" width="60" height="60" rx="17" fill="#FBF7F1"/>
+  <rect x="2" y="2" width="60" height="60" rx="17" fill="none" stroke="#ECE4D6" stroke-width="1"/>
+  <path d="M12 55 L12 31 A22.1 22.1 0 0 1 32 9 A22.1 22.1 0 0 1 52 31 L52 55 L44 55 L44 31 A14.17 14.17 0 0 0 32 17 A14.17 14.17 0 0 0 20 31 L20 55 Z" fill="#D0471F"/>
+  <rect x="20" y="47" width="24" height="8" fill="#0E8B86"/>
 </svg>`
 
-// Full-bleed ember (edge-to-edge) — safe for maskable + apple-touch (iOS masks)
-const fullbleedSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <defs>${EMBER_DEFS}</defs>
-  <rect x="0" y="0" width="512" height="512" fill="url(#ember)"/>
-  <rect x="0" y="0" width="512" height="512" fill="url(#sheen)"/>
-  <circle cx="256" cy="256" r="134" fill="none" stroke="#FBF3E9" stroke-width="70"/>
-  <circle cx="256" cy="256" r="35" fill="#FBF3E9"/>
+// Full-bleed (edge-to-edge) — safe for maskable + apple-touch (iOS masks)
+const fullbleedSVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect x="0" y="0" width="64" height="64" fill="#FBF7F1"/>
+  <path d="M12 55 L12 31 A22.1 22.1 0 0 1 32 9 A22.1 22.1 0 0 1 52 31 L52 55 L44 55 L44 31 A14.17 14.17 0 0 0 32 17 A14.17 14.17 0 0 0 20 31 L20 55 Z" fill="#D0471F"/>
+  <rect x="20" y="47" width="24" height="8" fill="#0E8B86"/>
 </svg>`
 
 const ROUNDED = [
@@ -81,19 +69,17 @@ async function shotOG(page) {
       display:flex;flex-direction:column;justify-content:center;padding:0 96px;position:relative;overflow:hidden}
     .rule{position:absolute;left:0;top:0;height:12px;width:100%;
       background:linear-gradient(90deg,#E8703F,#D0471F 55%,#B23A16)}
-    .mark{width:132px;height:132px;filter:drop-shadow(0 14px 30px rgba(176,58,22,.28))}
+    .mark{width:132px;height:132px}
     .wordmark{font-family:'Bricolage';font-weight:800;font-size:150px;letter-spacing:-.03em;color:#2A2723;line-height:1;margin:34px 0 0}
     .tag{font-family:'Schibsted';font-weight:500;font-size:34px;color:#6B655C;margin-top:22px;max-width:900px;line-height:1.35}
     .eyebrow{font-family:'Schibsted';font-weight:600;font-size:20px;letter-spacing:.24em;text-transform:uppercase;color:#D0471F;margin-top:6px}
   </style></head><body>
     <div class="stage">
       <div class="rule"></div>
-      <svg class="mark" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"><defs>${EMBER_DEFS}</defs>
-        <rect x="16" y="16" width="480" height="480" rx="136" fill="url(#ember)"/>
-        <rect x="16" y="16" width="480" height="480" rx="136" fill="url(#sheen)"/>
-        <circle cx="256" cy="256" r="134" fill="none" stroke="#FBF3E9" stroke-width="70"/>
-        <circle cx="256" cy="256" r="35" fill="#FBF3E9"/></svg>
-      <h1 class="wordmark">Ofisi</h1>
+      <svg class="mark" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 55 L12 31 A22.1 22.1 0 0 1 32 9 A22.1 22.1 0 0 1 52 31 L52 55 L44 55 L44 31 A14.17 14.17 0 0 0 32 17 A14.17 14.17 0 0 0 20 31 L20 55 Z" fill="#D0471F"/>
+  <rect x="20" y="47" width="24" height="8" fill="#0E8B86"/></svg>
+      <h1 class="wordmark">Diwan</h1>
       <p class="eyebrow">Office Suite</p>
       <p class="tag">The warm, real-time office suite you own — documents, spreadsheets, slides &amp; whiteboards, one binary, your storage.</p>
     </div>
@@ -118,7 +104,7 @@ await browser.close()
 // Keep a canonical rounded copy for the README header (transparent, 512).
 await (async () => {
   const b = await chromium.launch(); const p = await b.newPage()
-  await shotSVG(p, roundedSVG, 512, '../docs/assets/ofisi-logo.png')
+  await shotSVG(p, roundedSVG, 512, '../docs/assets/diwan-logo.png')
   await b.close()
 })()
 console.log('Done.')

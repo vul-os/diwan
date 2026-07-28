@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"vulos-office/backend/audit"
-	"vulos-office/backend/directory"
-	"vulos-office/backend/fileacl"
-	"vulos-office/backend/middleware"
+	"diwan/backend/audit"
+	"diwan/backend/directory"
+	"diwan/backend/fileacl"
+	"diwan/backend/middleware"
 
 	"github.com/gin-gonic/gin"
 )

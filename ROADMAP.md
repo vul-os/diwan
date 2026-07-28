@@ -1,6 +1,6 @@
-# Ofisi — Roadmap
+# Diwan — Roadmap
 
-Ofisi is the **documents** surface of the Vulos project — a self-hosted,
+Diwan is the **documents** surface of the Vulos project — a self-hosted,
 open-source (MIT) suite for Documents, Sheets, Slides, Whiteboards, and
 PDF/Signing that runs as a single Go binary with a React frontend. (Calendar
 and Contacts come through the mail connector — CalDAV/CardDAV via lilmail.)
@@ -13,12 +13,12 @@ that already connects and routes instances across the network, with
 relay/TURN fallback. This roadmap charts what's next: deeper import/export
 fidelity and hardening the fabric further.
 
-> **Product scope.** Ofisi is documents-only. Chat and video are **third-party**
+> **Product scope.** Diwan is documents-only. Chat and video are **third-party**
 > (Matrix/Element for chat; Element Call / Jitsi for video), not Vulos products;
 > the **Vulos OS** is the shell that hosts the apps. Any chat/calling items
 > previously tracked here are out of scope for this repo (see § 4).
 
-The throughline: Ofisi never invents its own network. Real-time document
+The throughline: Diwan never invents its own network. Real-time document
 collaboration reuses the **same fabric the Vulos OS uses for device routing** —
 P2P first (cr-sqlite/CRDT sync to buckets), relay/TURN when direct connectivity
 fails. *Vulos — open.*
@@ -67,7 +67,7 @@ A snapshot of where the product actually is. The vision pillars that follow
   [`docs/THREAT-MODEL.md`](docs/THREAT-MODEL.md)).
 - **Offline / routing.** Offline-first PWA (service-worker app shell + LAN
   failover); client-side CRDT modules; per-document deep links and the
-  `web+vulosoffice://` protocol handler.
+  `web+diwan://` protocol handler.
 
 ### Next — actively planned
 
@@ -96,7 +96,7 @@ A snapshot of where the product actually is. The vision pillars that follow
 
 ---
 
-## 1. Ofisi Core — Documents, Sheets, Slides, Whiteboards, PDF
+## 1. Diwan Core — Documents, Sheets, Slides, Whiteboards, PDF
 
 The foundation, and what ships today: a clean, single-binary suite that opens in
 the browser with no account required. Documents are edited with TipTap (rich
@@ -115,7 +115,7 @@ trustworthy.
 ### Goals
 
 - Keep the local-first, single-binary experience excellent and dependency-light.
-- Make import/export round-trips lossless enough that Ofisi is a credible
+- Make import/export round-trips lossless enough that Diwan is a credible
   daily driver against LibreOffice and the incumbents.
 - Harden autosave and storage so no edit is ever silently lost.
 - Establish clean document models that the collaboration layer (§ 2) can
@@ -174,10 +174,10 @@ trustworthy.
 ## 2. Real-time Collaboration — Editing Over the Peer Fabric
 
 The first networked pillar: open the same Document, Sheet, or Slide deck on two
-Vulos instances and edit it together, live. Ofisi does not stand up a
+Vulos instances and edit it together, live. Diwan does not stand up a
 collaboration server. It rides the **Vulos peer fabric** — the OS already syncs
 state via **cr-sqlite/CRDT to buckets** and connects instances **P2P with
-relay/TURN fallback**. Ofisi models its documents as CRDTs over that same
+relay/TURN fallback**. Diwan models its documents as CRDTs over that same
 transport, so a doc converges across peers exactly the way the OS converges
 device state — the signaling and relay primitives this builds on live in the
 Vulos OS itself (github.com/vul-os/vulos).
@@ -298,14 +298,14 @@ This pillar is **shipped** (see Now). The notes below record its scope.
 ## 4. Chat, Calling & Meetings — third-party (not built by Vulos)
 
 Team chat + Spaces and real-time voice/video calling + meetings were once planned
-as an Ofisi pillar. Vulos no longer builds comms: chat and video are provided by
+as a Diwan pillar. Vulos no longer builds comms: chat and video are provided by
 **established third-party open protocols/apps**:
 
 - **Chat** — Matrix / Element (the Slack equivalent).
 - **Video** — Element Call / Jitsi (the Google-Meet equivalent).
 
 The **Vulos OS** is the shell that hosts the apps; it can link out to whatever
-comms app the user runs, but Ofisi never embeds chat or video, and neither is a
+comms app the user runs, but Diwan never embeds chat or video, and neither is a
 first-party Vulos product. The Spaces code built in an earlier wave is retained
 for history only.
 
@@ -315,27 +315,27 @@ for history only.
 
 ### Storage-backend choice
 
-Ofisi stores documents, sheets, and slides in the same S3-compatible
+Diwan stores documents, sheets, and slides in the same S3-compatible
 object store as OS sync. The same two-backend choice applies:
 
 - **Tigris (default):** Per-org bucket prefix on Vulos Tigris; managed, durable, replicated.
 - **MinIO local (complete BYO):** Customer's own MinIO instance. Document data never touches
   Vulos storage. Same Go storage interface; only the endpoint + credentials differ.
 
-The storage backend is set by the Vulos OS or control plane at provisioning time. `vulos-office`
+The storage backend is set by the Vulos OS or control plane at provisioning time. `diwan`
 does not select or provision the backend — it receives the endpoint and credentials as
 configuration (consistent with the rest of the suite).
 
 ### Co-location on a single instance
 
-Ofisi can run co-located with the OS on a single box, sharing one bucket
+Diwan can run co-located with the OS on a single box, sharing one bucket
 and one CRDT/peering fabric. The BYO single-box story — "one box = your whole Vulos" — requires
 only one shared bucket endpoint. The meta-bundle installer (`BUNDLE-01`
-in `vulos`) wires this up; no vulos-office code changes are needed.
+in `vulos`) wires this up; no diwan code changes are needed.
 
 ### Identity
 
-Ofisi uses the same Vulos account identity as the OS. There is no separate Ofisi
+Diwan uses the same Vulos account identity as the OS. There is no separate Diwan
 identity — the Vulos account (email + password / OAuth / passkey) is the single identity for
 all surfaces. Collaboration sessions are keyed by the Vulos account; presence and CRDT sync
 ride the same P2P peer fabric and identity as the rest of the OS.
@@ -344,20 +344,20 @@ ride the same P2P peer fabric and identity as the rest of the OS.
 
 ## Bundling decision
 
-**Ofisi ships with the suite; nothing about it is sold separately.** There are no
+**Diwan ships with the suite; nothing about it is sold separately.** There are no
 per-active-user pricing tiers and no "mail tier" — mail is an experimental **connector**
-(bring your own Gmail/Outlook/IMAP), never a billed product. Vulos sells nothing: Ofisi
+(bring your own Gmail/Outlook/IMAP), never a billed product. Vulos sells nothing: Diwan
 installs by default alongside the other suite apps, and self-hosting it on your own box
 costs nothing.
 
 ---
 
-## Mail connector (Ofisi is not involved)
+## Mail connector (Diwan is not involved)
 
-Ofisi is not involved in mail at all — PIM is a separate **bring-your-own-mailbox
+Diwan is not involved in mail at all — PIM is a separate **bring-your-own-mailbox
 connector** (`lilmail`, exposing `/v1`) that logs into your existing IMAP/SMTP mailbox; the OS
-surfaces Calendar/Contacts widgets over it. There is no hosted mail service — `lilmail` runs on your own box. Ofisi installs
+surfaces Calendar/Contacts widgets over it. There is no hosted mail service — `lilmail` runs on your own box. Diwan installs
 alongside the rest of the suite regardless of whether the connector is configured. There
-is no "Mail tier" gating Ofisi.
+is no "Mail tier" gating Diwan.
 </content>
 </invoke>

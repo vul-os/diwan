@@ -1,10 +1,10 @@
 import { useState } from 'react'
 import { Lock, Eye, EyeOff, AlertCircle, Loader2 } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
-import { OfisiMark } from './ui'
+import { DiwanMark } from './ui'
 
 /*
- * LoginScreen — first contact. Warm, hand-set typography: the Ofisi mark, a
+ * LoginScreen — first contact. Warm, hand-set typography: the Diwan mark, a
  * Fraunces serif title, and a single ember button complete the path.  Two soft
  * off-canvas washes (ember + teal) give the page a centre of gravity without
  * gradients or grids.
@@ -41,9 +41,9 @@ export default function LoginScreen() {
         <div className="bg-paper rounded-xl border border-line shadow-e3 p-8">
           <div className="flex flex-col items-start mb-7">
             <span className="inline-flex items-center gap-2.5 mb-5">
-              <OfisiMark size={30} className="rounded-lg shadow-e1" />
+              <DiwanMark size={30} />
               <span className="flex flex-col leading-none">
-                <span className="font-display text-xl font-bold text-ink leading-none tracking-display">Ofisi</span>
+                <span className="font-display text-xl font-bold text-ink leading-none tracking-display">Diwan</span>
                 <span className="font-mono text-[8.5px] font-medium text-ink-faint tracking-eyebrow uppercase mt-1.5">
                   Office Suite
                 </span>

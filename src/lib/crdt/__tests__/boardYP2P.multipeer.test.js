@@ -47,7 +47,37 @@ class FakeFabric extends EventTarget {
 }
 
 const INVITE = 'https://office.test/whiteboards/wb1'
+// A fixed sleep, used ONLY where nothing specific is being awaited (session
+// setup, and the deliberate partition below). Positive assertions poll with
+// `until`: a fixed 60 ms was not reliably enough for an update to cross the
+// fake fabric on a loaded machine, which produces a flake rather than a
+// finding. Same change as yP2PSession.test.js.
 const settle = () => new Promise((r) => setTimeout(r, 60))
+
+/** Poll `ok()` until true; fail with `label` in the message if it never is. */
+async function until(ok, label, timeout = 5000) {
+  const deadline = Date.now() + timeout
+  for (;;) {
+    let ready = false
+    try { ready = !!ok() } catch { ready = false }
+    if (ready) return
+    if (Date.now() >= deadline) {
+      throw new Error(`timed out after ${timeout}ms waiting for: ${label}`)
+    }
+    await new Promise((r) => setTimeout(r, 5))
+  }
+}
+
+/**
+ * Structural equality of two element maps, INSENSITIVE to key order — two peers
+ * that have converged can still have inserted the ids into their Y.Map in
+ * different orders, so a plain JSON.stringify comparison would never settle.
+ */
+const stable = (v) => JSON.stringify(v, (_k, val) =>
+  (val && typeof val === 'object' && !Array.isArray(val)
+    ? Object.fromEntries(Object.keys(val).sort().map((k) => [k, val[k]]))
+    : val))
+const sameEls = (x, y) => stable(x) === stable(y)
 
 /** A peer: a real Y.Doc + board ctx + binding + an in-memory scene API. */
 function makePeer(fabric) {
@@ -95,11 +125,22 @@ describe('Whiteboard P2P — three peers converge (mesh, no central server)', ()
 
     // Each peer draws a distinct shape (a local edit through the real binding).
     a.binding.handleChange([el('shape-A', { index: 'a0' })], {}, {})
-    await settle()
+    await until(
+      () => 'shape-A' in docElements(b.ctx) && 'shape-A' in docElements(c.ctx),
+      "A's shape to reach B and C",
+    )
     b.binding.handleChange([el('shape-A', { index: 'a0' }), el('shape-B', { index: 'a1' })], {}, {})
-    await settle()
+    await until(
+      () => 'shape-B' in docElements(a.ctx) && 'shape-B' in docElements(c.ctx),
+      "B's shape to reach A and C",
+    )
     c.binding.handleChange([el('shape-A', { index: 'a0' }), el('shape-B', { index: 'a1' }), el('shape-C', { index: 'a2' })], {}, {})
-    await settle()
+    await until(
+      () => sameEls(docElements(b.ctx), docElements(a.ctx))
+        && sameEls(docElements(c.ctx), docElements(a.ctx))
+        && 'shape-C' in docElements(a.ctx),
+      'all three peers to converge on a board holding every shape',
+    )
 
     // All three docs are identical and hold every peer's element.
     expect(docElements(b.ctx)).toEqual(docElements(a.ctx))
@@ -137,7 +178,10 @@ describe('Whiteboard P2P — late joiner catches up with no server', () => {
     expect(Object.keys(docElements(b.ctx))).toEqual([])
 
     await b.session.join()   // join() issues a state-vector resync request
-    await settle()
+    await until(
+      () => sameEls(docElements(b.ctx), docElements(a.ctx)) && b.sceneIds().length === 2,
+      'the late joiner to recover the full scene from its peer',
+    )
 
     expect(docElements(b.ctx)).toEqual(docElements(a.ctx))
     expect(b.sceneIds().sort()).toEqual(['r1', 'r2'])
@@ -162,7 +206,10 @@ describe('Whiteboard P2P — the wire is content-blind (E2E)', () => {
 
     const SECRET = 'TOPSECRET-DIAGRAM-2026'
     a.binding.handleChange([el('note', { type: 'text', text: SECRET })], {}, {})
-    await settle()
+    await until(
+      () => boardDocToScene(b.ctx.ydoc).elements.find((e) => e.id === 'note')?.text === SECRET,
+      'the second peer to converge on the plaintext scene',
+    )
 
     // The peers DID converge on the plaintext scene…
     expect(boardDocToScene(b.ctx.ydoc).elements.find((e) => e.id === 'note')?.text).toBe(SECRET)
@@ -206,7 +253,11 @@ describe('Whiteboard P2P — concurrent edits to different elements merge', () =
     // Heal the partition — both sessions resync and the per-id Y.Map unions.
     fa.connect(fb)
     await a.session.resync(); await b.session.resync()
-    await settle()
+    await until(
+      () => sameEls(docElements(a.ctx), docElements(b.ctx))
+        && Object.keys(docElements(a.ctx)).length === 2,
+      'the healed partition to union both peers\' shapes',
+    )
 
     expect(docElements(a.ctx)).toEqual(docElements(b.ctx))
     expect(Object.keys(docElements(a.ctx)).sort()).toEqual(['a-rect', 'b-oval'])

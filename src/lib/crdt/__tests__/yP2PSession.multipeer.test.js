@@ -52,7 +52,29 @@ class FakeFabric extends EventTarget {
 }
 
 const INVITE = 'https://office.test/docs/doc1'
+// A fixed sleep, used ONLY where nothing specific is being awaited (session
+// setup). Positive assertions poll with `until` instead: this suite mounts
+// three real ProseMirror editors, and a fixed 60 ms was not reliably enough for
+// an update to cross the fake fabric on a loaded machine — which produces a
+// flake, not a finding. See the same change in yP2PSession.test.js.
 const settle = () => new Promise((r) => setTimeout(r, 60))
+
+/** Poll `ok()` until true; fail with `label` in the message if it never is. */
+async function until(ok, label, timeout = 5000) {
+  const deadline = Date.now() + timeout
+  for (;;) {
+    let ready = false
+    try { ready = !!ok() } catch { ready = false }
+    if (ready) return
+    if (Date.now() >= deadline) {
+      throw new Error(`timed out after ${timeout}ms waiting for: ${label}`)
+    }
+    await new Promise((r) => setTimeout(r, 5))
+  }
+}
+
+/** Structural equality of two editor JSON docs. */
+const sameDoc = (x, y) => JSON.stringify(x) === JSON.stringify(y)
 
 function makePeer(fabric) {
   const ydoc = new Y.Doc()
@@ -104,11 +126,22 @@ describe('YP2PCollabSession — three peers converge (mesh, no central server)',
 
     // Each peer contributes a distinct paragraph.
     a.editor.commands.setContent('<p>from-A</p>')
-    await settle()
+    await until(
+      () => plainText(b.editor).includes('from-A') && plainText(c.editor).includes('from-A'),
+      "A's edit to reach B and C",
+    )
     b.editor.commands.insertContentAt(b.editor.state.doc.content.size - 1, ' from-B')
-    await settle()
+    await until(
+      () => plainText(a.editor).includes('from-B') && plainText(c.editor).includes('from-B'),
+      "B's edit to reach A and C",
+    )
     c.editor.commands.insertContentAt(c.editor.state.doc.content.size - 1, ' from-C')
-    await settle()
+    await until(
+      () => sameDoc(b.editor.getJSON(), a.editor.getJSON())
+        && sameDoc(c.editor.getJSON(), a.editor.getJSON())
+        && plainText(a.editor).includes('from-C'),
+      'all three peers to converge on a document holding every edit',
+    )
 
     // All three documents are byte-identical, and hold every peer's edit.
     expect(b.editor.getJSON()).toEqual(a.editor.getJSON())
@@ -147,7 +180,10 @@ describe('YP2PCollabSession — late joiner catches up with no server', () => {
     expect(plainText(b.editor)).toBe('')
 
     await b.session.join()   // join() issues a state-vector resync request
-    await settle()
+    await until(
+      () => sameDoc(b.editor.getJSON(), a.editor.getJSON()) && plainText(b.editor).includes('Agenda'),
+      'the late joiner to recover the full document from its peer',
+    )
 
     expect(b.editor.getJSON()).toEqual(a.editor.getJSON())
     expect(plainText(b.editor)).toContain('Agenda')
@@ -176,7 +212,10 @@ describe('YP2PCollabSession — the wire is content-blind (E2E)', () => {
 
     const SECRET = 'TOPSECRET-MERGER-2026'
     a.editor.commands.setContent(`<p>${SECRET}</p>`)
-    await settle()
+    await until(
+      () => plainText(b.editor).includes(SECRET),
+      'the second peer to converge on the plaintext',
+    )
 
     // The peers DID converge on the plaintext…
     expect(plainText(b.editor)).toContain(SECRET)

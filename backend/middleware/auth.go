@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"vulos-office/backend/config"
+	"diwan/backend/config"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"

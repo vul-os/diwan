@@ -1,19 +1,19 @@
-# Ofisi — Configuration Reference
+# Diwan — Configuration Reference
 
-All runtime configuration for Ofisi is driven by `config.yaml` and environment variables. Environment variables take precedence over the config file.
+All runtime configuration for Diwan is driven by `config.yaml` and environment variables. Environment variables take precedence over the config file.
 
 By default the server looks for `config.yaml` in the process's current working directory. Override the path with `-config` (also accepted as `--config`; Go's flag parser treats both the same), e.g.:
 
 ```sh
-vulos-office -config /etc/vulos-office/config.yaml
+diwan -config /etc/diwan/config.yaml
 ```
 
-Ofisi never refuses to start over a config problem — this is deliberate for a zero-config first run, but means a typo'd `-config` path fails silently:
+Diwan never refuses to start over a config problem — this is deliberate for a zero-config first run, but means a typo'd `-config` path fails silently:
 
 - **Missing file** (wrong path, typo): silently falls back to built-in defaults — no error, no log line. If a setting doesn't seem to be taking effect, double-check the path first (e.g. `ls -la <path>`).
 - **File present but invalid YAML**: falls back to defaults AND logs `Config error: … — using defaults` on boot.
 
-The `migrate` subcommand (`vulos-office migrate up|status`) takes its own `-config` flag, defaulting the same way; it is a separate flag set from the server command, so pass it after `migrate`: `vulos-office migrate -config /etc/vulos-office/config.yaml up`.
+The `migrate` subcommand (`diwan migrate up|status`) takes its own `-config` flag, defaulting the same way; it is a separate flag set from the server command, so pass it after `migrate`: `diwan migrate -config /etc/diwan/config.yaml up`.
 
 ---
 
@@ -39,7 +39,7 @@ storage:
     port: 5432
     user: "postgres"
     password: ""
-    database: "vulos_office"
+    database: "diwan"
     sslmode: "disable"
 
 persistence:
@@ -51,7 +51,7 @@ collab:
 
 ### `persistence.updatelog` — the CRDT update log
 
-Off by default. When `true`, Ofisi exposes the per-file **append-only CRDT
+Off by default. When `true`, Diwan exposes the per-file **append-only CRDT
 update log** (`POST`/`GET /api/files/:id/updates`) — the durability
 model that supersedes "single blob + 409 compare-and-swap". Every CRDT frame is
 kept (opaque, encrypted-or-plain Yjs / sheet / slide updates), so two clients
@@ -95,14 +95,17 @@ is absent). Enable both together.
 
 Off by default. Frontend build flag only; there is no server setting.
 
-Ofisi's Sheets grid ships two interchangeable CRDT implementations:
+Diwan's Sheets grid ships two interchangeable CRDT implementations:
 
 * **off (default)** — `src/lib/crdt/grid.js`, the hand-rolled LWW map.
 * **`VITE_SUBSTRATE_SYNC=on`** — `src/lib/crdt/substrateGrid.js`, an LWW
-  register per [`substrate/SYNC.md`](../../dmtap/substrate/SYNC.md) §4.4
-  computed by the **shared** `dmtap-sync` engine (`third_party/dmtap-sync-wasm`)
-  — the same compiled core a Rust server runs, rather than a second
-  implementation of the same spec.
+  register per `substrate/SYNC.md` §4.4 (the spec lives in the `kotva` repo; it
+  is not linked relatively, because building Diwan must never require a sibling
+  checkout) computed by the **shared** `dmtap-sync` engine
+  (`third_party/dmtap-sync-wasm`) — the same compiled core a Rust server runs,
+  rather than a second implementation of the same spec. That vendored copy is
+  tied to its upstream source by digest — see `third_party/dmtap-sync-wasm/VENDOR.md`
+  in the repo.
 
 Storage and transport are identical on both paths: the same `OpLogSync`
 adapter, the same server update log, the same fabric wire types. Only the merge
@@ -117,8 +120,8 @@ per-user rollout) is what keeps every replica on one engine.
 
 **Cost.** The engine is WASM and loads by dynamic import: with the flag off a
 client downloads **nothing** extra. With it on, first opening a spreadsheet
-fetches ~22 kB of JS (5.4 kB gzipped) and a 395.9 kB WebAssembly module
-(157.5 kB gzipped), once. If that load fails the editor falls back to the
+fetches ~23 kB of JS (5.7 kB gzipped) and a 400.9 kB WebAssembly module
+(159.2 kB gzipped), once. If that load fails the editor falls back to the
 `grid.js` path rather than presenting a grid that records nothing.
 
 Docs and Whiteboard are **not** affected: they use Yjs for rich text, which the
@@ -130,23 +133,23 @@ substrate's movable tree reproduces it and what remains.
 
 ### `collab.rendezvous_url` — P2P collaboration with no Vulos OS / host box
 
-Blank by default. Ofisi's own backend never mediates live collaboration — the
+Blank by default. Diwan's own backend never mediates live collaboration — the
 Docs/Whiteboard invite-link path and the Sheets/Slides presence layer both talk
-peer-to-peer over Ofisi's own first-party `FabricClient`
+peer-to-peer over Diwan's own first-party `FabricClient`
 (`src/lib/collab/webrtc/fabric.js` — re-homed from the vendored relay-client
-SDK so Ofisi depends on no other Vulos product's package; see
+SDK so Diwan depends on no other Vulos product's package; see
 [COLLABORATION.md](COLLABORATION.md) §3). That transport needs a lightweight,
-content-blind peer-discovery surface, and Ofisi picks one of three, in order:
+content-blind peer-discovery surface, and Diwan picks one of three, in order:
 
 1. **This server's own peering fabric** (`/api/peering/*`) — present only when
-   a Vulos OS / Ephor deployment fronts Ofisi. Unchanged default.
+   a Vulos OS / Ephor deployment fronts Diwan. Unchanged default.
 2. **A configured rendezvous URL** — the base URL of any **self-hosted
    `vulos-relayd`**'s OPEN rendezvous surface (announce/resolve/signal/mailbox
    + ICE). No Vulos OS and no account are required. Set it and a bare
-   **standalone** Ofisi binary (which mounts no `/api/peering/*` — see
+   **standalone** Diwan binary (which mounts no `/api/peering/*` — see
    `main.go`) gets **real** peer-to-peer collaboration.
 
-   The browser calls that relayd's origin **directly**, cross-origin. Ofisi
+   The browser calls that relayd's origin **directly**, cross-origin. Diwan
    mounts nothing for discovery and is not in that path at all, so it never
    sees even the (content-blind) rendezvous envelopes — see
    [COLLABORATION.md](COLLABORATION.md) §3 for exactly what the relay does and
@@ -155,8 +158,8 @@ content-blind peer-discovery surface, and Ofisi picks one of three, in order:
    - The relayd must serve **CORS** on its rendezvous role. Every Ephor
      deployment with the role does; `npm run test:e2e:p2p` asserts the posture
      against a real one, from a real browser.
-   - It must be reachable from wherever users load Ofisi, over a scheme the
-     page can call: an **https** Ofisi cannot call an **http** relay, so a
+   - It must be reachable from wherever users load Diwan, over a scheme the
+     page can call: an **https** Diwan cannot call an **http** relay, so a
      public deployment needs TLS on the relay.
 3. **Local-only** — neither is reachable; the editor keeps working, autosaves,
    and says so honestly (an "Offline" pill) instead of showing a false "Live".
@@ -168,7 +171,7 @@ collab:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `VULOS_RENDEZVOUS_URL` / `OFISI_RENDEZVOUS_URL` | Overrides `collab.rendezvous_url`. Any URL a `vulos-relayd` serves its rendezvous surface on. | — (unset) |
+| `VULOS_RENDEZVOUS_URL` / `DIWAN_RENDEZVOUS_URL` | Overrides `collab.rendezvous_url`. Any URL a `vulos-relayd` serves its rendezvous surface on. | — (unset) |
 
 Exposed **read-only** to the browser at the unauthenticated `GET /api/reachability`
 (as `rendezvous_url`), so setting the env var takes effect without a frontend
@@ -177,7 +180,7 @@ externally-reachable origin:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `VULOS_OFFICE_PUBLIC_URL` | This Office instance's externally-reachable origin (a public domain, or an Ephor tunnel URL when behind NAT/CGNAT). Used to build P2P invite links / signaling targets an external peer can actually reach, instead of blindly trusting `window.location.origin` (which may be a LAN-only address). | — (falls back to the visitor's own origin) |
+| `DIWAN_PUBLIC_URL` | This Diwan instance's externally-reachable origin (a public domain, or an Ephor tunnel URL when behind NAT/CGNAT). Used to build P2P invite links / signaling targets an external peer can actually reach, instead of blindly trusting `window.location.origin` (which may be a LAN-only address). | — (falls back to the visitor's own origin) |
 
 `rendezvous_url` is `""` when nothing is configured, and clients treat empty as
 "not available" rather than guessing a default — that is what keeps an
@@ -212,7 +215,7 @@ vars consumed by `src/lib/collab/webrtc/call/ice.js`:
 These only take effect as a **fallback** — when the host's own ICE endpoint
 (`/api/peering/ice`, or a configured rendezvous relayd's ICE surface) is
 unreachable or returns nothing, which is exactly the standalone/self-hosted
-case with no other Vulos product in front of Ofisi. TURN is never defaulted
+case with no other Vulos product in front of Diwan. TURN is never defaulted
 (unlike STUN): a TURN server relays your traffic, so it is opt-in only, via
 the variables above.
 
@@ -222,7 +225,7 @@ A host page may also inject these at runtime instead of build time, via
 ```js
 window.__VULOS_ENDPOINTS__ = {
   stunUrls: ['stun:stun.example.org:3478'],
-  turn: { urls: ['turn:turn.example.org:3478'], username: 'ofisi', credential: '…' },
+  turn: { urls: ['turn:turn.example.org:3478'], username: 'diwan', credential: '…' },
 }
 ```
 
@@ -239,16 +242,16 @@ at it.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `VULOS_OFFICE_JWT_SECRET` | HS256 signing secret — **required** when `auth.enabled: true` | — |
-| `VULOS_OFFICE_REGISTRATION_TOKEN` | Static fallback registration token (prefer invite tokens) | — |
+| `DIWAN_JWT_SECRET` | HS256 signing secret — **required** when `auth.enabled: true` | — |
+| `DIWAN_REGISTRATION_TOKEN` | Static fallback registration token (prefer invite tokens) | — |
 
 ### SSO session introspection (multi-user)
 
-Ofisi holds **no session-signing power**. When an identity provider is configured it validates the browser's `vc_session` cookie by introspection instead of verifying a signature Ofisi minted.
+Diwan holds **no session-signing power**. When an identity provider is configured it validates the browser's `vc_session` cookie by introspection instead of verifying a signature Diwan minted.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `IDENTITY_URL` | Identity-provider base URL (sovereign box in self-host, CP in cloud). **SET** → Ofisi introspects `vc_session` at `POST {IDENTITY_URL}/api/session/introspect` and fails **closed** (401) on invalid/expired/unreachable. **UNSET** → SSO disabled; existing local single-identity behavior unchanged. | — (unset) |
+| `IDENTITY_URL` | Identity-provider base URL (sovereign box in self-host, CP in cloud). **SET** → Diwan introspects `vc_session` at `POST {IDENTITY_URL}/api/session/introspect` and fails **closed** (401) on invalid/expired/unreachable. **UNSET** → SSO disabled; existing local single-identity behavior unchanged. | — (unset) |
 | `VULOS_CP_TOKEN` | Shared service-auth secret presented as `X-Relay-Auth` on the introspection call (== the provider's `CP_SHARED_SECRET`). Reused from the existing API-key / entitlements path — **not a signing key**. | — |
 
 Precedence (first match wins): `vk_` API key → per-product session JWT → SSO `vc_session` introspection → 401. On a valid session the request is scoped to the resolved **user + tenant** (`tenantId` = account id); results are cached in-process for ~45s (bounded by the session's `expiresAt`) so it is not a round-trip per request.
@@ -256,13 +259,13 @@ Precedence (first match wins): `vk_` API key → per-product session JWT → SSO
 **Operator quick-reference**
 
 - Self-host single-user box: leave `IDENTITY_URL` unset. Nothing else to do.
-- Multi-user with an external identity/control plane: point `IDENTITY_URL` at your own control-plane host (there is no default host — leave it unset and the box stays self-contained) and set `VULOS_CP_TOKEN=<CP shared secret>` (plus `auth.enabled: true` / `VULOS_OFFICE_JWT_SECRET` if you also keep native JWT logins).
+- Multi-user with an external identity/control plane: point `IDENTITY_URL` at your own control-plane host (there is no default host — leave it unset and the box stays self-contained) and set `VULOS_CP_TOKEN=<CP shared secret>` (plus `auth.enabled: true` / `DIWAN_JWT_SECRET` if you also keep native JWT logins).
 
 ### Persistence
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `VULOS_PERSISTENCE_UPDATELOG` / `OFISI_UPDATE_LOG` | Enable the CRDT update log (overrides `persistence.updatelog`). Accepts `1/true/on/yes`. | `false` |
+| `VULOS_PERSISTENCE_UPDATELOG` / `DIWAN_UPDATE_LOG` | Enable the CRDT update log (overrides `persistence.updatelog`). Accepts `1/true/on/yes`. | `false` |
 
 ### Database paths (SQLite)
 
@@ -300,7 +303,7 @@ Written by the OS storage-mode selector; consumed by all three bundle services:
 
 ### SMTP (optional)
 
-Ofisi itself does not send mail. If you want outbound notifications, point Ofisi at an external SMTP relay:
+Diwan itself does not send mail. If you want outbound notifications, point Diwan at an external SMTP relay:
 
 | Variable | Description |
 |----------|-------------|
@@ -315,7 +318,7 @@ Ofisi itself does not send mail. If you want outbound notifications, point Ofisi
 | Variable | Description |
 |----------|-------------|
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP endpoint for traces (optional) |
-| `OTEL_SERVICE_NAME` | Service name tag (default `vulos-office`) |
+| `OTEL_SERVICE_NAME` | Service name tag (default `diwan`) |
 
 Prometheus metrics are always available at `GET /metrics` (no env var needed).
 

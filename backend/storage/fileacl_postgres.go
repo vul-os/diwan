@@ -15,7 +15,7 @@ package storage
 import (
 	"context"
 
-	"vulos-office/backend/fileacl"
+	"diwan/backend/fileacl"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"

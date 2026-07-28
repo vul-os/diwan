@@ -1,5 +1,5 @@
 /* ============================================================================
- * Ofisi — Design Tokens
+ * Diwan — Design Tokens
  * ----------------------------------------------------------------------------
  * Single source of truth for colour, type, space, radii, motion, elevation.
  * Tailwind reads these via tailwind.config.js theme.extend so utilities like
@@ -7,8 +7,8 @@
  * through here.  Never hard-code a hex / px / shadow in component code — add or
  * extend a token instead.
  *
- * ── Ofisi identity — "Warm Workshop" ───────────────────────────────────────
- * Ofisi is a warm, human, delightful collaborative office suite.  It has its
+ * ── Diwan identity — "Warm Workshop" ───────────────────────────────────────
+ * Diwan is a warm, human, delightful collaborative office suite.  It has its
  * OWN identity, deliberately distinct from the near-black IDE look of sibling
  * products: a bright, editorial, paper-warm surface with a confident signature
  * accent.  Light is the DEFAULT (a workspace should feel like daylight); a warm
@@ -156,7 +156,7 @@
   --selection-fg: #571E0D;
 
   /* ── Typography ──────────────────────────────────────────────────────────
-   * The Ofisi voice — a warm editorial quartet, all self-hosted:
+   * The Diwan voice — a warm editorial quartet, all self-hosted:
    *   sans     Schibsted Grotesk — warm, humane UI/body workhorse
    *   display  Bricolage Grotesque — characterful headings, hero, wordmark
    *   serif    Fraunces (opsz) — the writing surface + editorial moments

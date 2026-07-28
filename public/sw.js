@@ -1,4 +1,4 @@
-// Vulos Office — Service Worker
+// Diwan — Service Worker
 //
 // This is an APP-SHELL PWA. The Office shell (index.html, hashed JS/CSS chunks,
 // icons, manifest) is cached so the app boots offline or on a flaky network.
@@ -37,10 +37,10 @@
 //     point does not register at all (see src/lib/pwa.js).
 
 // Bump on any shell/asset change so the activate step evicts stale caches and
-// clients pick up the new build (the 'ofisi-2' bump ships the Warm Workshop
+// clients pick up the new build (the 'diwan-2' bump ships the Warm Workshop
 // redesign — the old 'vulos-office-v1' cache was serving pre-redesign assets).
-const CACHE_VERSION = 'ofisi-2';
-const CACHE_NAME = `ofisi-${CACHE_VERSION}`;
+const CACHE_VERSION = 'diwan-2';
+const CACHE_NAME = `diwan-${CACHE_VERSION}`;
 
 // Derive the base from where THIS worker is served. Office is served at the
 // origin root in every deployment, so BASE is '/'; deriving it keeps the worker

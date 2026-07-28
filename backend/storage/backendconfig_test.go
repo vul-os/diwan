@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"vulos-office/backend/storage"
+	"diwan/backend/storage"
 )
 
 // officeS3TestServer is a minimal in-memory S3-compatible server for testing.

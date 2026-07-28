@@ -3,8 +3,8 @@ package middleware
 import (
 	"net/http"
 
-	"vulos-office/backend/config"
-	"vulos-office/backend/session"
+	"diwan/backend/config"
+	"diwan/backend/session"
 
 	"github.com/gin-gonic/gin"
 )
@@ -20,7 +20,7 @@ const CtxAuthMethodSession = "sso-session"
 //	  1. auth DISABLED (self-host single-user, IDENTITY_URL unset) → allow,
 //	     local "self" identity. UNCHANGED.
 //	  2. existing product-JWT session (Authorization: Bearer <jwt> or the
-//	     "session" cookie), HS256-verified with VULOS_OFFICE_JWT_SECRET. UNCHANGED.
+//	     "session" cookie), HS256-verified with DIWAN_JWT_SECRET. UNCHANGED.
 //	  3. SSO session — a `vc_session` cookie, introspected against IDENTITY_URL
 //	     (only when an introspector is wired). On {valid:true} the request is
 //	     scoped to the resolved user + tenant. NEW.

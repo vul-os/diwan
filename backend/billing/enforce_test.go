@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"vulos-office/backend/seam"
+	"diwan/backend/seam"
 )
 
 // stubEntitlements returns a fixed entitlement (and optional error) for every

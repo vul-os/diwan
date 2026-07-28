@@ -1,4 +1,4 @@
-// Package deploymode provides a single typed DEPLOY_MODE enum for Ofisi,
+// Package deploymode provides a single typed DEPLOY_MODE enum for Diwan,
 // per the cross-repo app-deployment contract:
 //
 //	DEPLOY_MODE = standalone|os
@@ -121,7 +121,7 @@ func (m Mode) RequireAuthPosture(authEnabled, hasIntrospector bool) error {
 		"collapsing every caller to a single shared identity (all users' data under one identity, "+
 		"any create/upload anonymous). Refusing to boot. Set auth.enabled=true (with %s), or set %s "+
 		"to the identity provider base URL, or use DEPLOY_MODE=standalone for single-tenant self-host",
-		m, session_EnvIdentityURL, "VULOS_OFFICE_JWT_SECRET", session_EnvIdentityURL)
+		m, session_EnvIdentityURL, "DIWAN_JWT_SECRET", session_EnvIdentityURL)
 }
 
 // session_EnvIdentityURL names the session-introspection provider env var in
