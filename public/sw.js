@@ -38,7 +38,7 @@
 
 // Bump on any shell/asset change so the activate step evicts stale caches and
 // clients pick up the new build (the 'diwan-2' bump ships the Warm Workshop
-// redesign — the old 'vulos-office-v1' cache was serving pre-redesign assets).
+// redesign — the previous cache was serving pre-redesign assets).
 const CACHE_VERSION = 'diwan-2';
 const CACHE_NAME = `diwan-${CACHE_VERSION}`;
 
