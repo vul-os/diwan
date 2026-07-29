@@ -186,7 +186,17 @@ img{max-width:100%;display:block}
 }
 
 /* ══ Markdown typography ════════════════════════════════════════════════════ */
-.markdown{font-size:16.5px;color:var(--ink)}
+.markdown{
+  font-size:16.5px;color:var(--ink);
+  /* overflow-wrap is inherited, so this covers plain prose too — changelog/config
+     entries carry long unbroken runs with no space to wrap at, both inside inline
+     <code> (file paths like src/lib/crdt/__tests__/substratePayload.ts) and in
+     plain text (slash-chains like CreateSuggestion/GetSuggestion/UpdateSuggestion,
+     or .docx/.xlsx/.pptx/... format lists). Scoping the rule to `code` alone left
+     those plain-text runs overflowing 149–203px on phones. `anywhere` only kicks
+     in when a token would otherwise overflow, so normal wrapping is untouched. */
+  overflow-wrap:anywhere;
+}
 .markdown>*:first-child{margin-top:0}
 .markdown h1{
   font-family:var(--display);font-weight:700;letter-spacing:-.03em;line-height:1.12;
@@ -211,6 +221,8 @@ img{max-width:100%;display:block}
 .markdown code{
   font-family:var(--mono);font-size:.87em;background:var(--sand);color:var(--ink);
   padding:2px 6px;border-radius:5px;
+  /* overflow-wrap:anywhere inherited from .markdown above (block code below has
+     its own overflow-x:auto scroll container instead). */
 }
 .markdown pre{
   background:var(--sunk);border:1px solid var(--line-strong);border-radius:12px;
