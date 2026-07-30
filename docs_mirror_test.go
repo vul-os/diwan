@@ -73,6 +73,35 @@ func TestSiteDocsMirrorIsInSync(t *testing.T) {
 	if checked != len(docsMirror) {
 		t.Fatalf("only %d of %d mirrored pairs were compared", checked, len(docsMirror))
 	}
+
+	// No orphans: the checks above only ever look at the pairs docsMirror names,
+	// so a file dropped directly into site/docs/ — never added to this table —
+	// was invisible to both this test and TestSiteDocsPageListIsMirrored (which
+	// only cross-checks site/docs.html's page list, not the directory on disk).
+	// Walk the mirror directory itself and flag anything it does not know about.
+	known := map[string]bool{}
+	for _, dst := range docsMirror {
+		known[filepath.Base(dst)] = true
+	}
+	entries, err := os.ReadDir("site/docs")
+	if err != nil {
+		t.Fatalf("read site/docs: %v — the orphan check verified NOTHING", err)
+	}
+	md := 0
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
+		md++
+		if !known[e.Name()] {
+			t.Errorf("site/docs/%s is not named by docsMirror — it is either a stale leftover "+
+				"or a page nobody is tracking for drift; add it to docsMirror or delete it", e.Name())
+		}
+	}
+	if md < len(docsMirror) {
+		t.Fatalf("only %d markdown files found in site/docs (expected at least %d) — the orphan "+
+			"scan verified almost nothing", md, len(docsMirror))
+	}
 }
 
 // TestSiteDocsPageListIsMirrored proves the table above covers everything
