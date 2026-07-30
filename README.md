@@ -10,13 +10,7 @@ Documents, spreadsheets, slides, and whiteboards — **CRDT-native** and
 **real-time**, shipped as a single binary, running on **your own storage**.
 No cloud account, no telemetry, no lock-in.
 
-[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](CHANGELOG.md)
-[![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-D0471F.svg)](LICENSE-MIT)
-[![Self-hostable](https://img.shields.io/badge/self--hostable-single%20binary-E07A5F)](docs/SELFHOST.md)
-[![CRDT · real-time](https://img.shields.io/badge/CRDT-real--time%20P2P-14B8A6)](docs/COLLABORATION.md)
-[![Tests](https://img.shields.io/badge/tests-passing-D0471F)](docs/TESTING.md)
-[![Go](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white)](https://golang.org)
-[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=black)](https://react.dev)
+**[Version 0.3.0](CHANGELOG.md) · [MIT OR Apache-2.0](LICENSE-MIT) · [Self-hostable, single binary](docs/SELFHOST.md) · [CRDT, real-time P2P](docs/COLLABORATION.md) · Go 1.25 · React 18**
 
 [**Quickstart**](#quick-start) · [**Docs**](docs/) · [**Collaboration**](docs/COLLABORATION.md) · [**Architecture**](docs/ARCHITECTURE.md) · [**Self-hosting**](docs/SELFHOST.md)
 
