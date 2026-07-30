@@ -108,8 +108,19 @@ export function updateLogEnabled() {
  * wall-clock time, while the substrate resolves by a full HLC (wall, counter,
  * author) per §3. For two concurrent writes to the same cell they can pick
  * different winners. Every replica in a deployment must therefore run the SAME
- * engine, which a build-time flag guarantees and a gradual rollout would not.
- * Set VITE_SUBSTRATE_SYNC=off to ship the legacy engine deployment-wide.
+ * engine, which a build-time flag makes far likelier than a gradual rollout
+ * would. Set VITE_SUBSTRATE_SYNC=off to ship the legacy engine deployment-wide.
+ *
+ * BUT THE FLAG IS NOT A GUARANTEE, so it is not the only defence. It fixes one
+ * engine per BUILD, not one engine per ROOM: a tab loaded before the flag was
+ * flipped is still open, the CommonJS library build below can never load the
+ * .wasm and so always runs grid.js, and two deployments can meet through one
+ * invite link. What a mixed room actually did was worse than picking different
+ * winners — the two engines share the fabric's message types but not their op
+ * payloads, so NOTHING crossed, in either direction, while both editors showed a
+ * healthy roster. Sheets now advertises its engine and infers a peer's engine
+ * from the shape of any op it sends, and REFUSES to keep replicating across a
+ * mismatch. See src/lib/crdt/gridEngine.js.
  *
  * The engine is WASM and loads asynchronously, so the Sheets editor awaits
  * initSubstrateSync() before opening a session. IF THAT LOAD FAILS the editor

@@ -154,9 +154,19 @@ success.
   `@fortune-sheet` needs a real `<canvas>` and hangs under jsdom. The cell/model
   logic is unit-tested in vitest.
 - **P2P convergence / read-only *enforcement* / crypto seal** is proven headless
-  with an injected in-process fabric (`src/lib/crdt/__tests__/p2pSession.test.js`
-  and `p2pShare.integration.test.jsx`). The browser E2E covers the *sharer UI* and
-  invite-link format; full ro enforcement in the browser would need a live relay.
+  with an injected in-process fabric (`src/lib/crdt/__tests__/yP2PSession.test.js`
+  and `p2pShare.integration.test.jsx`, both against the LIVE `YP2PCollabSession`).
+  The browser E2E covers the *sharer UI* and invite-link format; full ro
+  enforcement in the browser would need a live relay.
+- **Cross-engine refusal** (`src/lib/crdt/__tests__/gridEngineHandshake.test.js`)
+  is deliberately a unit test with a shared in-process bus rather than a browser
+  one, because the scenario it pins — two peers on DIFFERENT builds of the app in
+  one room — is not something a single Playwright build can construct. It runs a
+  real `GridSession` and a real `SubstrateGridSession` on one bus and asserts both
+  stop replicating. It also records the OLD behaviour directly against the CRDT
+  internals (a substrate op reaching `grid.js` throws on `op.key.r`; a `grid.js`
+  op reaching the substrate is dropped returning `false`), so the regression is a
+  fact in the suite rather than a claim in a comment.
 
 ## Repository-integrity gates (Go `go test ./...`, root package)
 

@@ -66,6 +66,62 @@ Diwan uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   long-lived credential placed there is readable by anyone who can reach the box.
   That trade-off is stated in the docs rather than glossed.
 
+### Added — Sheets REFUSES to sync across a CRDT-engine mismatch
+
+- **The hole a build-time flag cannot close.** `VITE_SUBSTRATE_SYNC` keeps one
+  engine per build of one deployment — not one engine per *room*. A tab loaded
+  before the flag was flipped, the CommonJS library build (which can never locate
+  the `.wasm` and so always runs `grid.js`), and two deployments meeting through
+  one invite link all put two engines in one document.
+- **And what happened then was not "different winners".** The two engines share
+  the fabric's message *types* but not their op *payloads*: `grid.js` sends
+  `{kind, id, key:{r,c}, v}`, `substrateGrid.js` sends `{dsync:1, b:<canonical
+  bytes>}`. A `grid.js` op reaching the substrate was dropped by
+  `opBytesFromWire` returning null — no error, no event, nothing rendered. A
+  substrate op reaching `grid.js` read `op.key.r` on an undefined `key` and
+  **threw inside a fabric event listener**, once per remote keystroke. Snapshots
+  crossed no better. So nothing merged, in either direction, permanently — while
+  the presence roster and the status pill both said "Live".
+- **`src/lib/crdt/gridEngine.js`** is the engine-advertisement handshake, and it
+  is two-layered on purpose. Every session announces its engine id in a
+  `grid_hello` frame and answers a peer's hello with its own; *and* it classifies
+  every inbound op and snapshot by shape, because the commonest mismatch of all
+  — a peer on a bundle that predates this change — will never send a hello. An
+  op payload that cannot be classified counts as foreign, never as benign.
+- On a mismatch the session latches closed **one way** and stops replicating
+  entirely: no op sent, none applied, and nothing appended to the durable update
+  log (the second place two engines can meet). It still answers a hello, so the
+  peer that caused the mismatch learns of it too rather than being left believing
+  it is collaborating. The pill turns to a danger-tone **"Not syncing"** — the
+  only status in that component that is an error rather than a phase, because
+  everything else there resolves itself and this never will — and a banner tells
+  the user their work is still saving and to reload once everyone is on one
+  build. Local editing and whole-document autosave are untouched.
+- The trade is stated rather than hidden: a **visible** loss of live
+  collaboration in exchange for not producing two plausible spreadsheets that
+  silently disagree.
+
+### Removed — the superseded text-RGA CRDT cluster (~1,040 lines)
+
+- `src/lib/crdt/text.js` (the hand-rolled RGA), `src/lib/crdt/index.js`
+  (`DocsCollabSession` + `diffToOps`) and `src/lib/crdt/p2pSession.js`
+  (`P2PCollabSession`) are deleted. Docs has run on Yjs + y-prosemirror since the
+  plain-text sync path was retired; `useP2PCollab` builds `YP2PCollabSession`.
+  Nothing in the shipping app constructed any of these — they were reachable only
+  from tests, and the Go half they mirrored (`backend/crdt/`) is already gone.
+- Their tests went with them, and two more were **retargeted rather than
+  deleted**, because the properties were real even though the code under them was
+  not: `p2pShare.integration.test.jsx` now drives the live `YP2PCollabSession`
+  (so the modal → invite-link → converge → read-only-refused → opaque-frames
+  chain is finally proved against the class users actually run), and
+  `tables.test.js` keeps the structured-doc guard it needs while dropping a
+  round-trip that asserted a table's *concatenated cell text* converged — the
+  plain-text model that was retired precisely because it could not carry a table.
+- `convergence.regression.test.js` loses BUG1/2/3/6, which pinned defects of the
+  deleted RGA and cannot recur in an engine that no longer exists. The remaining
+  numbering keeps its gaps so the blocks stay attached to the audit that named
+  them. The Yjs equivalents are covered in `yP2PSession.test.js`.
+
 ### Changed — Sheets runs on the SHARED substrate engine by default
 
 - `VITE_SUBSTRATE_SYNC` now defaults **on**, so `substrateGrid.js` over the

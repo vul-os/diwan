@@ -53,6 +53,16 @@ describe('ConnectionPill', () => {
     expect(el.className).not.toMatch(/animate-pulse/)
   })
 
+  it('renders the engine mismatch with a danger tone', () => {
+    // Deliberately louder than every other state in this component: it is the
+    // only one that means "this will not fix itself".
+    render(<ConnectionPill pill={pill('mismatch', 'Not syncing', 'danger')} />)
+    const el = screen.getByRole('status')
+    expect(el).toHaveTextContent('Not syncing')
+    expect(el.className).toMatch(/text-danger/)
+    expect(el.className).not.toMatch(/animate-pulse/)
+  })
+
   it('is announced politely to assistive tech', () => {
     render(<ConnectionPill pill={pill('connecting', 'Connecting…', 'muted')} />)
     expect(screen.getByRole('status')).toHaveAttribute('aria-live', 'polite')

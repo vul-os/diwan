@@ -32,16 +32,13 @@ Diwan is a collaborative document editing + e-signing service. It exposes:
 >   y-prosemirror; peers exchange Yjs updates + state-vector resyncs. The
 >   whiteboard document type rides the same session with an Excalidraw-scene
 >   validator (`boardYdoc.js`).
-> - **Custom-CRDT session** (`P2PCollabSession`, `src/lib/crdt/p2pSession.js`) —
->   the hand-rolled text-RGA path (`src/lib/crdt/text.js`, `crdt/index.js`) with
->   an `{op, snap-req, snap}` wire vocabulary and offline-buffer-then-sync
->   convergence. **No editor builds it any more**: Docs moved to the Yjs session
->   above, and nothing outside `src/lib/crdt/__tests__/` and the library barrel
->   constructs a `P2PCollabSession`. It is superseded code kept under test, not a
->   second live path — do not read this bullet as a feature the app offers.
->   (Sheets' grid LWW `crdt/grid.js` and Slides' fractional-index tree
->   `crdt/tree.js` **are** live, but they ride the fabric directly through
->   `GridSession` / `TreeSession`, not through `P2PCollabSession`.)
+> - **Grid and tree sessions** — Sheets' LWW grid and Slides' fractional-index
+>   tree ride the same fabric directly, through `SubstrateGridSession` /
+>   `GridSession` and `TreeSession` rather than through a document session.
+>   (A third path used to be listed here: `P2PCollabSession` over a hand-rolled
+>   text RGA, `crdt/text.js` + `crdt/index.js`. It was superseded when Docs moved
+>   to Yjs and no editor had constructed it since; the ~1,040 lines have been
+>   deleted rather than left to read like an available mode.)
 > - In both cases peers connect **directly** over WebRTC data channels
 >   (STUN-assisted); a **content-blind relay** circuit is used only as a hard-NAT
 >   fallback (per-session X25519 box — ciphertext only). Frames are sealed
@@ -99,10 +96,20 @@ flowchart TD
   browser — there is no server-side CRDT. Two families coexist:
   - **Yjs** (`ydoc.js`, `yP2PSession.js`) — the structure-aware path Docs (and
     the whiteboard document type) use; converges with no central authority.
-  - **Hand-rolled CRDTs** — text (RGA, `text.js`), grid (LWW, `grid.js`), tree
-    (fractional-index, `tree.js`), plus comment/suggestion ordering — for
-    ordering + offline-tolerant merge, driven by the custom-CRDT P2P session
-    (`p2pSession.js`).
+  - **The shared substrate engine** (`substrateGrid.js` over the published
+    `@vul-os/kotva-sync`) — Sheets' grid, and the DEFAULT for it
+    (`VITE_SUBSTRATE_SYNC`, on unless a deployment turns it off).
+  - **Hand-rolled CRDTs** — grid (LWW, `grid.js`, what a `VITE_SUBSTRATE_SYNC=off`
+    build ships), tree (fractional-index, `tree.js`, Slides' only engine), plus
+    comment/suggestion ordering.
+
+  Sheets' two grid engines share the fabric's wire TYPES but not their op
+  PAYLOADS or their total order, so peers on different engines cannot merge —
+  and, before the engine-advertisement handshake, did not merge *silently*. A
+  grid session now advertises its engine, infers a peer's engine from the shape
+  of any op it sends, and REFUSES to keep replicating across a mismatch rather
+  than degrading into two divergent documents. See `src/lib/crdt/gridEngine.js`
+  and [COLLABORATION.md](COLLABORATION.md).
 
   Both families sync over the **single** collab transport: the E2E-encrypted
   peer-to-peer room (`p2pRoom.js`) on the first-party WebRTC fabric

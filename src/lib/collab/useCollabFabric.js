@@ -2,7 +2,7 @@
  * src/lib/collab/useCollabFabric.js — shared FabricClient lifecycle hook
  * (WAVE-27).
  *
- * Docs gets live presence because DocsCollabSession owns and joins a
+ * Docs gets live presence because its collab session owns and joins a
  * FabricClient, then exposes it (`.fabric`) to useLiveCursors + usePresence.
  * Sheets (GridSession) and Slides (TreeSession) already accept a
  * `fabricClient`, but the editors passed `null`, so they had CRDT logic but no
@@ -11,7 +11,7 @@
  * This hook centralises that lifecycle so Sheets and Slides light up presence
  * the same way Docs does, WITHOUT reinventing transport:
  *
- *   1. Create a FabricClient (same defaults as DocsCollabSession — origin-derived
+ *   1. Create a FabricClient (same defaults as Docs' session — origin-derived
  *      signaling URL, /api/peering/ice, same-origin relay).
  *   2. join() it; track joined/peer-state so the status pill can reflect Live /
  *      Reconnecting / Offline.

@@ -14,14 +14,25 @@
  *
  * This is deliberately layered on top of the modal + link format so a change to
  * the link scheme or the modal contract is caught here, not just in the lower
- * p2pSession unit tests.
+ * yP2PSession unit tests.
+ *
+ * (4) used to build `P2PCollabSession` — the hand-rolled text-RGA session, which
+ * was deleted along with `crdt/text.js`. It was never what Docs constructed:
+ * `useP2PCollab` has built `YP2PCollabSession` since the plain-text sync path
+ * was retired, so the end-to-end claim this file makes was being proved against
+ * a class no user ever ran. It now drives the LIVE session, which is the only
+ * version of this test that means anything.
  */
 
 import { describe, it, expect, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import P2PShareModal from '../../apps/docs/components/P2PShareModal.jsx'
 import { hasInviteInLocation } from '../../apps/docs/useP2PCollab.js'
-import { P2PCollabSession } from '../../lib/crdt/p2pSession.js'
+import { Editor } from '@tiptap/react'
+import StarterKit from '@tiptap/starter-kit'
+import { YP2PCollabSession } from '../../lib/crdt/yP2PSession.js'
+import { YCollab } from '../../apps/docs/collabExtension.js'
+import { createYContext, Y, Y_FRAGMENT } from '../../lib/crdt/ydoc.js'
 import { generateInvite, parseInvite, CAP_RW, CAP_RO } from '../../lib/crdt/p2pRoom.js'
 
 // ── In-process, content-blind transport (mirrors the real FabricClient API) ──
@@ -119,6 +130,23 @@ describe('invite links parse to the correct capability + same room', () => {
   })
 })
 
+/** A peer: a Yjs doc, a real ProseMirror schema, and its own fabric endpoint. */
+function makePeer(bus, peerId) {
+  const ydoc = new Y.Doc()
+  const ctx = createYContext(null, ydoc)
+  const element = document.createElement('div')
+  document.body.appendChild(element)
+  const editor = new Editor({
+    element,
+    extensions: [
+      StarterKit.configure({ history: false }),
+      YCollab.configure({ fragment: ydoc.getXmlFragment(Y_FRAGMENT) }),
+    ],
+  })
+  ctx.schema = editor.schema
+  return { ydoc, ctx, editor, fabric: new FakeFabric(bus, peerId) }
+}
+
 describe('two sessions from the modal links converge; ro is rejected + sealed', () => {
   it('rw+ro peers converge, ro ops rejected, wire frames opaque', async () => {
     const bus = new FakeBus()
@@ -126,33 +154,44 @@ describe('two sessions from the modal links converge; ro is rejected + sealed', 
     const rw = await generateInvite({ cap: CAP_RW })
     const ro = await generateInvite({ cap: CAP_RO, roomKey: rw.roomKey })
 
-    const editor = await P2PCollabSession.fromInvite({
-      inviteLink: rw.link, peerId: 'EDIT', fileId: 'd1', fabric: new FakeFabric(bus, 'EDIT'),
+    const ed = makePeer(bus, 'EDIT')
+    const vw = makePeer(bus, 'VIEW')
+
+    const editor = await YP2PCollabSession.fromInvite({
+      inviteLink: rw.link, peerId: 'EDIT', fileId: 'd1', ctx: ed.ctx, fabric: ed.fabric,
     })
-    const viewer = await P2PCollabSession.fromInvite({
-      inviteLink: ro.link, peerId: 'VIEW', fileId: 'd2', fabric: new FakeFabric(bus, 'VIEW'),
+    const viewer = await YP2PCollabSession.fromInvite({
+      inviteLink: ro.link, peerId: 'VIEW', fileId: 'd1', ctx: vw.ctx, fabric: vw.fabric,
     })
+    // Same room key ⇒ the two links meet in one room, which is the whole point
+    // of the modal handing out a pair.
+    expect(editor.roomId).toBe(viewer.roomId)
+
     await editor.join(); await viewer.join()
 
-    // Editor writes → viewer converges (ro peer reads live edits).
-    editor.applyLocal('', 'secret-plan')
-    // Await the real convergence condition (encrypt→broadcast→decrypt), not a
-    // fixed sleep. Robust when SubtleCrypto is slow under parallel-suite load.
-    await until(() => viewer.getText() === 'secret-plan')
-    expect(viewer.getText()).toBe('secret-plan')
+    // Editor writes → viewer converges (a ro peer READS live edits).
+    ed.editor.commands.setContent('<p>secret-plan</p>')
+    await until(() => vw.editor.getText().includes('secret-plan'))
+    expect(vw.editor.getText()).toContain('secret-plan')
     expect(viewer.readOnly).toBe(true)
 
-    // ro peer's write is a no-op and never mutates the shared doc.
-    expect(viewer.applyLocal('secret-plan', 'secret-plan!!!')).toEqual([])
+    // ro peer's write never reaches the editor: it emits no authoritative frame,
+    // and could not forge the RW MAC if it tried.
+    const sentBefore = vw.fabric.sent.length
+    vw.editor.commands.setContent('<p>secret-plan!!!</p>')
     await settle()
-    expect(editor.getText()).toBe('secret-plan')
+    expect(vw.fabric.sent.length).toBe(sentBefore)
+    expect(ed.editor.getText()).toContain('secret-plan')
+    expect(ed.editor.getText()).not.toContain('!!!')
 
     // Crypto seal: the relay/transport only ever saw ciphertext frames — none
     // may contain the plaintext.
-    for (const frame of editor.fabric.sent) {
+    expect(ed.fabric.sent.length).toBeGreaterThan(0)
+    for (const frame of ed.fabric.sent) {
       expect(frame).not.toContain('secret-plan')
     }
 
     editor.leave(); viewer.leave()
+    ed.editor.destroy(); vw.editor.destroy()
   })
 })

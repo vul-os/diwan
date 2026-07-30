@@ -30,6 +30,13 @@
  * REPLICATING session can diverge two peers permanently with no error shown to
  * either. See the call site in `src/apps/sheets/SheetsEditor.jsx`.
  *
+ * AND THE SAME RULE APPLIES TO THE PEER'S ENGINE, not just this one's. A session
+ * advertises which algebra it folds ops with, classifies every inbound frame by
+ * shape, and stops replicating entirely once it can prove a peer is on the other
+ * engine — because the two engines' op payloads are unrelated, so a mixed room
+ * exchanged nothing at all while both editors reported "Live". See
+ * `./gridEngine.js`.
+ *
  * THE MAPPING (Diwan's grid → SYNC.md §4.4)
  * -----------------------------------------
  *   namespace  'sheet'
@@ -71,6 +78,10 @@
 import { sha256 } from '@noble/hashes/sha2.js'
 import { loadSync } from './kotvaSync.js'
 import { bytesToB64, b64ToBytes } from './ydoc.js'
+import {
+  GridEngineGuard, ENGINE_KOTVA_SYNC, HELLO_TYPE,
+  classifyOp, classifySnapshot, mismatchLogLine,
+} from './gridEngine.js'
 
 const NS = 'sheet'
 const FIELD = 'v'
@@ -183,12 +194,46 @@ export class SubstrateGridSession extends EventTarget {
     // key `${r},${c}` → { bytes: Uint8Array, hlc: string(JSON) }
     this._winners = new Map()
 
+    // ENGINE-ADVERTISEMENT HANDSHAKE — see ./gridEngine.js for why refusing to
+    // sync is the correct answer to a peer on `grid.js` rather than trying to
+    // interoperate with it. In short: the two engines share wire TYPES but not
+    // op PAYLOADS, so a mixed room exchanges nothing at all while both editors
+    // report "Live". This latches the session closed the moment that is visible.
+    this._engineGuard = new GridEngineGuard(ENGINE_KOTVA_SYNC, (info) => {
+      console.error(mismatchLogLine(info))
+      // Deferred one microtask — see the matching note in grid.js: a mismatch
+      // can latch during this constructor, before the editor has subscribed.
+      queueMicrotask(() => {
+        this.dispatchEvent(new CustomEvent('engineMismatch', { detail: info }))
+      })
+    })
+
     this._loadLocal()
 
     if (this._fabric) {
       this._onFabricMessage = (ev) => this._handleFabricMessage(ev.detail.data)
       this._fabric.addEventListener('message', this._onFabricMessage)
+      this._announceEngine()
     }
+  }
+
+  /** The engine mismatch that stopped this session, or null while it is sound. */
+  get engineMismatch() {
+    return this._engineGuard.mismatch
+  }
+
+  /**
+   * Advertise which algebra this session folds ops with.
+   *
+   * Uses `_sendRaw`, not `_broadcast`: a hello carries no document state, and a
+   * session that has already latched must still be able to answer — otherwise
+   * the peer that caused the mismatch never learns of it and keeps typing into a
+   * document it believes is shared.
+   */
+  _announceEngine(reply = false) {
+    this._sendRaw({
+      type: HELLO_TYPE, session: this._session, engine: ENGINE_KOTVA_SYNC, reply,
+    })
   }
 
   // -------------------------------------------------------------------------
@@ -219,7 +264,12 @@ export class SubstrateGridSession extends EventTarget {
     const op = wireOp(bytes)
     this._broadcast({ type: 'grid_op', session: this._session, op })
     this._persistOp(op)
-    this.dispatchEvent(new CustomEvent('localOp', { detail: { op } }))
+    // Suppressed after an engine mismatch, for the same reason `_broadcast` is:
+    // appending our canonical ops to an update log another engine is also
+    // writing leaves a durable log that no single engine can fold.
+    if (this._engineGuard.ok) {
+      this.dispatchEvent(new CustomEvent('localOp', { detail: { op } }))
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -228,13 +278,19 @@ export class SubstrateGridSession extends EventTarget {
   // update log and the frame format are untouched by this adoption.
   // -------------------------------------------------------------------------
 
-  /** Apply one op from the durable log. Idempotent (the engine dedups by op-id). */
+  /** Apply one op from the durable log. Idempotent (the engine dedups by op-id).
+   *
+   * The update log is the SECOND place two engines can meet — it is per-file and
+   * durable, so a `grid.js` client appending to it leaves frames here that this
+   * engine cannot fold. Same guard as the fabric path. */
   applyLogOp(op) {
+    if (this._engineGuard.observeShape(classifyOp(op))) return false
     return this._ingestWire(op)
   }
 
   /** Merge a snapshot frame: a compacted list of canonical ops (never a replace). */
   applyLogSnapshot(ops) {
+    if (this._engineGuard.observeShape(classifySnapshot(ops))) return
     if (!Array.isArray(ops)) return
     let changed = false
     for (const op of ops) if (this._ingestWire(op, { quiet: true })) changed = true
@@ -423,9 +479,18 @@ export class SubstrateGridSession extends EventTarget {
   // payload inside the SAME `grid_op` message the fabric already carries)
   // -------------------------------------------------------------------------
 
-  _broadcast(msg) {
+  /** Put a frame on the wire unconditionally. Only the handshake may use this. */
+  _sendRaw(msg) {
     if (!this._fabric) return
     try { this._fabric.send(JSON.stringify(msg)) } catch { /* disconnected */ }
+  }
+
+  _broadcast(msg) {
+    // Latched mismatch ⇒ emit no DOCUMENT frame. An op a mismatched peer cannot
+    // fold is worse than no op: it keeps their editor looking live while their
+    // document walks away from ours.
+    if (!this._engineGuard.ok) return
+    this._sendRaw(msg)
   }
 
   _handleFabricMessage(raw) {
@@ -434,7 +499,23 @@ export class SubstrateGridSession extends EventTarget {
     try { msg = typeof raw === 'string' ? JSON.parse(raw) : raw } catch { return }
     if (!msg || msg.session !== this._session) return
 
+    // The handshake is handled BEFORE the fail-closed gate, and is the only
+    // thing that is — see the matching note in grid.js. A latched session that
+    // went silent would leave the mismatched peer believing it is collaborating.
+    if (msg.type === HELLO_TYPE) {
+      this._engineGuard.observeAdvertisement(msg.engine)
+      if (!msg.reply) this._announceEngine(true)
+      return
+    }
+
+    if (!this._engineGuard.ok) return // fail closed on every subsequent frame
+
     if (msg.type === 'grid_op' && msg.op) {
+      // Layer 2 of the handshake: a `grid.js` GridOp reaching here is proof of a
+      // foreign engine even if that peer's bundle is too old to send a hello.
+      // Before this check the op was dropped by `opBytesFromWire` returning
+      // null — silently, with no event and nothing rendered.
+      if (this._engineGuard.observeShape(classifyOp(msg.op))) return
       this._ingestWire(msg.op)
     } else if (msg.type === 'chart_op') {
       this.dispatchEvent(new CustomEvent('remoteOp', {
@@ -449,9 +530,12 @@ export class SubstrateGridSession extends EventTarget {
         detail: { colorScale: msg.rule, colorScaleId: msg.ruleId, colorScaleAction: msg.action, opId: msg.opId },
       }))
     } else if (msg.type === 'grid_snapshot_request') {
+      // Proof a new peer is present; re-advertise, since our constructor's hello
+      // predates it.
+      this._announceEngine(true)
       this._broadcast({ type: 'grid_snapshot', session: this._session, cells: this.logSnapshotData() })
     } else if (msg.type === 'grid_snapshot' && msg.cells) {
-      this.applyLogSnapshot(msg.cells)
+      this.applyLogSnapshot(msg.cells) // classifies the frame on the same guard
     }
   }
 

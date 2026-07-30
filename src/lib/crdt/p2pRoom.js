@@ -4,7 +4,8 @@
  * This is the ADDITIVE second collab mode for Diwan: two OSS installs
  * co-edit a document with NO cloud doc backend. It layers three things on top
  * of the existing FabricClient P2P transport (WebRTC data channels + relay-
- * circuit fallback) and the hand-rolled RGA TextCRDT (see ./text.js, ./index.js):
+ * circuit fallback) and the document engine (Yjs — see ./ydoc.js, and
+ * ./yP2PSession.js for the session that consumes this module):
  *
  *   1. INVITE LINK / CAPABILITY  — a peer joins a doc's P2P room only if it holds
  *      a signed capability embedded in an invite link: {roomId, roomKey, cap}.

@@ -11,7 +11,7 @@
  * Nothing in this module opens a socket or touches React — it is deliberately
  * pure so the status-pill and roster projection can be tested without a DOM or
  * a live fabric. The FabricClient lifecycle itself is owned by each editor (via
- * the CRDT session's `.fabric`, mirroring DocsCollabSession).
+ * the CRDT session's `.fabric`, mirroring YP2PCollabSession).
  */
 
 import { peerColor } from './webrtc/useLiveCursors.js'
@@ -95,9 +95,13 @@ export function countLivePeers(peers) {
  *   - joined:     did the fabric's join() resolve (signaling up)?
  *   - peers:      peerId → state map from the fabric 'state' events
  *   - readOnly:   the local user only has view access (permission clarity)
+ *   - engineMismatch: a peer is provably running a DIFFERENT CRDT engine, so
+ *                 this session refused to keep replicating (see
+ *                 lib/crdt/gridEngine.js)
  *
  * Returns { status, label, tone } where status ∈
- *   'offline' | 'connecting' | 'reconnecting' | 'live' | 'solo' | 'readonly'.
+ *   'offline' | 'connecting' | 'reconnecting' | 'live' | 'solo' | 'readonly'
+ *   | 'mismatch'.
  *
  * Design intent (matches Docs' quiet, non-alarming status treatment):
  *   - 'solo'         — connected, no peers yet: “Live” but calm (no alarm).
@@ -106,15 +110,31 @@ export function countLivePeers(peers) {
  *   - 'reconnecting' — was joined, but transport dropped / peers gone pending.
  *   - 'offline'      — no collab backend configured (solo local editing).
  *   - 'readonly'     — overlaid regardless of connection (permission clarity).
+ *   - 'mismatch'     — the ONE state here that is genuinely an error rather than
+ *                      a phase. Everything else on this list still converges
+ *                      eventually; this one never will, and the transport is
+ *                      still perfectly connected, so it would otherwise read as
+ *                      "Live" forever. It therefore outranks every connection
+ *                      state below it and is the only one with a danger tone.
  *
  * @param {object} opts
  * @param {boolean} opts.configured
  * @param {boolean} opts.joined
  * @param {Record<string, string>} [opts.peers]
  * @param {boolean} [opts.readOnly]
+ * @param {boolean} [opts.engineMismatch]
  * @returns {{ status: string, label: string, tone: string }}
  */
-export function deriveStatusPill({ configured, joined, peers = {}, readOnly = false } = {}) {
+export function deriveStatusPill({
+  configured, joined, peers = {}, readOnly = false, engineMismatch = false,
+} = {}) {
+  if (engineMismatch) {
+    // Ranked ABOVE readOnly and above every connection state: a view-only peer
+    // in a mismatched room is still in a room that cannot converge, and the
+    // fabric being healthy is exactly what makes this dangerous to under-report.
+    return { status: 'mismatch', label: 'Not syncing', tone: 'danger' }
+  }
+
   if (readOnly) {
     return { status: 'readonly', label: 'View only', tone: 'muted' }
   }

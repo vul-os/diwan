@@ -135,7 +135,7 @@ describe('RW authority (ro cannot forge authoritative frames)', () => {
   it('a ro peer holds encKey but NOT macKeyRw, so it cannot sign authoritative frames', async () => {
     const { roomKey } = await generateInvite({ cap: 'ro' })
     const keys = await deriveRoomKeys(roomKey)
-    // ro session strips macKeyRw (see P2PCollabSession.fromInvite).
+    // ro session strips macKeyRw (see YP2PCollabSession.fromInvite).
     const ro = { encKey: keys.encKey, macKeyRw: null, roomId: keys.roomId }
     await expect(
       sealFrame(ro, { type: 'op', op: { v: 1 } }, { authoritative: true }),

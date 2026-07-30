@@ -28,7 +28,19 @@
  *
  *   // When done:
  *   session.destroy();
+ *
+ * NOTE — this is no longer the only grid engine. `./substrateGrid.js` runs the
+ * same grid on the shared KOTVA Sync engine and is the DEFAULT
+ * (`VITE_SUBSTRATE_SYNC`); this file is what a deployment gets by building with
+ * that flag off. The two speak the same fabric message TYPES with unrelated op
+ * PAYLOADS, so a session here refuses to replicate once it detects a peer on the
+ * other engine rather than silently exchanging nothing — see `./gridEngine.js`.
  */
+
+import {
+  GridEngineGuard, ENGINE_LOCAL_LWW, HELLO_TYPE,
+  classifyOp, classifySnapshot, mismatchLogLine,
+} from './gridEngine.js'
 
 // ---------------------------------------------------------------------------
 // Lamport clock (mirrors backend/crdt/id.go LamportClock)
@@ -196,6 +208,23 @@ export class GridSession extends EventTarget {
     this._crdt      = new GridCRDT()
     this._destroyed = false
 
+    // ENGINE-ADVERTISEMENT HANDSHAKE (see ./gridEngine.js). This session and a
+    // substrateGrid.js session speak the same wire TYPES with unrelated op
+    // PAYLOADS, so a mixed room is not a document that merges badly — it is one
+    // where nothing crosses at all while both editors say "Live". The guard
+    // latches closed on the first sign of a foreign engine and this session then
+    // stops replicating entirely.
+    this._engineGuard = new GridEngineGuard(ENGINE_LOCAL_LWW, (info) => {
+      console.error(mismatchLogLine(info))
+      // Deferred by one microtask because a mismatch can latch DURING this
+      // constructor — a peer's reply to our opening hello arrives synchronously
+      // on a same-process transport — and the editor cannot have subscribed yet.
+      // The guard itself latches immediately; only the notification waits.
+      queueMicrotask(() => {
+        this.dispatchEvent(new CustomEvent('engineMismatch', { detail: info }))
+      })
+    })
+
     // Bootstrap from localStorage (cold-join persistence).
     this._loadLocal()
 
@@ -203,7 +232,28 @@ export class GridSession extends EventTarget {
     if (this._fabric) {
       this._onFabricMessage = (ev) => this._handleFabricMessage(ev.detail.data)
       this._fabric.addEventListener('message', this._onFabricMessage)
+      this._announceEngine()
     }
+  }
+
+  /** The engine mismatch that stopped this session, or null while it is sound. */
+  get engineMismatch() {
+    return this._engineGuard.mismatch
+  }
+
+  /**
+   * Advertise which algebra this session folds ops with.
+   *
+   * Sent with `_sendRaw`, NOT `_broadcast`: a hello carries no document state
+   * and cannot corrupt anything, and a session that has already latched must
+   * still be able to answer — otherwise the peer that caused the mismatch never
+   * learns of it and keeps typing into a document it believes is shared. The
+   * refusal has to be audible to be worth anything.
+   */
+  _announceEngine(reply = false) {
+    this._sendRaw({
+      type: HELLO_TYPE, session: this._session, engine: ENGINE_LOCAL_LWW, reply,
+    })
   }
 
   // -------------------------------------------------------------------------
@@ -237,20 +287,30 @@ export class GridSession extends EventTarget {
   // fabric transport is live/ephemeral; the update log is durable + convergent.
   // -------------------------------------------------------------------------
 
-  /** Fire a 'localOp' event so an update-log sync can append the op as a frame. */
+  /** Fire a 'localOp' event so an update-log sync can append the op as a frame.
+   *  Suppressed after an engine mismatch: appending our frames to a log another
+   *  engine is also writing leaves a durable log no single engine can fold. */
   _emitLocalOp(op) {
+    if (!this._engineGuard.ok) return
     this.dispatchEvent(new CustomEvent('localOp', { detail: { op } }))
   }
 
   /** Apply an op that arrived from the durable log (idempotent LWW). Uses the
-   * SAME ingest path as a fabric op, so clock-observe + re-render fire once. */
+   * SAME ingest path as a fabric op, so clock-observe + re-render fire once.
+   *
+   * The update log is the SECOND way two engines can meet: it is per-file and
+   * server-side, so a client on the other engine appending to it leaves frames
+   * here that this engine cannot fold — the same unsound merge as a mixed
+   * fabric room, just durable. Classified on the same guard. */
   applyLogOp(op) {
+    if (this._engineGuard.observeShape(classifyOp(op))) return false
     return this._ingestGridOp(op)
   }
 
   /** Merge a full snapshot from the durable log (per-cell LWW union — never a
    * blind replace, so a concurrent local edit is not clobbered). */
   applyLogSnapshot(cells) {
+    if (this._engineGuard.observeShape(classifySnapshot(cells))) return
     if (Array.isArray(cells)) this._ingestSnapshotCells(cells)
   }
 
@@ -390,11 +450,20 @@ export class GridSession extends EventTarget {
   // Fabric transport
   // -------------------------------------------------------------------------
 
-  _broadcast(msg) {
+  /** Put a frame on the wire unconditionally. Only the handshake may use this. */
+  _sendRaw(msg) {
     if (!this._fabric) return
     try {
       this._fabric.send(JSON.stringify(msg))
     } catch { /* disconnected — silently queue nothing; op is in localStorage */ }
+  }
+
+  _broadcast(msg) {
+    // Once the engine guard has latched, this replica emits no DOCUMENT frame at
+    // all. Sending an op a mismatched peer cannot fold is not harmless: it makes
+    // that peer's editor look alive while its document walks away from ours.
+    if (!this._engineGuard.ok) return
+    this._sendRaw(msg)
   }
 
   _handleFabricMessage(raw) {
@@ -403,7 +472,30 @@ export class GridSession extends EventTarget {
     try { msg = typeof raw === 'string' ? JSON.parse(raw) : raw } catch { return }
     if (!msg || msg.session !== this._session) return
 
+    // The handshake is handled BEFORE the fail-closed gate, and is the only
+    // thing that is. A latched session must still answer a hello: silence would
+    // leave the peer that caused the mismatch believing it is collaborating,
+    // which is the precise failure this whole mechanism exists to end. A hello
+    // carries no document state, so answering costs nothing.
+    if (msg.type === HELLO_TYPE) {
+      this._engineGuard.observeAdvertisement(msg.engine)
+      // Answer an OPENING hello only (the reply flag terminates the exchange),
+      // so a peer that joined after our constructor's announcement still learns
+      // our engine without waiting for an op to be classified.
+      if (!msg.reply) this._announceEngine(true)
+      return
+    }
+
+    // Fail closed: a latched mismatch refuses every further frame, including
+    // frames that would otherwise look perfectly well-formed.
+    if (!this._engineGuard.ok) return
+
     if (msg.type === 'grid_op' && msg.op) {
+      // Layer 2. A payload that is not the shape THIS engine emits is itself
+      // proof of a foreign engine — and it is the layer that catches a peer on
+      // a bundle old enough to send no hello at all, which is the commonest
+      // mismatch there is.
+      if (this._engineGuard.observeShape(classifyOp(msg.op))) return
       this._ingestGridOp(msg.op)
     } else if (msg.type === 'chart_op') {
       // Advance clock past the remote op id, then surface a chart event. The
@@ -435,6 +527,10 @@ export class GridSession extends EventTarget {
         detail: { colorScale: msg.rule, colorScaleId: msg.ruleId, colorScaleAction: msg.action, opId: msg.opId },
       }))
     } else if (msg.type === 'grid_snapshot_request') {
+      // A cold-join request is also the moment a NEW peer is provably present,
+      // so re-advertise: our constructor's hello predates this peer and it may
+      // never have seen it.
+      this._announceEngine(true)
       // Send our current snapshot to the requester.
       this._broadcast({
         type: 'grid_snapshot',
@@ -442,6 +538,7 @@ export class GridSession extends EventTarget {
         cells: this._crdt.snapshot(),
       })
     } else if (msg.type === 'grid_snapshot' && msg.cells) {
+      if (this._engineGuard.observeShape(classifySnapshot(msg.cells))) return
       // Cold-join: merge incoming snapshot cells.
       this._ingestSnapshotCells(msg.cells)
     }

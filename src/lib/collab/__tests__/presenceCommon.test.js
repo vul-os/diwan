@@ -79,6 +79,27 @@ describe('deriveStatusPill — status-pill state mapping', () => {
     expect(p.status).toBe('live')
   })
 
+  it('engineMismatch outranks EVERYTHING and is the only danger tone', () => {
+    // The mismatch case is the one where the transport is perfectly healthy —
+    // joined, peers connected — and the document still cannot converge. If it
+    // did not outrank 'live' the pill would read "Live" forever while nothing
+    // merged, which is exactly the silence this state exists to break.
+    expect(deriveStatusPill({
+      configured: true, joined: true, peers: { p1: 'connected' }, engineMismatch: true,
+    })).toEqual({ status: 'mismatch', label: 'Not syncing', tone: 'danger' })
+
+    // Including over readOnly: a view-only peer in a mismatched room is still in
+    // a room that will not converge.
+    expect(deriveStatusPill({
+      configured: true, joined: true, readOnly: true, engineMismatch: true,
+    }).status).toBe('mismatch')
+  })
+
+  it('engineMismatch defaults false, so every existing caller is unchanged', () => {
+    expect(deriveStatusPill({ configured: true, joined: true, peers: { p1: 'connected' } }))
+      .toEqual({ status: 'live', label: 'Live', tone: 'success' })
+  })
+
   it('empty opts defaults to offline', () => {
     expect(deriveStatusPill().status).toBe('offline')
   })

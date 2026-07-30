@@ -7,8 +7,19 @@
  *   2. Sanitizer: table structure (+ colspan/rowspan/scope) SURVIVES the
  *      wave-14 allow-list, while a malicious <td onclick>/<td style="…js…">
  *      is stripped (is-safe).
- *   3. CRDT round-trip: text typed into cells converges across two peers.
+ *   3. The structured-doc guard has a signal to key on (a table is detectable).
  *   4. Export: HTML export contains the table markup.
+ *
+ * (3) used to be a CRDT round-trip through the hand-rolled text RGA
+ * (`crdt/text.js` + `diffToOps`), asserting that a table's CONCATENATED CELL
+ * TEXT converged between two peers. That RGA has been deleted along with the
+ * sessions built on it: Docs runs on Yjs + y-prosemirror, and the plain-text
+ * offset model the assertion rested on is exactly what was retired — it could
+ * not carry a table's structure at all, only the characters inside it. The real
+ * property (a table crossing to a peer with its structure intact) is asserted
+ * against the LIVE engine in `lib/crdt/__tests__/yP2PSession.test.js`, which
+ * inserts a table and compares full ProseMirror JSON. What remains here is the
+ * detectability check the editor-side guard actually keys on.
  */
 
 import { describe, it, expect, afterEach, vi } from 'vitest'
@@ -22,8 +33,6 @@ import TableCell from '@tiptap/extension-table-cell'
 import TableHeader from '@tiptap/extension-table-header'
 
 import { sanitizeDocHtml } from '../../../lib/sanitize'
-import { TextCRDT } from '../../../lib/crdt/text.js'
-import { diffToOps } from '../../../lib/crdt/index.js'
 import { exportToHtml } from '../docsExport.js'
 import { saveAs } from 'file-saver'
 
@@ -312,31 +321,8 @@ describe('WAVE-53: style allow-list blocks non-url exfil + clickjacking, keeps l
   })
 })
 
-// ── 3. CRDT round-trip of a table's cell text ────────────────────────────────
-describe('CRDT round-trip: table cell text converges across peers', () => {
-  it('two peers converge on the same cell-text after exchanging ops', () => {
-    editor = makeEditor()
-    editor.chain().focus().insertTable({ rows: 2, cols: 2, withHeaderRow: true }).run()
-    // Type into the first cell.
-    editor.chain().focus().insertContent('Sales').run()
-
-    const docText = editor.getText() // concatenated cell text (what the CRDT syncs)
-
-    const a = new TextCRDT('peer-a')
-    const b = new TextCRDT('peer-b')
-
-    // Peer A types the whole doc-text from empty → broadcasts ops.
-    const ops = diffToOps('', docText, a)
-    for (const op of ops) a.apply(op)
-    // Peer B applies the same ops (arriving over the wire).
-    for (const op of ops) b.apply(op)
-
-    // Both converge, and B's view matches the editor's cell text.
-    expect(a.toString()).toBe(docText)
-    expect(b.toString()).toBe(docText)
-    expect(b.toString()).toContain('Sales')
-  })
-
+// ── 3. The structured-doc guard's signal ─────────────────────────────────────
+describe('structured-doc guard', () => {
   it('a structured-doc guard is available (table present is detectable)', () => {
     // The editor-side guard skips the fragile plain-text patch when a table is
     // present; here we just assert the doc reports its table so the guard has a

@@ -74,7 +74,7 @@ describe('useCollabFabric', () => {
     await waitFor(() => expect(result.current.fabric).not.toBeNull())
     expect(result.current.configured).toBe(true)
     await waitFor(() => expect(result.current.joined).toBe(true))
-    // Signaling URL derives from origin, mirroring DocsCollabSession.
+    // Signaling URL derives from origin, mirroring Docs' collab session.
     expect(lastFabric.opts.sessionId).toBe('file-1')
     expect(lastFabric.opts.peerId).toBe('rep-1')
     expect(lastFabric.opts.signalingUrl).toMatch(/\/api\/peering\/stream$/)

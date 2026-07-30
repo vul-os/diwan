@@ -9,7 +9,7 @@
  * rendered output.
  *
  * Load-bearing regression guards:
- *   • diffToOps / typing order — text renders "hello", never "olleh".
+ *   • typing order — text renders "hello", never "olleh".
  *   • WAVE-19 font size + family — the textStyle mark actually renders inline
  *     styles (the bug was the base extension silently dropping them).
  *   • bold / heading / bullet-list / link formatting via the real toolbar.
@@ -68,7 +68,7 @@ describe('Docs editor — real TipTap integration (MSW/RTL)', () => {
     expect(bar.getAttribute('aria-orientation')).toBe('horizontal')
   })
 
-  // ── diffToOps / typing-order regression guard ("olleh") ───────────────────
+  // ── typing-order regression guard ("olleh") ──────────────────────────────
   it('typing renders characters in order — never reversed', () => {
     const { result } = renderHook(() => useRealEditor('<p></p>'))
     act(() => { result.current.chain().focus().insertContent('hello').run() })

@@ -24,6 +24,7 @@ import {
   clampProtectedRanges, getProtectedRanges, mergeProtectedRanges,
 } from './protectedRanges.js'
 import { GridSession, getGridReplicaId } from '../../lib/crdt/grid.js'
+import { GRID_ENGINE_MISMATCH_NOTICE } from '../../lib/crdt/gridEngine.js'
 import { OpLogSync } from '../../lib/collab/opLogSync.js'
 import { updateLogEnabled, substrateSyncEnabled } from '../../lib/flags.js'
 import CommentsPanel from '../../components/CommentsPanel'
@@ -447,6 +448,12 @@ export default function SheetsEditor() {
   const { fabric, peers: collabPeers, joined, configured } =
     useCollabFabric({ sessionId: id, peerId: replicaId })
 
+  // True once the grid session has proved a peer runs a different CRDT engine
+  // and has therefore STOPPED replicating (lib/crdt/gridEngine.js). Latched for
+  // the life of the session, like the guard itself: a mismatched peer leaving
+  // does not make the two documents agree again.
+  const [engineMismatch, setEngineMismatch] = useState(false)
+
   // Stable local identity (signed-in account or per-tab guest) + its colour.
   const identityRef = useRef(null)
   if (!identityRef.current) identityRef.current = getCollabIdentity(replicaId)
@@ -488,6 +495,8 @@ export default function SheetsEditor() {
     let cancelled = false
     let session = null
     let opLog = null
+    // A new session means a new handshake; clear any latch from the old one.
+    setEngineMismatch(false)
 
     // Open a grid session and wire everything that hangs off it. Called once,
     // either synchronously (the default grid.js path) or after the substrate
@@ -497,6 +506,20 @@ export default function SheetsEditor() {
       if (cancelled) { s.destroy(); return }
       session = s
       gridSessionRef.current = s
+
+      // ENGINE-ADVERTISEMENT HANDSHAKE (lib/crdt/gridEngine.js). The session
+      // refuses to keep replicating the moment it can prove a peer folds ops
+      // with a DIFFERENT merge function — because the two grid engines share
+      // wire types but not op payloads, so a mixed room exchanges nothing while
+      // the presence pill still says "Live". Surface it: flip the pill to a
+      // danger "Not syncing", show the notice, and stop mirroring into the
+      // durable update log so the two op families never interleave there.
+      const onEngineMismatch = () => {
+        setEngineMismatch(true)
+        if (opLog) { opLog.stop().catch(() => {}); opLog = null }
+      }
+      s.addEventListener('engineMismatch', onEngineMismatch)
+
       s.requestSnapshot()
 
       // CRDT-native persistence (phase 2): when the server exposes the per-file
@@ -523,6 +546,13 @@ export default function SheetsEditor() {
         })
         opLog.hydrate().then((ok) => { if (ok) opLog.start() }).catch(() => {})
       }
+
+      // Read the latch directly, AFTER the op log exists, in case the session
+      // already latched before we could subscribe. It cannot today — the session
+      // defers the event by a microtask precisely so a caller can subscribe
+      // first — but the correctness of this screen should not rest on that
+      // staying true, and the handler is idempotent.
+      if (s.engineMismatch) onEngineMismatch()
 
       s.addEventListener('remoteOp', onRemote)
     }
@@ -736,7 +766,7 @@ export default function SheetsEditor() {
   const { roster } = usePresence({ fabric, localIdentity })
 
   // Status pill: Live / Connecting / Reconnecting / Offline from fabric state.
-  const collabPill = deriveStatusPill({ configured, joined, peers: collabPeers })
+  const collabPill = deriveStatusPill({ configured, joined, peers: collabPeers, engineMismatch })
   const livePeerCount = countLivePeers(collabPeers)
 
   const getCellRect = useCallback((row, col) => {
@@ -1178,6 +1208,21 @@ export default function SheetsEditor() {
         if (/\.(xlsx|xls|ods)$/.test(name)) handleImportXLSX(e)
         else handleImportCSV(e)
       }} />
+
+      {/* Engine-mismatch banner. The connection pill alone is not enough here:
+          the transport is HEALTHY, so everything else on screen looks normal
+          while nothing is actually merging. role="alert" because this is the
+          one collaboration state the user must act on (reload / get everyone
+          onto the same build) rather than wait out. */}
+      {engineMismatch && (
+        <div
+          role="alert"
+          className="flex items-start gap-3 px-3 sm:px-4 py-2 bg-danger-bg border-b border-line text-xs text-danger animate-fade-in"
+        >
+          <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />
+          <span className="flex-1 text-ink-muted">{GRID_ENGINE_MISMATCH_NOTICE}</span>
+        </div>
+      )}
 
       {/* Draft-restore banner */}
       {draft && (

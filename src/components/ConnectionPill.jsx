@@ -11,6 +11,14 @@
  *   reconnecting  → "Reconnecting…" (warning tone, gentle pulse)
  *   offline       → "Offline"       (muted — local editing still works)
  *   readonly      → "View only"     (muted — permission clarity)
+ *   mismatch      → "Not syncing"   (DANGER — a peer runs a different CRDT
+ *                                    engine, so this session stopped
+ *                                    replicating; see lib/crdt/gridEngine.js)
+ *
+ * `mismatch` is the one status here that breaks the "informative, never
+ * alarming" rule, deliberately. Every other state resolves itself; this one
+ * means the document will not converge and the connection looks fine, so a calm
+ * muted treatment would be a lie the user has no other way to catch.
  *
  * Design-system compliance:
  *   - Warm signal tokens (success / warning / muted) — no generic Tailwind reds.
@@ -21,21 +29,23 @@
  * JSX only — no .tsx.
  */
 
-import { Wifi, WifiOff, Loader2, Eye } from 'lucide-react'
+import { Wifi, WifiOff, Loader2, Eye, AlertTriangle } from 'lucide-react'
 
 const TONE_CLASS = {
   success: 'text-success',
   warning: 'text-warning',
+  danger:  'text-danger',
   muted:   'text-ink-muted',
 }
 
 const STATUS_META = {
-  live:         { Icon: Wifi,    spin: false, pulse: false },
-  solo:         { Icon: Wifi,    spin: false, pulse: false },
-  connecting:   { Icon: Loader2, spin: true,  pulse: false },
-  reconnecting: { Icon: Loader2, spin: true,  pulse: true  },
-  offline:      { Icon: WifiOff, spin: false, pulse: false },
-  readonly:     { Icon: Eye,     spin: false, pulse: false },
+  live:         { Icon: Wifi,          spin: false, pulse: false },
+  solo:         { Icon: Wifi,          spin: false, pulse: false },
+  connecting:   { Icon: Loader2,       spin: true,  pulse: false },
+  reconnecting: { Icon: Loader2,       spin: true,  pulse: true  },
+  offline:      { Icon: WifiOff,       spin: false, pulse: false },
+  readonly:     { Icon: Eye,           spin: false, pulse: false },
+  mismatch:     { Icon: AlertTriangle, spin: false, pulse: false },
 }
 
 /**

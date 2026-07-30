@@ -128,6 +128,27 @@ substrate uses a full HLC `(wall, counter, author)`. For two concurrent writes
 to one cell they can pick different winners, so a build-time flag (rather than a
 per-user rollout) is what keeps every replica on one engine.
 
+**And where the flag cannot keep it uniform, Sheets refuses to collaborate
+rather than pretend.** A build-time flag guarantees one engine for one build of
+one deployment, which is not the same as one engine in one *room*. Three
+ordinary situations break it: a tab loaded before you flipped the flag and still
+open; the CommonJS library build, which can never load the `.wasm` and therefore
+always runs `grid.js` (below); and two deployments meeting through one invite
+link. What actually happened in a mixed room was worse than "different winners":
+the two engines share the fabric's message *types* but not their op *payloads*,
+so **nothing crossed at all** — every op was dropped or threw on the other side
+— while both editors kept showing a healthy peer roster and a green "Live".
+
+A grid session now advertises its engine on join (`grid_hello`) and, for a peer
+too old to advertise, infers the peer's engine from the *shape* of any op it
+sends. On a mismatch it stops replicating in both directions, permanently for
+that session: no op is sent, none is applied, nothing is appended to the durable
+update log. The status pill turns to a red **"Not syncing"** and a banner tells
+the user their work is still being saved and to reload once everyone is on the
+same build. Local editing and whole-document autosave are untouched. See
+`src/lib/crdt/gridEngine.js` for the reasoning and
+`src/lib/crdt/__tests__/gridEngineHandshake.test.js` for the proof.
+
 **Cost.** The engine is WASM and loads by dynamic import, so first opening a
 spreadsheet fetches ~23 kB of JS (5.7 kB gzipped) and a 402.0 kB WebAssembly
 module (159.6 kB gzipped), once. Building with the flag **off** downloads
