@@ -8,6 +8,129 @@ Diwan uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added — Diwan serves its own peer discovery: real P2P from one bare binary
+
+- **The problem.** WebRTC cannot introduce two browsers to each other unaided —
+  something has to carry the first offer/answer/ICE frames. Diwan could only get
+  that from *another product*: a Vulos OS / Ephor host mounting
+  `/api/peering/*`, or an operator-run `vulos-relayd` named in
+  `collab.rendezvous_url`. With neither, every session fell through to
+  local-only and a standalone binary had **no peer-to-peer at all**. The
+  product's central claim was conditional on a second deployment.
+- **`backend/rendezvous`** now serves that protocol from this binary, at
+  `/api/rendezvous/*`, **on by default** (`collab.builtin_rendezvous`). One
+  `diwan` on one box is sufficient for two people: no Vulos OS, no Ephor, no
+  relay, no account, nothing to configure. Ephor remains supported and still
+  takes precedence when configured — it is a choice now, not a prerequisite.
+- It carries **no document content**. Every payload is opaque bytes sealed under
+  a room key that lives in an invite link's URL fragment and reaches no server;
+  edits ride the direct data channel once peers are introduced. State is
+  in-memory only, with minute-scale TTLs — a discovery cache, deliberately not a
+  durable log of who talked to whom.
+- **Safe to expose, because a cloud node is exposed.** Every write is
+  Ed25519-signed over a domain-separated, length-prefixed canonical message;
+  each carries a fresh nonce and timestamp, so replays (409) and stale envelopes
+  (409) are refused; payload size (413), queue depth, key count and TTLs are all
+  capped before anything is stored; capacity exhaustion is 503; a bad signature
+  is 403. Per-IP rate-limited (240-token burst, 40/s). Anonymous by design —
+  invite-link collaboration needs no account — and authenticating **only** by
+  body signature, never by cookie, so ambient credentials buy nothing.
+- The wire format is byte-for-byte the one an external relayd speaks, so a
+  deployment can move between the two with no rebuild. The Go and JavaScript
+  implementations of the signed canonical message are pinned to **shared fixed
+  vectors** (`backend/rendezvous/canonical_interop_test.go` and
+  `src/lib/collab/webrtc/__tests__/canonicalInterop.test.js`), including a real
+  JS-made signature verified by the Go verifier — a one-byte drift between them
+  would otherwise surface only as an unexplained wall of 403s in the field.
+- `GET /api/reachability` gained `builtin_rendezvous_prefix`, reported as a
+  same-origin **path**. Empty means "this server offers no discovery"; the client
+  refuses anything that is not an absolute same-origin path rather than pasting
+  it onto our origin. **No default endpoint in any branch** — every discovery URL
+  comes from this deployment's own config or the page's own origin.
+
+### Added — STUN/TURN configurable at runtime (`collab.ice.*`)
+
+- `docs/COTURN.md` told operators to set `VITE_STUN_URLS` / `VITE_TURN_*`, which
+  are **baked into the JS bundle at build time** — so anyone running a downloaded
+  release binary or the container image could not follow it without rebuilding
+  the frontend. The document was unusable for exactly its audience.
+- `collab.ice.*` (with `VULOS_STUN_URLS` / `VULOS_TURN_*` env overrides) is the
+  same configuration supplied where that operator can supply it, served to
+  browsers at `GET /api/rendezvous/ice`. Unconfigured it returns an **empty**
+  list, which the client already treats as "answer from my own config" — so
+  nothing changes for a deployment that had set the bundle's variables.
+- `turn_secret` implements coturn's REST (`static-auth-secret`) mode: the secret
+  never leaves the process and each response carries a credential that expires.
+  Preferred over `turn_username`/`turn_credential`, because the ICE endpoint must
+  be unauthenticated (a browser needs ICE servers before it has a session) and a
+  long-lived credential placed there is readable by anyone who can reach the box.
+  That trade-off is stated in the docs rather than glossed.
+
+### Changed — Sheets runs on the SHARED substrate engine by default
+
+- `VITE_SUBSTRATE_SYNC` now defaults **on**, so `substrateGrid.js` over the
+  published `@vul-os/kotva-sync` is the engine a real deployment uses. It had
+  shipped behind an off-by-default flag, which meant the shared engine was
+  *present* but was not the path anyone took — adoption on paper. Two replicas
+  now converge because they run the same compiled, vector-pinned algebra rather
+  than because two implementations agree most of the time.
+- `grid.js` is unretired and still selectable deployment-wide with
+  `VITE_SUBSTRATE_SYNC=off`.
+- **Fixed, in the same change: the WASM-load fallback could diverge two peers
+  silently.** A failed engine load fell straight back to `grid.js`. The two
+  engines do not share a total order — `grid.js` resolves a conflicting write by
+  `(lamport, replicaId)` and ignores wall-clock time, the substrate uses a full
+  HLC — so a client that fell back could pick a different winner for the same
+  pair of concurrent writes and diverge permanently, with both users seeing a
+  plausible spreadsheet and no error anywhere. The fallback is now conditional on
+  there being nothing to diverge from (no fabric, no update log); otherwise the
+  session **fails closed** and stays local-only, which loses live collaboration
+  visibly instead of corrupting data invisibly.
+
+### Fixed — opening an invite link could silently never connect
+
+- `DocsEditor` attaches the ProseMirror schema to its Y context only once the
+  editor has **mounted**, so there is a window where the context is truthy but
+  incomplete. `useP2PCollab`'s auto-join effect fires on the context becoming
+  truthy; when it won that race, `YP2PCollabSession` threw `missing Y context`
+  and the catch tore the session down **for good**. The user got an invite link
+  that never connected, with only a console warning, and whether it happened
+  depended on how long the transport probe took. Observed while bringing up the
+  built-in-rendezvous E2E suite, where the faster same-origin probe loses the
+  race reliably.
+- Both the join and the share path now wait (bounded) for the context to become
+  complete. A genuinely broken context still fails loudly rather than hanging.
+
+### Fixed — env config was ignored when there was no config.yaml
+
+- `config.Load` returned `Default()` on a missing file **without** applying the
+  env overrides, so every `VULOS_*` / `DIWAN_*` variable was silently dropped in
+  exactly the deployment that had nothing else to configure with — a container or
+  PaaS image configured entirely from the environment.
+
+### Changed — the real-P2P CI job no longer clones another repository
+
+- `e2e-p2p` cloned `github.com/vul-os/vulos-relay` **at test time** to build a
+  relayd to signal through. Two things were wrong with that: the claim under test
+  became conditional on another product, and the clone targeted a repo that was
+  later renamed (`vulos-relay` → `ephor`) — so the job failed for a reason
+  unrelated to this code while the claim it was meant to guard went unchecked.
+- The job now builds only this repository and runs
+  `e2e-p2p/builtin-rendezvous-p2p.e2e.js`: one real binary serving its own
+  discovery surface, two real browser contexts, a real WebRTC data channel, the
+  server's own presence state read back as ground truth, an assertion that
+  neither the room key nor the typed text appears in any discovery payload, and
+  the negative control. It has no external dependency, so it cannot be skipped.
+- The external-relay posture keeps its own suite (`rendezvous-p2p.e2e.js`), which
+  skips — loudly, naming the one reason — unless `VULOS_RELAYD_BIN` points at a
+  prebuilt relayd. Nothing is cloned or built from another repo at test time, and
+  no path is inferred from a sibling directory. Its instances run with the
+  built-in surface **off**, so its premise ("nothing of ours is in the discovery
+  path") is exactly true rather than approximately.
+- CI additionally asserts the default-path tests were **collected by name** after
+  the run: `playwright test` exits 0 when every test skipped, so a regression
+  that made the suite skip itself would otherwise look exactly like success.
+
 ### Security — share-link tokens are stored hashed (was: plaintext)
 
 - Share-link tokens were persisted **in the clear** — as
@@ -55,9 +178,11 @@ Diwan uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   match in both directions with the count pinned, and fails if any dependency
   reappears as a local `file:`/`link:` path. It still cannot skip.
 - **Sheets' hand-rolled CRDT is unaffected and unretired.** `src/lib/crdt/grid.js`
-  remains the default engine and remains the fallback when the WASM load fails;
-  `substrateGrid.js` is still the alternative behind the off-by-default
-  `VITE_SUBSTRATE_SYNC` flag. Only where the engine comes from has changed.
+  remained the default engine at the time of this entry, and the fallback when
+  the WASM load failed; `substrateGrid.js` was the alternative behind the
+  off-by-default `VITE_SUBSTRATE_SYNC` flag. Only where the engine comes from had
+  changed. (Both of those have since changed — see "Sheets runs on the SHARED
+  substrate engine by default" above.)
 
 ### Fixed — the vendored `dmtap-sync-wasm` copy was stale, and nothing said so
 

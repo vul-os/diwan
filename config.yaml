@@ -35,13 +35,54 @@ persistence:
   updatelog: false
 
 collab:
+  # Serve Diwan's OWN peer-discovery surface from this binary, at
+  # /api/rendezvous/* (backend/rendezvous). ON by default, and that default is
+  # the point: WebRTC cannot introduce two browsers unaided, so before this
+  # existed a standalone Diwan had no peer-to-peer at all unless the operator
+  # also ran a vulos-relayd (Ephor) and set rendezvous_url below. One Diwan on
+  # one box is now sufficient by itself.
+  #
+  # It carries NO document content — payloads are opaque bytes sealed under a
+  # room key that lives in an invite link's URL fragment and reaches no server,
+  # and edits ride a direct WebRTC data channel. Every write is Ed25519-signed
+  # with a nonce + timestamp (replay-refusing), every size/TTL/queue dimension is
+  # capped, and the surface is per-IP rate-limited — safe to expose on a VPS.
+  #
+  # Set false to serve no discovery yourself: sessions then use rendezvous_url
+  # if set, else stay honestly local-only (the editor keeps working and says so).
+  # Env override: VULOS_BUILTIN_RENDEZVOUS / DIWAN_BUILTIN_RENDEZVOUS.
+  builtin_rendezvous: true
+
   # Base URL of any vulos-relayd's OPEN rendezvous surface (announce/resolve/
-  # signal/mailbox + ICE), consumed DIRECTLY by the browser. Set this and a
-  # STANDALONE Diwan (which serves no /api/peering/*, see main.go) gets real
-  # peer-to-peer collaboration with NO Vulos OS / host box required — any
-  # self-hosted relayd is enough (e.g. "https://relay.example.org"). Leave
-  # blank (default) to keep today's behaviour: host-box /api/peering/* when
-  # present, local-only otherwise. Exposed read-only to the browser at
-  # GET /api/reachability. Env override: VULOS_RENDEZVOUS_URL / DIWAN_RENDEZVOUS_URL.
+  # signal/mailbox + ICE), consumed DIRECTLY by the browser. An EXPLICIT choice
+  # to send discovery somewhere else, so it takes precedence over the built-in
+  # surface above — set it for one shared relay across several deployments, or
+  # for its TURN/NAT-traversal help (e.g. "https://relay.example.org"). Leave
+  # blank (default) to use the built-in surface. Exposed read-only to the browser
+  # at GET /api/reachability.
+  # Env override: VULOS_RENDEZVOUS_URL / DIWAN_RENDEZVOUS_URL.
   # See docs/COLLABORATION.md §3 and docs/CONFIGURATION.md.
   rendezvous_url: ""
+
+  # STUN/TURN for NAT traversal, served to browsers at GET /api/rendezvous/ice.
+  #
+  # These exist so a RELEASE BINARY or container image can be pointed at a
+  # coturn without rebuilding the frontend — the VITE_STUN_URLS / VITE_TURN_*
+  # variables are baked into the JS bundle at build time and are out of reach for
+  # an operator who just downloaded Diwan. Leave empty (default) and the browser
+  # answers from its own build-time config exactly as before.
+  #
+  # The /ice endpoint is UNAUTHENTICATED (a browser needs ICE servers before it
+  # has a session), so anything here is readable by anyone who can reach the box.
+  # STUN URLs are not secret. For TURN prefer turn_secret: it is coturn's
+  # static-auth-secret / REST mode, the secret never leaves this process, and each
+  # response carries a credential that expires after turn_ttl_seconds. A
+  # turn_username/turn_credential pair is served verbatim and is long-lived.
+  # See docs/COTURN.md.
+  ice:
+    stun_urls: []           # e.g. ["stun:turn.example.org:3478"]
+    turn_urls: []           # e.g. ["turn:turn.example.org:3478"]  (needs a credential mode below)
+    turn_secret: ""         # coturn static-auth-secret (recommended)
+    turn_ttl_seconds: 3600
+    turn_username: ""       # long-lived pair; ignored when turn_secret is set
+    turn_credential: ""

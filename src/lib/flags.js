@@ -86,32 +86,51 @@ export function updateLogEnabled() {
 }
 
 /**
- * True when Sheets should run its grid CRDT on the SHARED KOTVA Sync substrate
- * engine (`@vul-os/kotva-sync`, an LWW register per §4.4 of substrate/SYNC.md)
- * instead of the hand-rolled LWW map in src/lib/crdt/grid.js.
+ * True when Sheets should run its grid CRDT on the SHARED KOTVA Sync engine
+ * (`@vul-os/kotva-sync`, an LWW register per §4.4 of the substrate's SYNC.md)
+ * rather than the hand-rolled LWW map in src/lib/crdt/grid.js.
  *
- * Off by default, and additive exactly as VITE_UPDATE_LOG was: with the flag
- * off, not one byte of the substrate is loaded or executed and Sheets behaves
- * precisely as before. Turn on with VITE_SUBSTRATE_SYNC=on at build time.
+ * DEFAULT: ON. Two Diwan replicas must converge because they run the SAME
+ * compiled algebra — the one the substrate's frozen vectors pin — not because two
+ * separate implementations happen to agree most of the time. Shipping the shared
+ * engine behind an off-by-default flag meant the engine was PRESENT but was not
+ * the path any real user took, which is the weaker of the two possible states and
+ * the one that reads as compliance without being it.
  *
- * WHY A FLAG AND NOT A CUTOVER. The two engines are each internally convergent
- * but they do not share a TOTAL ORDER: grid.js resolves a conflicting write by
- * (lamport counter, replicaId) and ignores wall-clock time, while the substrate
- * resolves by a full HLC (wall, counter, author) per §3. For two concurrent
- * writes to the same cell they can therefore pick different winners. Every
- * replica in a deployment must run the SAME path, which a build-time flag
- * guarantees and a gradual rollout would not.
+ * (It defaulted OFF while the adoption was being proved out: the mapping,
+ * the convergence suite, and the package provenance pin all landed first. Those
+ * are green — see src/lib/crdt/__tests__/substrateGrid.convergence.test.js and
+ * substratePackageProvenance.test.js — so the default follows.)
  *
- * The substrate engine is WASM and loads asynchronously, so the Sheets editor
- * awaits initSubstrateSync() before opening a session. If that load fails, the
- * editor falls back to the grid.js path rather than leaving the user with a
- * grid that silently records nothing.
+ * WHY IT IS STILL A BUILD-TIME FLAG rather than a runtime toggle. The two engines
+ * are each internally convergent but they do not share a TOTAL ORDER: grid.js
+ * resolves a conflicting write by (lamport counter, replicaId) and ignores
+ * wall-clock time, while the substrate resolves by a full HLC (wall, counter,
+ * author) per §3. For two concurrent writes to the same cell they can pick
+ * different winners. Every replica in a deployment must therefore run the SAME
+ * engine, which a build-time flag guarantees and a gradual rollout would not.
+ * Set VITE_SUBSTRATE_SYNC=off to ship the legacy engine deployment-wide.
+ *
+ * The engine is WASM and loads asynchronously, so the Sheets editor awaits
+ * initSubstrateSync() before opening a session. IF THAT LOAD FAILS the editor
+ * does NOT silently switch algebra: for a session that can replicate (a fabric is
+ * attached, or the update log is on) it stays local-only for that session, because
+ * falling back would risk permanent divergence from peers that loaded the engine
+ * fine — invisible corruption in exchange for invisible convenience. Only when
+ * nothing can replicate does it use grid.js. See the comment at the call site in
+ * src/apps/sheets/SheetsEditor.jsx.
+ *
+ * KNOWN LIMITATION, stated rather than papered over: the CommonJS artifact of the
+ * library build (vite.config.lib.js) replaces `import.meta` with `{}`, so it
+ * cannot locate the `.wasm` and the load always fails there — a CJS consumer gets
+ * a single-user grid. Use the ESM build for collaboration. See
+ * src/lib/crdt/kotvaSync.js.
  *
  * See src/lib/crdt/substrateGrid.js for the mapping and src/lib/crdt/kotvaSync.js
  * for how the published package is loaded.
  */
 export function substrateSyncEnabled() {
-  return boolFlag('VITE_SUBSTRATE_SYNC', false)
+  return boolFlag('VITE_SUBSTRATE_SYNC', true)
 }
 
 /** User-facing copy for why co-editing is unavailable (kept in one place). */

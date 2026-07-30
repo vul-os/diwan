@@ -66,7 +66,7 @@ The config mounts a volume `office_data` at `/srv/data`, checks `/healthz`, forc
 
 ### 1.4 Vulos OS bundle
 
-For a full sovereign box (OS + Mail + Diwan sharing one identity and storage fabric), use the bundle installer described in [INSTALL.md](INSTALL.md) / [GETTING-STARTED.md](GETTING-STARTED.md). The bundle also provides the `/api/peering/*` fabric endpoints that light up low-latency P2P collaboration and cross-app presence — a standalone Diwan binary does not serve those itself (see [COLLABORATION.md](COLLABORATION.md) §4).
+For a full sovereign box (OS + Mail + Diwan sharing one identity and storage fabric), use the bundle installer described in [INSTALL.md](INSTALL.md) / [GETTING-STARTED.md](GETTING-STARTED.md). The bundle also provides the `/api/peering/*` fabric endpoints, which light up low-latency P2P collaboration and cross-app presence and are the one discovery path that can bind an authenticated account session to a peer identity. A standalone Diwan binary does not serve those — it serves its own equivalent discovery surface at `/api/rendezvous/*` instead (on by default), so peer-to-peer collaboration works either way (see [COLLABORATION.md](COLLABORATION.md) §3).
 
 ---
 
@@ -188,7 +188,7 @@ Related behavior to be aware of:
 
 - **Embedding**: every editor surface ships as the npm library `diwan` with entries `diwan/docs`, `diwan/sheets`, `diwan/slides`, `diwan/whiteboard`, `diwan/pdf` — the Vulos OS (or your own app) mounts them as native panels. Built by `vite.config.lib.js` into `dist-lib/`. (The Go module and the binary it builds are named `diwan`; the npm package and the product are Diwan.)
 - **Identity**: on a Vulos OS box, set `IDENTITY_URL` so Diwan introspects the shared `vc_session` cookie — Diwan deliberately holds no session-signing power in that mode.
-- **Peering fabric**: the OS/Ephor host provides `/api/peering/stream` (WebSocket signaling) and `/api/peering/ice`; Diwan's collab code discovers them same-origin and lights up P2P collaboration + presence automatically. Without a host-box fabric, setting `collab.rendezvous_url` / `VULOS_RENDEZVOUS_URL` to any self-hosted `vulos-relayd` gets the same result with no OS involved (see [CONFIGURATION.md](CONFIGURATION.md)); with neither, it degrades gracefully to local-only.
+- **Peering fabric**: the OS/Ephor host provides `/api/peering/stream` (WebSocket signaling) and `/api/peering/ice`; Diwan's collab code discovers them same-origin and lights up P2P collaboration + presence automatically. Without a host-box fabric, Diwan serves its **own** discovery surface at `/api/rendezvous/*` (`collab.builtin_rendezvous`, on by default), so P2P works on a bare binary with nothing configured; you can point it at a self-hosted `vulos-relayd` instead with `collab.rendezvous_url` / `VULOS_RENDEZVOUS_URL` (see [CONFIGURATION.md](CONFIGURATION.md)). Only with the built-in surface turned off *and* no relay configured does it degrade to local-only.
 - **Control plane** (self-wired, multi-tenant): `VULOS_CP_BASE_URL` + `VULOS_CP_TOKEN` + `VULOS_ORG_ID` enable entitlements (`GET {CP}/api/entitlements`, fails open on transient CP outage), usage metering (fire-and-forget `POST {CP}/api/usage`), and `vk_` API-key introspection for `/v1` (fail-closed `503` if the CP is unreachable during key validation). Vulos operates no control plane for you to point this at. See [SELFHOST.md](SELFHOST.md) for the full seam contract.
 
 ---
@@ -198,6 +198,7 @@ Related behavior to be aware of:
 Diwan serves the app + API on one port, so proxying is one location block. Note: Diwan itself hosts **no** long-lived collaboration stream — collaboration is peer-to-peer with no central document server (see [COLLABORATION.md](COLLABORATION.md)). One path needs care, and only on a Vulos OS/Ephor host:
 
 - **WebSocket** (`/api/peering/stream`): the content-blind peer-discovery signaling channel. It only exists when a Vulos OS/Ephor host provides the peering fabric; if you proxy such a deployment, `Upgrade`/`Connection` headers must be forwarded and read timeouts kept long, or peers fail to discover each other (see [TROUBLESHOOTING.md](TROUBLESHOOTING.md) §3).
+- **`/api/rendezvous/*`** (the built-in peer discovery a standalone binary serves itself — on by default): ordinary same-origin JSON over `GET`/`POST`, **no WebSocket upgrade needed**. It does **long-poll**, holding a request open for up to 25 seconds while it waits for a peer's signal, so a proxy read timeout below ~30s will chop every poll and make discovery slow or fail. The `proxy_read_timeout 1h` below covers both this and the WS above. A `404` on `/api/rendezvous/healthz` through the proxy, when the binary answers it directly, means the proxy is not passing the path through.
 
 nginx sketch:
 
@@ -213,7 +214,7 @@ location / {
 }
 ```
 
-Also remember the per-IP write rate limit (burst 30, refill 10/s): if the proxy hides client IPs, all users share one bucket. Preserve real client addresses, or relax limits deliberately.
+Also remember the per-IP rate limits — writes (burst 30, refill 10/s) and the built-in discovery surface (burst 240, refill 40/s). If the proxy hides client IPs, **all users share one bucket**. Preserve real client addresses (`X-Forwarded-For` above, and make sure Diwan trusts it), or relax limits deliberately. A whole office behind one NAT address is comfortably inside the discovery limit; a proxy that presents every user as `127.0.0.1` is not the same thing as a limit that is too tight.
 
 ---
 

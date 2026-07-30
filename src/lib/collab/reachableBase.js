@@ -36,19 +36,32 @@
  * Empty when unset, same honesty contract as public_base_url: callers must
  * treat "" as "not configured", never guess a default.
  *
- * Both facts come from ONE fetch (single-flight, cached for the page lifetime —
- * these are deploy-time facts, not per-session ones).
+ * ── Built-in rendezvous prefix (the DEFAULT path — no other product at all) ──
+ *
+ * The same endpoint surfaces `builtin_rendezvous_prefix`: the path under THIS
+ * origin at which the Diwan binary serves its OWN signed, content-blind
+ * peer-discovery protocol (backend/rendezvous, `/api/rendezvous/*`). It is on by
+ * default, so a bare `diwan` on a VPS can introduce two browsers to each other
+ * with no Vulos OS, no Ephor, and no external relay — which is the whole reason
+ * it exists. `''` when the operator turned it off (`collab.builtin_rendezvous:
+ * false`) or the server predates it, and `''` must mean local-only rather than a
+ * guessed path.
+ *
+ * All three facts come from ONE fetch (single-flight, cached for the page
+ * lifetime — these are deploy-time facts, not per-session ones).
  */
 
 const REACHABILITY_URL = '/api/reachability'
 const PROBE_TIMEOUT_MS = 2500
 
-/** @type {Promise<{ base: string, rendezvousUrl: string }> | null} */
+/** @type {Promise<{ base: string, rendezvousUrl: string, builtinPrefix: string }> | null} */
 let cached = null
 /** @type {string} last synchronously-available resolved base ('' until first resolve) */
 let resolvedSync = ''
 /** @type {string} last synchronously-available resolved rendezvous URL */
 let resolvedRendezvousSync = ''
+/** @type {string} last synchronously-available built-in rendezvous prefix */
+let resolvedBuiltinSync = ''
 
 function windowOrigin() {
   return typeof window !== 'undefined' && window.location ? window.location.origin : ''
@@ -88,11 +101,15 @@ export function rendezvousUrlSync() {
  */
 function resolveReachability({ force = false } = {}) {
   if (!force && cached) return cached
-  const fallback = { base: windowOrigin(), rendezvousUrl: '' }
-  if (typeof fetch !== 'function') {
+  const fallback = { base: windowOrigin(), rendezvousUrl: '', builtinPrefix: '' }
+  const applyFallback = () => {
     resolvedSync = fallback.base
     resolvedRendezvousSync = fallback.rendezvousUrl
-    return Promise.resolve(fallback)
+    resolvedBuiltinSync = fallback.builtinPrefix
+    return fallback
+  }
+  if (typeof fetch !== 'function') {
+    return Promise.resolve(applyFallback())
   }
 
   cached = (async () => {
@@ -102,26 +119,29 @@ function resolveReachability({ force = false } = {}) {
       const timer = ctrl ? setTimeout(() => ctrl.abort(), PROBE_TIMEOUT_MS) : null
       try {
         const res = await fetch(REACHABILITY_URL, { method: 'GET', signal: ctrl?.signal })
-        if (!res?.ok) {
-          resolvedSync = fallback.base
-          resolvedRendezvousSync = fallback.rendezvousUrl
-          return fallback
-        }
+        if (!res?.ok) return applyFallback()
         const body = await res.json()
         const pub = body && typeof body.public_base_url === 'string' ? body.public_base_url.trim() : ''
         const base = pub ? pub.replace(/\/+$/, '') : fallback.base
         const rv = body && typeof body.rendezvous_url === 'string' ? body.rendezvous_url.trim() : ''
         const rendezvousUrl = rv ? rv.replace(/\/+$/, '') : ''
+        // A server that predates the built-in surface, or one that turned it off,
+        // sends no prefix / an empty one. Absent MUST mean "no built-in
+        // discovery" and never a guessed path, or a deployment that deliberately
+        // disabled it would find the browser calling it anyway.
+        const bp = body && typeof body.builtin_rendezvous_prefix === 'string'
+          ? body.builtin_rendezvous_prefix.trim()
+          : ''
+        const builtinPrefix = bp ? bp.replace(/\/+$/, '') : ''
         resolvedSync = base
         resolvedRendezvousSync = rendezvousUrl
-        return { base, rendezvousUrl }
+        resolvedBuiltinSync = builtinPrefix
+        return { base, rendezvousUrl, builtinPrefix }
       } finally {
         if (timer) clearTimeout(timer)
       }
     } catch {
-      resolvedSync = fallback.base
-      resolvedRendezvousSync = fallback.rendezvousUrl
-      return fallback
+      return applyFallback()
     }
   })()
   return cached
@@ -157,10 +177,45 @@ export async function resolveRendezvousUrl(opts) {
 }
 
 /**
+ * Resolve the path prefix at which THIS Diwan server serves its own built-in
+ * peer-discovery surface (`/api/rendezvous` — see backend/rendezvous), or `''`
+ * when the operator disabled it (`collab.builtin_rendezvous: false`) or the
+ * server is too old to report it.
+ *
+ * A PATH, not a URL: the surface is same-origin by construction, and the browser
+ * is the only party that reliably knows which origin it loaded Diwan from (the
+ * server sits behind whatever reverse proxy the operator chose). Callers join it
+ * to their own origin — see selectCollabTransport, which also refuses anything
+ * that is not an absolute same-origin path.
+ *
+ * Same honesty contract as the two above: `''` means "not available", never
+ * "guess". Cached for the page lifetime (one fetch serves all three).
+ *
+ * @param {object} [opts]
+ * @param {boolean} [opts.force=false] bypass the cache and re-resolve
+ * @returns {Promise<string>}
+ */
+export async function resolveBuiltinRendezvousPrefix(opts) {
+  const { builtinPrefix } = await resolveReachability(opts)
+  return builtinPrefix
+}
+
+/**
+ * Synchronous best-effort built-in-rendezvous prefix, for render paths that
+ * cannot await. `''` until a resolve has completed. Warm it the same way as
+ * `reachableBaseSync()`.
+ * @returns {string}
+ */
+export function builtinRendezvousPrefixSync() {
+  return resolvedBuiltinSync
+}
+
+/**
  * Test-only: clear the cached resolution so a fresh fetch runs.
  */
 export function _resetReachableBaseCache() {
   cached = null
   resolvedSync = ''
   resolvedRendezvousSync = ''
+  resolvedBuiltinSync = ''
 }

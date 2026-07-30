@@ -642,24 +642,55 @@ export default function SheetsEditor() {
 
     const opts = { sessionId: id, replicaId, fabricClient: fabric || null }
     if (substrateSyncEnabled()) {
-      // The shared DMTAP Sync substrate engine (src/lib/crdt/substrateGrid.js).
-      // It is WASM, so it must finish loading before a session exists — the grid
-      // renders from a live CRDT and cannot be handed a half-initialised one.
+      // The SHARED KOTVA Sync engine (src/lib/crdt/substrateGrid.js) — the
+      // default. It is WASM, so it must finish loading before a session exists:
+      // the grid renders from a live CRDT and cannot be handed a half-initialised
+      // one. Imported dynamically so a flag-OFF build pays nothing.
       //
-      // If the load fails, fall back to the grid.js path rather than leaving the
-      // user with an editor that accepts keystrokes and records nothing. A
-      // deployment-wide flag means every replica is on the same engine; a single
-      // client that fell back is only isolated for the session, which is strictly
-      // better than that client's edits vanishing.
-      // Imported DYNAMICALLY, so a flag-off build pays literally nothing: the
-      // substrate session, the wasm-bindgen glue and the .wasm asset all land in
-      // a separate chunk that is never requested unless this branch runs.
+      // ── IF THE LOAD FAILS ────────────────────────────────────────────────
+      //
+      // This used to fall straight back to the hand-rolled grid.js engine. That
+      // was wrong whenever the session could REPLICATE, and quietly so. The two
+      // engines are each internally convergent but they do not share a total
+      // order: grid.js resolves a conflicting write by (lamport, replicaId) and
+      // ignores wall-clock time, while the substrate resolves by a full HLC. Two
+      // peers on different engines can therefore pick DIFFERENT winners for the
+      // same pair of concurrent writes — permanent divergence, with both users
+      // seeing a plausible spreadsheet and no error anywhere.
+      //
+      // So the fallback is now conditional on there being nothing to diverge
+      // FROM: with no fabric attached and no update log, this client is the only
+      // writer and the engine choice cannot be observed by anyone. Then grid.js is
+      // strictly better than no session at all.
+      //
+      // Otherwise we FAIL CLOSED: no session, so no ops in and no ops out. The
+      // editor still opens, still edits, and still autosaves the whole document
+      // (every session call site is guarded) — the user loses live collaboration,
+      // which is visible, instead of silently diverging, which is not.
+      const canReplicate = !!fabric || updateLogEnabled()
       import('../../lib/crdt/substrateGrid.js')
         .then(async (m) => {
           await m.initSubstrateSync()
           if (!cancelled) open(new m.SubstrateGridSession(opts), onRemote)
         })
-        .catch(() => { if (!cancelled) open(new GridSession(opts), onRemote) })
+        .catch((err) => {
+          if (cancelled) return
+          if (canReplicate) {
+            console.error(
+              '[sheets] the shared KOTVA Sync engine failed to load and this session can ' +
+              'replicate, so falling back to the local engine would risk diverging from ' +
+              'peers that loaded it. Staying local-only for this session (edits still save). ' +
+              'Cause:', err?.message,
+            )
+            return
+          }
+          console.warn(
+            '[sheets] the shared KOTVA Sync engine failed to load; nothing can replicate ' +
+            'in this session (no peers, no update log), so using the local engine. Cause:',
+            err?.message,
+          )
+          open(new GridSession(opts), onRemote)
+        })
     } else {
       open(new GridSession(opts), onRemote)
     }

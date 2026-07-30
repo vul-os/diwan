@@ -19,9 +19,12 @@ no relay): the API surface is mocked.
 │     reveal.js rendering, real toolbar + menu interaction.           │
 ├─────────────────────────────────────────────────────────────────────┤
 │ Layer 3 — Real P2P integration      npm run test:e2e:p2p             │
-│   • NOTHING mocked: a real vulos-relayd (rendezvous role) + two      │
-│     standalone diwan servers + two browsers + real WebRTC.   │
-│   • proves OS-free peer-to-peer collaboration end to end.           │
+│   • NOTHING mocked, and nothing external: one real diwan binary     │
+│     serving its OWN discovery surface + two real browsers + real    │
+│     WebRTC. Cannot be skipped — it depends on this repo only.       │
+│   • proves peer-to-peer collaboration with no other product at all. │
+│   • plus an optional suite for the external-relay posture, which    │
+│     skips (loudly) unless VULOS_RELAYD_BIN names a prebuilt relayd. │
 │   • separate config/job so it cannot destabilise layers 1–2.        │
 └─────────────────────────────────────────────────────────────────────┘
 ```
@@ -76,47 +79,65 @@ comments, suggestions). The `officePage` fixture attaches it automatically;
 
 ### Layer 3 — Real P2P integration (`npm run test:e2e:p2p`)
 
-The one suite in this repo with **no mocks at all**. It exists because the
-repo's central architectural claim — *a standalone Diwan, with no Vulos OS and
-no account, does real peer-to-peer collaboration through any self-hosted
-`vulos-relayd`* — was otherwise covered only by selector unit tests with a fake
-fabric.
+The one layer with **no mocks at all**. It exists because the repo's central
+architectural claim — *two people collaborate peer-to-peer through one bare
+`diwan` binary, with no Vulos OS, no Ephor, no relay and no account* — was
+otherwise covered only by selector unit tests with a fake fabric.
 
 ```bash
 npm run test:e2e:p2p
 ```
 
-What it boots (`e2e-p2p/stack.mjs`): a real `vulos-relayd` built from the
-sibling Ephor checkout (`../vulos-relay`) with `-rendezvous`, and **two** standalone
-`diwan` servers on separate ports with separate data dirs, both pointed
-at that relayd — plus a third with no rendezvous configured for the negative
-case. The two peers therefore share **no** server: only the relayd, and the room
-key in the invite link's URL fragment.
+Two files, and the distinction matters:
+
+**`builtin-rendezvous-p2p.e2e.js` — the DEFAULT path. Cannot be skipped.**
+It boots ONE standalone `diwan` serving its own discovery surface at
+`/api/rendezvous/*`, plus a second instance with discovery disabled for the
+negative control. Two browser contexts load the first one. Everything it needs it
+builds from this repository, so there is no condition under which it silently
+does not run — which matters because a guard that can be skipped is absent
+exactly when something has broken.
+
+It asserts: a standalone Diwan serves no `/api/peering/*` but does advertise
+`builtin_rendezvous_prefix`; the surface refuses an unsigned write over real HTTP
+*and stores nothing*; both browsers speak the protocol to that origin; the
+**server's own presence state** knows the Ed25519 key each browser signed an
+announce for (soft state a client cannot fabricate); the room key from the invite
+fragment never appears in any request body, and neither does the typed text —
+so what the server moved was ciphertext, not content; the edits converge **both
+ways** (CRDT convergence, not last-writer-wins); and the negative control — with
+discovery disabled and no relay, the editor still works, speaks no discovery
+protocol, and says "Offline" honestly.
+
+**`rendezvous-p2p.e2e.js` — the OPTIONAL external-relay posture.** Two standalone
+`diwan` servers with their built-in surface **off**, both pointed at a real
+`vulos-relayd`, so the premise "nothing of ours is in the discovery path" is
+exactly true. It also pins the relay's CORS contract (`Allow-Origin: *`, a
+preflight that succeeds, no `Allow-Credentials`) both by header inspection and by
+fetching the relay from a real Chromium page on a Diwan origin, since only a
+browser enforces CORS — plus offline divergence merging as a union on reconnect.
+
+This file **skips** unless `VULOS_RELAYD_BIN` names a prebuilt relayd, and it
+prints that as the reason. It deliberately **fetches nothing at test time**: it
+used to `git clone` a sibling relay repo, which meant the job failed when that
+repo was renamed — for a reason unrelated to the code under test, while the claim
+it was meant to guard went unchecked.
 
 | Requirement | Notes |
 |-------------|-------|
-| Go toolchain | builds the Diwan binary and (unless `VULOS_RELAYD_BIN` is set) `vulos-relayd` |
-| `../vulos-relay` checkout | override with `VULOS_RELAY_REPO`; the suite **never modifies** it, it only `go build`s to a temp path. The whole file skips with a clear message when it is absent. |
-| `VULOS_RELAYD_BIN` | optional prebuilt relayd — what CI uses, so a broken relay checkout is reported as such and never mistaken for a failed claim |
+| Go toolchain | builds the Diwan binary (`go build`) after `vite build`, since the binary embeds `dist/` |
+| `VULOS_RELAYD_BIN` | optional, and only for the external-relay file. Never inferred from a sibling directory; nothing is cloned or built from another repo. |
 | Chromium flags | `playwright.p2p.config.js` sets `--disable-features=WebRtcHideLocalIpsWithMdns` so two loopback contexts can actually see each other's host candidates. This affects candidate visibility only — no protocol, signaling path or crypto changes. |
 
-What it asserts: the relay is reachable **and** cross-origin usable by a
-browser — `Allow-Origin: *`, a preflight that succeeds, no `Allow-Credentials`,
-verified both by header inspection and by fetching the relay from a real
-Chromium page on a Diwan origin, since only a browser enforces CORS. That is
-the guarantee the direct-to-relay transport rests on, so a relayd that regressed
-it fails here rather than in the field. (Diwan used to carry a same-origin proxy
-because the relay served no CORS; that is gone, and the suite asserts Diwan
-mounts nothing for discovery.) It also asserts: a standalone Diwan serves no
-`/api/peering/*`; two browsers converge in both directions with the relay's own
-presence state confirming the signaling went through it — with the browsers'
-request logs showing the rendezvous calls aimed at the **relay's** origin, not
-either Diwan's; offline divergence
-merges as a union on reconnect; and — the negative control — an unconfigured
-deployment reports local-only and refuses to mint invite links. The transport
-that carried the edits is asserted as *either* a direct host/host WebRTC pair
-*or* the content-blind relay circuit, and the run logs which, rather than
-pretending "direct" in a sandbox where ICE cannot complete.
+In both files the transport that carried the edits is asserted as *either* a
+direct host/host WebRTC pair *or* the content-blind relay circuit, and the run
+logs which — rather than pretending "direct" in a sandbox where ICE cannot
+complete, or accepting neither and letting a broken transport pass.
+
+CI additionally asserts that the default-path tests were **collected by name**
+after the run, because `playwright test` exits 0 when everything skipped: a
+regression that made the suite skip itself would otherwise look exactly like
+success.
 
 ### The mocked E2E specs (layer 2):
 

@@ -11,7 +11,9 @@ Direct WebRTC needs help crossing NAT:
 - **STUN** gets you there in the vast majority of cases — it just tells a peer
   its own publicly-visible address so the two sides can hole-punch straight to
   each other. Diwan defaults to the public Google STUN server for this; no
-  setup required (see [CONFIGURATION.md](CONFIGURATION.md) `VITE_STUN_URLS`).
+  setup required, and you can point it at your own instead with either
+  `collab.ice.stun_urls` (runtime) or `VITE_STUN_URLS` (build time) — see
+  [CONFIGURATION.md](CONFIGURATION.md).
 - **TURN** is needed only when hole-punching fails outright — most commonly
   when one peer is behind a **symmetric NAT** (common on some corporate/mobile
   networks and carrier-grade NAT). TURN relays the traffic between the two
@@ -176,8 +178,57 @@ is not enough.
 
 ## 4. Point Diwan at it
 
-Set these at build time (they are `VITE_*`, so they're baked into the
-frontend bundle — see [CONFIGURATION.md](CONFIGURATION.md)):
+### Option A — in the running server (recommended; works on a release binary)
+
+Configure the server and restart it. The browser fetches these from
+`GET /api/rendezvous/ice`, so **no frontend rebuild is involved** — which is what
+makes this usable if you downloaded a release binary or pulled the container:
+
+```yaml
+# config.yaml
+collab:
+  ice:
+    stun_urls: ["stun:turn.example.org:3478"]
+    turn_urls: ["turn:turn.example.org:3478", "turns:turn.example.org:5349"]
+    turn_secret: "CHANGE_ME_TO_A_LONG_RANDOM_SECRET"   # coturn static-auth-secret
+    turn_ttl_seconds: 3600
+```
+
+or entirely from the environment:
+
+```sh
+export VULOS_STUN_URLS="stun:turn.example.org:3478"
+export VULOS_TURN_URLS="turn:turn.example.org:3478,turns:turn.example.org:5349"
+export VULOS_TURN_SECRET="CHANGE_ME_TO_A_LONG_RANDOM_SECRET"
+```
+
+**Prefer `turn_secret` over a static username/password.** It is coturn's REST-API
+(`static-auth-secret`) mode: the secret never leaves the server, and each response
+carries a username/credential pair that expires after `turn_ttl_seconds`. The ICE
+endpoint is unauthenticated by necessity — a browser needs ICE servers before it
+has a session — so a long-lived credential put there is readable by anyone who can
+reach the box, while a minted one is useless within the hour. If you have no REST
+secret, `turn_username` / `turn_credential` are supported and served verbatim.
+
+To use the REST mode, coturn needs `use-auth-secret` rather than `lt-cred-mech`:
+
+```conf
+use-auth-secret
+static-auth-secret=CHANGE_ME_TO_A_LONG_RANDOM_SECRET
+realm=turn.example.org
+```
+
+Verify what the server hands out:
+
+```sh
+curl -s http://localhost:8080/api/rendezvous/ice
+# {"ice_servers":[{"urls":["stun:…"]},{"urls":["turn:…"],"username":"1800003600","credential":"…","ttl":3600}]}
+```
+
+### Option B — at frontend build time
+
+`VITE_*` variables are baked into the bundle, so this needs a rebuild — fine if
+you build the frontend yourself:
 
 ```sh
 export VITE_TURN_URL="turn:turn.example.org:3478,turns:turn.example.org:5349"
@@ -191,8 +242,9 @@ npm run build:frontend
 covers the STUN half; only set it if you want your own STUN server too (e.g.
 `turn:turn.example.org:3478` doubles as a STUN server without credentials).
 
-If you'd rather not bake credentials into the static bundle, a host page can
-inject the same configuration at runtime instead, before Diwan's bundle
+### Option C — injected by a host page
+
+If a page hosts Diwan and would rather supply this at runtime, before the bundle
 loads:
 
 ```html
@@ -202,6 +254,9 @@ loads:
   }
 </script>
 ```
+
+The server response (Option A) is used when it is non-empty; otherwise the browser
+falls back to Option C, then Option B, then STUN-only.
 
 ## 5. Verify it
 
@@ -227,4 +282,6 @@ STUN alone couldn't.
 - Diwan's ICE configuration code: `src/lib/collab/webrtc/call/ice.js`
 - How the fallback ICE list is used: `src/lib/collab/webrtc/fabric.js` (`_fetchICE`)
 - The wider collaboration/transport model: [COLLABORATION.md](COLLABORATION.md) §3
-- All `VITE_STUN_URLS`/`VITE_TURN_*` variables: [CONFIGURATION.md](CONFIGURATION.md)
+- The runtime `collab.ice.*` settings and every `VITE_STUN_URLS`/`VITE_TURN_*`
+  variable: [CONFIGURATION.md](CONFIGURATION.md)
+- The server side of the ICE endpoint: `backend/rendezvous/ice.go`

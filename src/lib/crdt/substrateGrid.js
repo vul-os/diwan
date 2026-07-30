@@ -20,9 +20,15 @@
  * It does NOT retire `grid.js`. This class is a DROP-IN for `GridSession` —
  * same constructor options, same methods, same events — and which one the
  * editor builds is chosen by the `VITE_SUBSTRATE_SYNC` flag (see
- * `src/lib/flags.js`). The `grid.js` path is untouched, remains the DEFAULT,
- * and is still the fallback when the WASM load fails, exactly as
- * `VITE_UPDATE_LOG` gated CRDT-native persistence. Two engines, both live.
+ * `src/lib/flags.js`). Two engines, both live; this one is now the DEFAULT, and
+ * `grid.js` is what a deployment gets by building with the flag off.
+ *
+ * `grid.js` is NO LONGER an automatic fallback when the WASM load fails. It is
+ * used then only when nothing in the session can replicate (no fabric, no update
+ * log); otherwise the editor stays local-only for that session. The two engines
+ * do not share a total order, so silently swapping one for the other on a
+ * REPLICATING session can diverge two peers permanently with no error shown to
+ * either. See the call site in `src/apps/sheets/SheetsEditor.jsx`.
  *
  * THE MAPPING (Diwan's grid → SYNC.md §4.4)
  * -----------------------------------------

@@ -52,15 +52,24 @@ Diwan is a collaborative document editing + e-signing service. It exposes:
 >   holds the decryption key but not the RW-authority MAC, so its writes are
 >   cryptographically refused.
 > - **The only server role** is content-blind peer **discovery** (signaling + ICE),
->   resolved as a three-way choice (`src/lib/collab/transportSelection.js`, see
+>   resolved as a four-way choice (`src/lib/collab/transportSelection.js`, see
 >   docs/COLLABORATION.md §3): (1) this server's own `/api/peering/*`, provided
 >   by a host (Vulos OS / Ephor) in front of Diwan; else (2) a configured
 >   rendezvous URL (`config.yaml` `collab.rendezvous_url` / `VULOS_RENDEZVOUS_URL`)
->   pointing at ANY self-hosted `vulos-relayd`'s open rendezvous surface — no
->   Vulos OS, no account, no host-box backend, and the standalone binary's own
->   `main.go` still mounts none of `/api/peering/*`; else (3) neither is
->   reachable and collaboration stays **local-only** and autosaves, with the UI
->   reporting "Offline" honestly.
+>   pointing at ANY self-hosted `vulos-relayd`'s open rendezvous surface; else
+>   (3) **this binary's OWN built-in surface** at `/api/rendezvous/*`
+>   (`backend/rendezvous`, `collab.builtin_rendezvous`, **on by default**) — which
+>   is what makes a bare standalone binary capable of real peer-to-peer with no
+>   other product deployed and nothing configured; else (4) none is reachable and
+>   collaboration stays **local-only** and autosaves, with the UI reporting
+>   "Offline" honestly.
+> - The built-in surface is **signature-authenticated** (Ed25519 over a
+>   domain-separated canonical message), nonce + timestamp replay-refusing, capped
+>   in every dimension, per-IP rate-limited, and holds only in-memory soft state
+>   with minute-scale TTLs. It moves opaque bytes: the room key lives in an invite
+>   link's URL fragment and reaches no server. Its wire format is byte-for-byte
+>   relayd's, and the Go/JS implementations of the signed canonical message are
+>   pinned to shared fixed vectors so they cannot drift apart.
 >
 > Ingress is validated **fail-closed**: every untrusted update is shadow-applied,
 > converted against the real schema, and image/link-clamped before it can touch
@@ -99,10 +108,11 @@ flowchart TD
   peer-to-peer room (`p2pRoom.js`) on the first-party WebRTC fabric
   (`src/lib/collab/webrtc/fabric.js`). There is
   no server-mediated collab transport (no SSE op-stream, no doc-state hub) — the
-  server's only collaboration role is content-blind peer discovery, which can be
-  served either by this server's own `/api/peering/*` or by a configured
-  rendezvous URL pointing at any self-hosted `vulos-relayd` (see the
-  collaboration-transport note above and `src/lib/collab/transportSelection.js`).
+  server's only collaboration role is content-blind peer discovery, served by
+  default by this binary's own `/api/rendezvous/*` (`backend/rendezvous`), or by a
+  host box's `/api/peering/*`, or by a configured rendezvous URL pointing at any
+  self-hosted `vulos-relayd` (see the collaboration-transport note above and
+  `src/lib/collab/transportSelection.js`).
 - **Durability — whole-doc PUT + optional CRDT update log**: the primary store is
   a whole-document blob (`PUT /api/files/:id`) guarded by an optimistic-concurrency
   rev (a stale write is a `409` the client reconciles). Layered on top — behind

@@ -93,12 +93,11 @@ is absent). Enable both together.
 
 ### `VITE_SUBSTRATE_SYNC` — run Sheets on the shared substrate engine
 
-Off by default. Frontend build flag only; there is no server setting.
+**On by default.** Frontend build flag only; there is no server setting.
 
 Diwan's Sheets grid ships two interchangeable CRDT implementations:
 
-* **off (default)** — `src/lib/crdt/grid.js`, the hand-rolled LWW map.
-* **`VITE_SUBSTRATE_SYNC=on`** — `src/lib/crdt/substrateGrid.js`, an LWW
+* **on (default)** — `src/lib/crdt/substrateGrid.js`, an LWW
   register per `substrate/SYNC.md` §4.4 (the spec lives in the `kotva` repo; it
   is not linked relatively, because building Diwan must never require a sibling
   checkout) computed by the **shared** KOTVA Sync engine — the published npm
@@ -112,6 +111,11 @@ Diwan's Sheets grid ships two interchangeable CRDT implementations:
   *bundler* build whose entry point cannot be imported under Vitest, so that file
   instantiates the WebAssembly directly; it re-uses the published wrappers and
   `.wasm` byte-for-byte and re-implements no algebra.
+* **`VITE_SUBSTRATE_SYNC=off`** — `src/lib/crdt/grid.js`, the hand-rolled LWW
+  map Diwan shipped before the substrate existed. Still supported as a
+  deployment-wide choice; it is a second implementation of the same idea, so two
+  replicas on it converge because that one implementation is self-consistent
+  rather than because they run the shared, vector-pinned algebra.
 
 Storage and transport are identical on both paths: the same `OpLogSync`
 adapter, the same server update log, the same fabric wire types. Only the merge
@@ -124,11 +128,24 @@ substrate uses a full HLC `(wall, counter, author)`. For two concurrent writes
 to one cell they can pick different winners, so a build-time flag (rather than a
 per-user rollout) is what keeps every replica on one engine.
 
-**Cost.** The engine is WASM and loads by dynamic import: with the flag off a
-client downloads **nothing** extra. With it on, first opening a spreadsheet
-fetches ~23 kB of JS (5.7 kB gzipped) and a 402.0 kB WebAssembly module
-(159.6 kB gzipped), once. If that load fails the editor falls back to the
-`grid.js` path rather than presenting a grid that records nothing.
+**Cost.** The engine is WASM and loads by dynamic import, so first opening a
+spreadsheet fetches ~23 kB of JS (5.7 kB gzipped) and a 402.0 kB WebAssembly
+module (159.6 kB gzipped), once. Building with the flag **off** downloads
+**nothing** extra.
+
+**If that load fails**, the editor does *not* quietly switch algebra. For a
+session that can replicate — a collaboration fabric is attached, or the update
+log is on — it stays **local-only for that session**: the grid still opens,
+edits, and autosaves the whole document, but no CRDT op is sent or applied.
+Falling back to `grid.js` there would risk permanent, invisible divergence from
+peers whose load succeeded (see the total-order note above), which is a worse
+outcome than a visible loss of live collaboration. Only when nothing can
+replicate (no peers, no update log) does it use `grid.js`.
+
+One known case where the load always fails: the **CommonJS** artifact of the
+library build. Bundlers replace `import.meta` with `{}` there, so the loader
+cannot locate the `.wasm`. A CJS consumer therefore gets a single-user grid; use
+the ESM build for collaboration.
 
 Docs and Whiteboard are **not** affected: they use Yjs for rich text, which the
 substrate's algebra does not model. Slides is not affected either — see
@@ -137,23 +154,80 @@ substrate's movable tree reproduces it and what remains.
 
 ---
 
-### `collab.rendezvous_url` — P2P collaboration with no Vulos OS / host box
+### `collab.builtin_rendezvous` — peer discovery served by this binary (default: **on**)
 
-Blank by default. Diwan's own backend never mediates live collaboration — the
-Docs/Whiteboard invite-link path and the Sheets/Slides presence layer both talk
-peer-to-peer over Diwan's own first-party `FabricClient`
-(`src/lib/collab/webrtc/fabric.js` — re-homed from the vendored relay-client
-SDK so Diwan depends on no other Vulos product's package; see
-[COLLABORATION.md](COLLABORATION.md) §3). That transport needs a lightweight,
-content-blind peer-discovery surface, and Diwan picks one of three, in order:
+Diwan's backend never mediates live document content — the Docs/Whiteboard
+invite-link path and the Sheets/Slides presence layer talk peer-to-peer over
+Diwan's own first-party `FabricClient` (`src/lib/collab/webrtc/fabric.js`; see
+[COLLABORATION.md](COLLABORATION.md) §3). But WebRTC cannot introduce two
+browsers **unaided**: something has to carry the first offer/answer/ICE frames.
+
+`collab.builtin_rendezvous` makes this binary that something. On by default, it
+serves the signed, content-blind announce/resolve/signal/mailbox protocol at
+`/api/rendezvous/*` on its own origin (`backend/rendezvous`), so **one `diwan` on
+one box is all two people need** — no Vulos OS, no Ephor, no relay, no account.
+
+Before it existed, discovery had to come from another product, and a standalone
+binary with none available had no peer-to-peer at all.
+
+```yaml
+collab:
+  builtin_rendezvous: true    # default; set false to serve no discovery yourself
+```
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `VULOS_BUILTIN_RENDEZVOUS` / `DIWAN_BUILTIN_RENDEZVOUS` | Overrides `collab.builtin_rendezvous`. `1/true/on/yes` or `0/false/off/no`. | `true` |
+
+**What your box can see, stated plainly.** Discovery metadata: which Ed25519 keys
+are present, which key sent bytes to which, sizes, timing. Not content — every
+payload is sealed under the room key, which lives in an invite link's URL fragment
+and is never sent in an HTTP request, and live edits never traverse it at all.
+Nothing is written to disk: it is in-memory soft state with TTLs of minutes, and a
+restart simply makes both clients re-announce.
+
+**It is safe to expose**, which matters because a cloud node is. Every write is
+Ed25519-signed over a domain-separated, length-prefixed canonical message, carries
+a fresh nonce and a timestamp (replays and stale envelopes are refused), and every
+dimension — payload size, queue depth, key count, TTL — is capped before anything
+is stored. The surface is per-IP rate-limited. Failures are refusals: 403 for a bad
+signature, 409 for a replayed or stale envelope, 413 for an over-cap payload, and
+nothing is stored in any of those cases. It is anonymous by design (invite-link
+collaboration needs no account) and authenticates **only** by body signature, never
+by cookie.
+
+**Turning it off** is supported and degrades honestly: sessions fall back to
+`collab.rendezvous_url` if set, else to local-only with the UI saying so. It never
+degrades to a broken editor.
+
+Verify it yourself:
+
+```sh
+curl -s  http://localhost:8080/api/reachability      # builtin_rendezvous_prefix: "/api/rendezvous"
+curl -si http://localhost:8080/api/rendezvous/healthz # {"ok":true,"service":"rendezvous"}
+```
+
+`npm run test:e2e:p2p` proves the whole path with nothing mocked and nothing
+external: one real binary, two real browsers, a real WebRTC data channel, the
+server's own presence state read back as ground truth, and the negative control
+(`e2e-p2p/builtin-rendezvous-p2p.e2e.js`).
+
+---
+
+### `collab.rendezvous_url` — delegate discovery to your own relay instead
+
+Blank by default. When set, it names an **external** discovery surface and takes
+precedence over the built-in one above — configuring it is an explicit choice, so
+it wins. Reasons to: one shared relay across several deployments, or its
+TURN/NAT-traversal help.
+
+Diwan picks one of four discovery paths, in order:
 
 1. **This server's own peering fabric** (`/api/peering/*`) — present only when
    a Vulos OS / Ephor deployment fronts Diwan. Unchanged default.
 2. **A configured rendezvous URL** — the base URL of any **self-hosted
    `vulos-relayd`**'s OPEN rendezvous surface (announce/resolve/signal/mailbox
-   + ICE). No Vulos OS and no account are required. Set it and a bare
-   **standalone** Diwan binary (which mounts no `/api/peering/*` — see
-   `main.go`) gets **real** peer-to-peer collaboration.
+   + ICE). No Vulos OS and no account are required.
 
    The browser calls that relayd's origin **directly**, cross-origin. Diwan
    mounts nothing for discovery and is not in that path at all, so it never
@@ -167,7 +241,9 @@ content-blind peer-discovery surface, and Diwan picks one of three, in order:
    - It must be reachable from wherever users load Diwan, over a scheme the
      page can call: an **https** Diwan cannot call an **http** relay, so a
      public deployment needs TLS on the relay.
-3. **Local-only** — neither is reachable; the editor keeps working, autosaves,
+3. **This binary's own built-in surface** — `collab.builtin_rendezvous` above.
+   **This is what an unconfigured deployment uses.**
+4. **Local-only** — none is reachable; the editor keeps working, autosaves,
    and says so honestly (an "Offline" pill) instead of showing a false "Live".
 
 ```yaml
@@ -188,28 +264,88 @@ externally-reachable origin:
 |----------|-------------|---------|
 | `DIWAN_PUBLIC_URL` | This Diwan instance's externally-reachable origin (a public domain, or an Ephor tunnel URL when behind NAT/CGNAT). Used to build P2P invite links / signaling targets an external peer can actually reach, instead of blindly trusting `window.location.origin` (which may be a LAN-only address). | — (falls back to the visitor's own origin) |
 
-`rendezvous_url` is `""` when nothing is configured, and clients treat empty as
-"not available" rather than guessing a default — that is what keeps an
-unconfigured deployment honestly local-only instead of minting invite links that
-could never connect anyone.
+`rendezvous_url` is `""` when nothing is configured, and
+`builtin_rendezvous_prefix` is `""` when the built-in surface is off. Clients
+treat empty as "not available" rather than guessing a default, and refuse a
+prefix that is not an absolute same-origin path — that is what keeps a
+deliberately-local-only deployment local-only instead of minting invite links that
+could never connect anyone, or sending discovery somewhere unintended.
+
+**No default endpoint anywhere.** Every URL Diwan uses for discovery comes from
+this deployment: your own config, or the page's own origin. Nothing points at a
+Vulos-run service.
 
 See `backend/config/config.go` and `src/lib/collab/transportSelection.js` for
 the selection logic, and `src/lib/collab/reachableBase.js` for the client-side
-fetch/cache. The whole path is proven end to end against a real `vulos-relayd`
-by `npm run test:e2e:p2p` (see `e2e-p2p/`).
+fetch/cache. The default path is proven end to end by
+`e2e-p2p/builtin-rendezvous-p2p.e2e.js`; the external-relay posture by
+`e2e-p2p/rendezvous-p2p.e2e.js`, which needs a prebuilt relayd in
+`VULOS_RELAYD_BIN` and skips (loudly, with its reason) without one — it never
+clones or builds another repository at test time.
 
 ---
 
-### `VITE_STUN_URLS` / `VITE_TURN_*` — STUN/TURN for direct WebRTC (no other Vulos product required)
+### `collab.ice.*` — STUN/TURN configured at RUNTIME (works on a release binary)
 
 Collaboration's default path is **direct WebRTC** — a data channel straight
 between two browsers (see [COLLABORATION.md](COLLABORATION.md) §3). Making
 that direct connection happen behind NAT needs **STUN** (near-universal, just
 tells you your own public address) and, for the minority of peer pairs behind
-a **symmetric NAT** that can't hole-punch at all, **TURN** (relays the
-traffic; content-blind here — see §3). Neither requires a host box, a
-`vulos-relayd`, or any other Vulos product — they are plain build-time env
-vars consumed by `src/lib/collab/webrtc/call/ice.js`:
+a **symmetric NAT** that can't hole-punch at all, **TURN** (relays the traffic;
+content-blind here — see §3). Neither requires a host box, a `vulos-relayd`, or
+any other Vulos product.
+
+Configure them **in the running server** and the browser picks them up from
+`GET /api/rendezvous/ice`:
+
+```yaml
+collab:
+  ice:
+    stun_urls: ["stun:turn.example.org:3478"]
+    turn_urls: ["turn:turn.example.org:3478", "turns:turn.example.org:5349"]
+    # RECOMMENDED — coturn's static-auth-secret (its REST API). The secret never
+    # leaves this process; each response carries a credential valid for turn_ttl_seconds.
+    turn_secret: "…"
+    turn_ttl_seconds: 3600
+    # Or a long-lived pair, served verbatim to any caller. Ignored if turn_secret is set.
+    # turn_username: "diwan"
+    # turn_credential: "…"
+```
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `VULOS_STUN_URLS` / `DIWAN_STUN_URLS` | Comma-separated `stun:` URLs. | — |
+| `VULOS_TURN_URLS` / `DIWAN_TURN_URLS` | Comma-separated `turn:`/`turns:` URLs. Ignored unless a credential mode below is set — a credential-less TURN entry cannot authenticate. | — |
+| `VULOS_TURN_SECRET` / `DIWAN_TURN_SECRET` | coturn `static-auth-secret`. Credentials are minted per request and expire. | — |
+| `VULOS_TURN_USERNAME` / `DIWAN_TURN_USERNAME` | Long-lived TURN username. Ignored when a secret is set. | — |
+| `VULOS_TURN_CREDENTIAL` / `DIWAN_TURN_CREDENTIAL` | Long-lived TURN credential. Ignored when a secret is set. | — |
+
+**Why a runtime setting exists at all.** The `VITE_*` variables below are baked
+into the JS bundle at build time, so an operator who **downloaded a release binary
+or pulled the container cannot set them** without rebuilding the frontend — which
+made [COTURN.md](COTURN.md) unusable for exactly the audience it is written for.
+These fields are the same facts, supplied where that operator can actually supply
+them.
+
+**What this endpoint exposes.** `GET /api/rendezvous/ice` is unauthenticated — a
+browser needs ICE servers before it has any session — so anything configured here
+is readable by anyone who can reach the box. That is fine for STUN (a STUN server
+only tells a caller its own address). For TURN, prefer `turn_secret`: the secret
+stays server-side and each response carries a short-lived credential, so a leaked
+response expires instead of being a permanent grant. `turn_username`/
+`turn_credential` are supported for deployments with no REST secret, and are handed
+out verbatim — stated as what it is rather than dressed up.
+
+Unconfigured, the endpoint returns an **empty** list, which the browser reads as
+"answer from my own config" — so leaving this alone changes nothing for a
+deployment that already set the bundle's variables.
+
+---
+
+### `VITE_STUN_URLS` / `VITE_TURN_*` — the same thing at BUILD time
+
+Build-time env vars consumed by `src/lib/collab/webrtc/call/ice.js`. Used when the
+server-side ICE response above is empty (or unavailable):
 
 | Variable | Description | Default |
 |----------|-------------|---------|
@@ -218,12 +354,11 @@ vars consumed by `src/lib/collab/webrtc/call/ice.js`:
 | `VITE_TURN_USERNAME` | TURN username (coturn `lt-cred-mech`: a static `user=` name, or the username half of a time-limited credential). | — |
 | `VITE_TURN_CREDENTIAL` | TURN credential/password matching `VITE_TURN_USERNAME`. | — |
 
-These only take effect as a **fallback** — when the host's own ICE endpoint
-(`/api/peering/ice`, or a configured rendezvous relayd's ICE surface) is
-unreachable or returns nothing, which is exactly the standalone/self-hosted
-case with no other Vulos product in front of Diwan. TURN is never defaulted
-(unlike STUN): a TURN server relays your traffic, so it is opt-in only, via
-the variables above.
+These take effect as a **fallback** — when the ICE endpoint in use
+(`/api/peering/ice` on a host box, `/api/rendezvous/ice` on this binary, or a
+configured relayd's ICE surface) is unreachable or returns nothing. TURN is never
+defaulted (unlike STUN): a TURN server relays your traffic, so it is opt-in only,
+via the variables above.
 
 A host page may also inject these at runtime instead of build time, via
 `window.__VULOS_ENDPOINTS__`:
@@ -237,8 +372,9 @@ window.__VULOS_ENDPOINTS__ = {
 
 **Self-hosting your own TURN server:** see [COTURN.md](COTURN.md) for a
 complete, runnable coturn setup (apt and Docker), a minimal `turnserver.conf`,
-the firewall ports to open, and exactly which of the variables above to point
-at it.
+the firewall ports to open, and exactly which of the settings above to point at
+it — the runtime `collab.ice.*` ones if you are running a release binary, the
+build-time `VITE_*` ones if you build the frontend yourself.
 
 ---
 

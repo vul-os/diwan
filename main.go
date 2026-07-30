@@ -20,6 +20,7 @@ import (
 	"diwan/backend/integration/cloud"
 	"diwan/backend/middleware"
 	"diwan/backend/obs"
+	"diwan/backend/rendezvous"
 	"diwan/backend/seam"
 	"diwan/backend/session"
 	"diwan/backend/storage"
@@ -259,13 +260,55 @@ func main() {
 	// no secrets, only the public base + deploy mode — so the collab layer can
 	// resolve a reachable base for P2P invite links before/around auth.
 	api.GET("/reachability", systemHandler.Reachability)
-	// OS-free P2P discovery needs no route here: the browser calls the
-	// operator-configured vulos-relayd's rendezvous surface DIRECTLY, using the
-	// `rendezvous_url` that /api/reachability reports. Diwan carried a
-	// same-origin pass-through proxy for exactly as long as relayd's rendezvous
-	// role sent no CORS headers; it does now, so the server is out of that path
-	// entirely and never sees the discovery envelopes. See
-	// docs/COLLABORATION.md §3.
+
+	// ── Built-in peer discovery (this binary's own signalling surface) ─────────
+	//
+	// WebRTC cannot introduce two browsers to each other unaided: something has to
+	// pass the first offer/answer/ICE frames. Diwan used to be able to get that
+	// ONLY from another product — a Vulos OS / Ephor host mounting
+	// `/api/peering/*`, or an operator-run `vulos-relayd` named in
+	// `collab.rendezvous_url` — so with neither, a standalone binary had no P2P at
+	// all and every session fell through to honestly-local-only.
+	//
+	// backend/rendezvous serves that protocol HERE, on this origin, so one Diwan
+	// on one VPS is enough for two users to collaborate. It still carries no
+	// document content: every payload is opaque bytes sealed under a room key that
+	// lives in an invite link's fragment and reaches no server, and edits ride the
+	// direct data channel once the peers are introduced. Ephor stays supported and
+	// still WINS when configured (see transportSelection.js) — it is now a choice,
+	// not a prerequisite.
+	//
+	// Rate-limited per IP because the surface is deliberately anonymous:
+	// Ed25519 signatures answer "who may write this", but nothing about "how
+	// often", and a public box needs both. A live session spends a couple of
+	// requests every 20s per peer (long-polls plus a 45s heartbeat) with short
+	// bursts during ICE, so a 240-token bucket refilling at 40/s is far above any
+	// legitimate cadence while still bounding a flood. Shared-NAT offices sit well
+	// inside it.
+	if cfg.Collab.BuiltinRendezvous {
+		rdvLimiter := middleware.NewTokenBucket(240, 40)
+		rdvGroup := r.Group("", rdvLimiter.Middleware())
+		rendezvous.Mount(rdvGroup, rendezvous.New(rendezvous.Limits{}))
+		// STUN/TURN for NAT traversal, from config.yaml `collab.ice.*` /
+		// VULOS_STUN_URLS etc. Served from the RUNNING BINARY so a release
+		// download or container can be pointed at a coturn without rebuilding the
+		// frontend bundle (the VITE_* variables are baked in at build time and are
+		// out of reach for exactly that operator). Empty when unconfigured, which
+		// the browser reads as "answer from my own config" — so this changes
+		// nothing for a deployment that already set the bundle's variables.
+		rendezvous.MountICE(rdvGroup, rendezvous.ICEConfig{
+			STUNURLs:       cfg.Collab.ICE.STUNURLs,
+			TURNURLs:       cfg.Collab.ICE.TURNURLs,
+			TurnSecret:     cfg.Collab.ICE.TurnSecret,
+			TurnTTL:        time.Duration(cfg.Collab.ICE.TurnTTLSeconds) * time.Second,
+			TurnUsername:   cfg.Collab.ICE.TurnUsername,
+			TurnCredential: cfg.Collab.ICE.TurnCredential,
+		})
+		log.Printf("[collab] built-in rendezvous mounted at %s/* (peer discovery only; no document content)", rendezvous.Prefix)
+	} else {
+		log.Printf("[collab] built-in rendezvous DISABLED (collab.builtin_rendezvous=false); " +
+			"sessions use collab.rendezvous_url when set, else stay local-only")
+	}
 	//
 	// Rate-limit the self-service password change: it re-verifies the CURRENT
 	// password, so without a limit it is an online brute-force oracle. 5

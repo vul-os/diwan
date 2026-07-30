@@ -1,16 +1,31 @@
 /**
- * rendezvous-p2p.e2e.js — proving the single biggest architectural claim in the
- * repo, end to end, with nothing mocked:
+ * rendezvous-p2p.e2e.js — the OPTIONAL posture, proved end to end with nothing
+ * mocked:
  *
- *   "A STANDALONE Diwan (no Vulos OS, no account, no /api/peering/*) does real
- *    peer-to-peer collaboration through any self-hosted vulos-relayd."
+ *   "A standalone Diwan can delegate peer discovery to an operator's OWN
+ *    external relay (a self-hosted `vulos-relayd` / Ephor), with nothing of ours
+ *    in the discovery path at all."
  *
- * Everything else about that claim was covered only by selector unit tests with
- * a fake fabric. This suite runs the real thing: a real `vulos-relayd` binary
- * built from the sibling Ephor checkout with the rendezvous role enabled,
- * two real standalone `diwan` servers (separate ports, separate data
- * dirs — no shared state whatsoever), two real browser contexts, and a real
- * WebRTC data channel.
+ * ── This is not the default path ─────────────────────────────────────────────
+ *
+ * It used to be the ONLY path, which made Diwan's central claim conditional on
+ * another product being deployed. It is not any more: the binary now serves its
+ * own discovery surface (backend/rendezvous), and THAT default is proved by
+ * builtin-rendezvous-p2p.e2e.js — a suite with no external dependency, which
+ * therefore cannot be skipped.
+ *
+ * So this file covers a posture an operator may CHOOSE (one shared relay across
+ * several deployments, or its TURN/NAT-traversal help), and it skips — loudly,
+ * with one stated reason — when no relayd binary was supplied in VULOS_RELAYD_BIN.
+ * It deliberately does NOT clone or build another repository to find one.
+ *
+ * The instances here run with `builtin_rendezvous: false`, so the premise below is
+ * exactly true rather than approximately: Diwan mounts nothing for discovery.
+ *
+ * This suite runs the real thing: a real `vulos-relayd` binary with the
+ * rendezvous role enabled, two real standalone `diwan` servers (separate ports,
+ * separate data dirs — no shared state whatsoever), two real browser contexts, and
+ * a real WebRTC data channel.
  *
  * ── What "proven" means here ────────────────────────────────────────────────
  *
@@ -42,109 +57,32 @@
  */
 
 import { test, expect } from '@playwright/test'
-import { startStack, relayResolve, createDoc, relayRepoAvailable, RELAY_REPO } from './stack.mjs'
+import { startStack, relayResolve, createDoc, relaydBinAvailable, BUILTIN_PREFIX } from './stack.mjs'
+import {
+  instrumentWebRTC, selectedCandidatePairs, mirrorConsole, recordRequests, openDoc, mintInviteLink,
+} from './helpers.mjs'
 
-/** Shared stack for the whole file — building three binaries once is the point. */
+/** Shared stack for the whole file — building the binaries once is the point. */
 let stack
 
 test.beforeAll(async () => {
-  test.skip(!relayRepoAvailable(),
-    `Ephor checkout not found at ${RELAY_REPO} — set VULOS_RELAY_REPO to run the real-P2P suite`)
-  stack = await startStack({ offices: 2, localOnlyOffice: true })
+  // This suite exercises the OPTIONAL posture, so it may legitimately be absent —
+  // but it must be absent LOUDLY and for one stated reason: no relayd binary was
+  // supplied. It never clones or builds another repository to find one; that is
+  // how a job ends up red for a reason unrelated to the code under test (as it
+  // was while it cloned a repo that had been renamed).
+  //
+  // Nothing about Diwan's DEFAULT path depends on this file: that is proved,
+  // unskippably, by builtin-rendezvous-p2p.e2e.js.
+  test.skip(!relaydBinAvailable(),
+    'no vulos-relayd binary supplied — set VULOS_RELAYD_BIN to exercise the external-relay ' +
+    'posture. Diwan\'s default (built-in) P2P path is covered by builtin-rendezvous-p2p.e2e.js.')
+  stack = await startStack({ rendezvous: 'external', offices: 2, localOnlyOffice: true })
 })
 
 test.afterAll(async () => {
   if (stack) await stack.stop()
 })
-
-/**
- * Instrument a page BEFORE any script runs so we can (a) see every
- * RTCPeerConnection it creates and (b) ask, at the end, whether the connection
- * that carried the edits was a DIRECT host-to-host pair or a relayed one.
- */
-async function instrumentWebRTC(page) {
-  await page.addInitScript(() => {
-    window.__pcs = []
-    const Native = window.RTCPeerConnection
-    if (!Native) return
-    window.RTCPeerConnection = class extends Native {
-      constructor(...args) {
-        super(...args)
-        window.__pcs.push(this)
-      }
-    }
-    window.RTCPeerConnection.prototype = Native.prototype
-  })
-}
-
-/**
- * Ask the page's live peer connections which ICE candidate pair actually
- * succeeded. Returns one entry per connected peer connection:
- *   { state, localType, remoteType }
- * localType 'host' on both ends == a genuinely direct browser-to-browser
- * channel; 'relay' == a TURN-relayed circuit.
- */
-function selectedCandidatePairs(page) {
-  return page.evaluate(async () => {
-    const out = []
-    for (const pc of window.__pcs || []) {
-      if (pc.connectionState !== 'connected') continue
-      const stats = await pc.getStats()
-      const all = [...stats.values()]
-      const pair = all.find((s) => s.type === 'candidate-pair' && (s.selected || s.state === 'succeeded' || s.nominated))
-      const local = pair ? all.find((s) => s.id === pair.localCandidateId) : null
-      const remote = pair ? all.find((s) => s.id === pair.remoteCandidateId) : null
-      out.push({
-        state: pc.connectionState,
-        localType: local?.candidateType || null,
-        remoteType: remote?.candidateType || null,
-      })
-    }
-    return out
-  })
-}
-
-/** Mirror a page's console into the test output — collab failures are almost
- * always visible there ("[p2p] …", "[collab] …") and a silent page makes a
- * convergence timeout impossible to diagnose. */
-function mirrorConsole(page, tag) {
-  page.on('console', (msg) => {
-    const t = msg.text()
-    // P2P_E2E_VERBOSE=1 mirrors everything; by default only collab-relevant lines.
-    if (process.env.P2P_E2E_VERBOSE || /\[p2p\]|\[collab\]|rendezvous|fabric|peer/i.test(t)) {
-      console.log(`[${tag}] ${msg.type()}: ${t}`)
-    }
-  })
-  page.on('pageerror', (err) => console.log(`[${tag}] pageerror: ${err.message}`))
-}
-
-/** Record every request a page makes, so we can assert on the transport after. */
-function recordRequests(page) {
-  const seen = []
-  page.on('request', (req) => seen.push({ method: req.method(), url: req.url(), postData: req.postData() }))
-  page.on('websocket', (ws) => seen.push({ method: 'WS', url: ws.url(), postData: null }))
-  return seen
-}
-
-/** Wait for the editor of an Diwan docs page to be interactive. */
-async function openDoc(page, url) {
-  await page.goto(url)
-  await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 60_000 })
-}
-
-/** Mint a read-write invite link from the share UI. */
-async function mintInviteLink(page) {
-  await page.getByRole('button', { name: /Share — with people/i }).click()
-  await page.getByRole('button', { name: /Share via link \(P2P\)/i }).click()
-  await expect(page.getByText('Editor link')).toBeVisible({ timeout: 30_000 })
-  const rw = await page.locator('input[readonly]').evaluateAll(
-    (els) => els.map((e) => e.value).filter((v) => /#vp2p=/.test(v))[0],
-  )
-  expect(rw, 'the share modal must produce a #vp2p= invite link').toMatch(/#vp2p=/)
-  // Close the modal so it does not sit over the editor while we type.
-  await page.keyboard.press('Escape')
-  return rw
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -239,10 +177,14 @@ test('a standalone Diwan advertises the rendezvous and mounts no host-box peerin
 
   const reach = await (await request.get(`${a.url}/api/reachability`)).json()
   expect(reach.rendezvous_url).toBe(stack.relayUrl)
-  // The browser is given the relay's own origin and calls it directly; this
-  // server mounts nothing for the rendezvous protocol.
-  expect((await request.get(`${a.url}/api/rendezvous/healthz`)).status(),
-    'Diwan must not mount a rendezvous proxy — the browser talks to the relay').toBe(404)
+  // These instances run with `builtin_rendezvous: false`, which is what makes the
+  // premise of this whole file exactly true rather than approximately: with the
+  // built-in surface off, Diwan mounts NOTHING for discovery and the browser can
+  // only be talking to the relay.
+  expect(reach.builtin_rendezvous_prefix,
+    'this posture deliberately disables the built-in surface').toBe('')
+  expect((await request.get(`${a.url}${BUILTIN_PREFIX}/healthz`)).status(),
+    'with builtin_rendezvous:false, Diwan must mount no discovery surface at all').toBe(404)
 })
 
 test('THE PAYOFF — two standalone Diwan servers collaborate P2P through the relayd', async ({ browser }) => {

@@ -3,11 +3,17 @@
  *
  * Deliberately separate from playwright.config.js. That suite is hermetic and
  * fast: a `vite preview` build with every /api call mocked in-browser. This one
- * is the opposite — it builds and runs real binaries (a `vulos-relayd` from the
- * sibling Ephor checkout plus two standalone `diwan` servers) and
- * negotiates real WebRTC between two browser contexts. It is slower and depends
- * on a Go toolchain and that sibling checkout, so it must never be able to
- * destabilise the fast suite. Run it with `npm run test:e2e:p2p`.
+ * is the opposite — it builds and runs the real `diwan` binary and negotiates
+ * real WebRTC between two browser contexts. It is slower and needs a Go
+ * toolchain, so it must never be able to destabilise the fast suite. Run it with
+ * `npm run test:e2e:p2p`.
+ *
+ * Two files live here:
+ *   • builtin-rendezvous-p2p.e2e.js — the DEFAULT path: one bare binary serving
+ *     its own discovery surface. No external dependency, so it always runs.
+ *   • rendezvous-p2p.e2e.js — the optional external-relay posture. Skips unless
+ *     VULOS_RELAYD_BIN points at a prebuilt relayd. Nothing is ever cloned or
+ *     fetched at test time.
  *
  * There is no `webServer` here: the suite boots its own processes (e2e-p2p/stack.mjs)
  * because it needs several of them, on ports it chooses, with per-instance config.

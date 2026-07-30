@@ -192,13 +192,13 @@ Real-time collaboration is **CRDT-based and always peer-to-peer**: Docs and
 whiteboards sync as Yjs updates, Sheets and Slides use LWW/tree CRDTs, all inside
 an end-to-end-encrypted room whose key never reaches any server. The only server
 role is **content-blind peer discovery** — it learns *that* peers share a random
-room id, never any content — and that role can be filled either by a Vulos OS /
-Ephor host in front of Diwan, **or by pointing this deployment's own
-`config.yaml` (`collab.rendezvous_url` / `VULOS_RENDEZVOUS_URL`) at any
-self-hosted `vulos-relayd`**, so a bare standalone binary gets real P2P collab
-with no Vulos OS or account at all. In that mode the browser talks to the relayd
-**directly** — Diwan's own server is not in the discovery path and sees nothing
-of it. See
+room id, never any content — and **this binary serves that itself**, at
+`/api/rendezvous/*`, on by default. So one `diwan` on one box is all two people
+need: **no Vulos OS, no Ephor, no relay, no account, nothing to configure**. You
+*may* delegate discovery to your own `vulos-relayd` instead
+(`collab.rendezvous_url` / `VULOS_RENDEZVOUS_URL`), and it then takes precedence —
+the browser talks to that relay directly and Diwan's server is not in the
+discovery path at all. See
 [docs/COLLABORATION.md](docs/COLLABORATION.md) §3 and
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -229,7 +229,7 @@ Full documentation lives in **[`docs/`](docs/)**.
 npm run dev:web        # Vite (:5173) + Go API (:8080)
 npm test               # unit + RTL/MSW integration tests (Vitest)
 npm run test:e2e       # browser E2E (Playwright, backend mocked)
-npm run test:e2e:p2p   # REAL P2P: a live vulos-relayd + two standalone servers
+npm run test:e2e:p2p   # REAL P2P: one real binary + two real browsers, no external deps
 npm run build          # frontend dist/ + Go binary
 npm run screenshots    # regenerate the docs/screenshots gallery
 

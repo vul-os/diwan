@@ -21,6 +21,7 @@ import (
 
 	"diwan/backend/config"
 	"diwan/backend/middleware"
+	"diwan/backend/rendezvous"
 	"diwan/backend/storage"
 	"diwan/backend/userauth"
 
@@ -74,11 +75,29 @@ func PublicBaseURL() string {
 //     signaling envelopes. Empty when unset, same contract as public_base_url —
 //     the client MUST treat empty as "not available" rather than guessing a
 //     default, which is what keeps a local-only deployment honestly local-only.
+//
+//   - `builtin_rendezvous_prefix` — the path under THIS origin at which this
+//     binary serves its own signed, content-blind discovery protocol
+//     (backend/rendezvous), or "" when the operator turned it off with
+//     `collab.builtin_rendezvous: false`. Same honesty contract again: empty
+//     means "this server offers no discovery", never "guess a path".
+//
+//     Reported as a PATH, not a URL, deliberately. It is same-origin by
+//     construction, so the browser is the only party that can say what origin it
+//     loaded Diwan from — and it already has to reconcile that with
+//     `public_base_url`. Handing back a server-guessed absolute URL would invent
+//     an origin the server does not reliably know (it sits behind whatever
+//     reverse proxy the operator chose).
 func (h *SystemHandler) Reachability(c *gin.Context) {
+	builtin := ""
+	if h.cfg.Collab.BuiltinRendezvous {
+		builtin = rendezvous.Prefix
+	}
 	c.JSON(http.StatusOK, gin.H{
-		"public_base_url": PublicBaseURL(),
-		"deploy_mode":     h.deployMode,
-		"rendezvous_url":  strings.TrimRight(strings.TrimSpace(h.cfg.Collab.RendezvousURL), "/"),
+		"public_base_url":           PublicBaseURL(),
+		"deploy_mode":               h.deployMode,
+		"rendezvous_url":            strings.TrimRight(strings.TrimSpace(h.cfg.Collab.RendezvousURL), "/"),
+		"builtin_rendezvous_prefix": builtin,
 	})
 }
 

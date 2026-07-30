@@ -151,16 +151,25 @@ jobs:
           path: playwright-report/
           retention-days: 7
 
-  # ── Real P2P integration E2E (relayd + two standalone servers) ──────────────
-  # The opposite of the job above: nothing is mocked. It builds a real
-  # `vulos-relayd` from the sibling checkout (READ-ONLY — only `go build`), runs
-  # two standalone `diwan` servers pointed at its rendezvous role, and
-  # proves that two browsers collaborate peer-to-peer through it with no Vulos
-  # OS and no account — the repo's central architectural claim. Deliberately a
-  # SEPARATE job so its heavier, WebRTC-dependent runtime can never destabilise
-  # the fast suites.
+  # ── Real P2P integration E2E (one bare binary, two browsers) ────────────────
+  # The opposite of the job above: nothing is mocked. It builds the real `diwan`
+  # binary, runs it with its OWN built-in peer-discovery surface
+  # (backend/rendezvous — the default), and proves that two real browsers
+  # collaborate peer-to-peer through it over a real WebRTC data channel, with no
+  # Vulos OS, no Ephor, no relay and no account. That is the repo's central
+  # architectural claim, and this is the job that holds it.
+  #
+  # NOTHING IS FETCHED AT TEST TIME. This job used to `git clone` a sibling relay
+  # repository so the suite could build a `vulos-relayd` to signal through. Two
+  # things were wrong with that: the claim under test became conditional on
+  # another product, and the clone targeted a repo that was later renamed — so the
+  # job failed for a reason unrelated to this code while the claim it was meant to
+  # guard went unchecked. Everything this job needs now comes from this repository.
+  #
+  # Deliberately a SEPARATE job so its heavier, WebRTC-dependent runtime can never
+  # destabilise the fast suites.
   e2e-p2p:
-    name: Real P2P E2E (relayd rendezvous)
+    name: Real P2P E2E (built-in rendezvous, no external deps)
     runs-on: ubuntu-latest
     needs: frontend
 
@@ -168,13 +177,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Checkout sibling vulos-relay
-        run: git clone --depth 1 https://github.com/vul-os/vulos-relay ../vulos-relay
-
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          cache: true
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -188,16 +195,30 @@ jobs:
       - name: Install Playwright chromium
         run: npx playwright install --with-deps chromium
 
-      # Built here rather than inside the suite so a broken relay checkout is
-      # reported as what it is, and never mistaken for a failure of the claim.
-      - name: Build vulos-relayd (from the unmodified sibling checkout)
-        run: cd ../vulos-relay && go build -o "$RUNNER_TEMP/vulos-relayd" ./cmd/vulos-relayd
-
-      - name: Run real P2P E2E
+      # The default-path suite. VULOS_RELAYD_BIN is deliberately NOT set, so the
+      # external-relay suite skips (with its reason printed) while this one runs —
+      # it has no external dependency and therefore cannot be skipped.
+      - name: Run real P2P E2E (built-in discovery surface)
         run: npm run test:e2e:p2p
         env:
           CI: 'true'
-          VULOS_RELAYD_BIN: ${{ runner.temp }}/vulos-relayd
+
+      # Fail closed on a vanished suite. `playwright test` exits 0 when every test
+      # skipped, so a regression that made the built-in suite skip itself — a
+      # renamed file, a beforeAll that bails, a testMatch that stops matching —
+      # would look exactly like success. Assert instead that the default-path
+      # tests actually EXECUTED, by name.
+      - name: Assert the default-path suite really ran
+        run: |
+          set -euo pipefail
+          npx playwright test --config playwright.p2p.config.js --list --reporter=list \
+            > "$RUNNER_TEMP/p2p-list.txt" 2>&1 || true
+          echo "── collected tests ──"
+          cat "$RUNNER_TEMP/p2p-list.txt"
+          grep -q 'builtin-rendezvous-p2p' "$RUNNER_TEMP/p2p-list.txt" \
+            || { echo "FAIL: the built-in-rendezvous P2P suite was not collected at all"; exit 1; }
+          grep -q 'THE PAYOFF' "$RUNNER_TEMP/p2p-list.txt" \
+            || { echo "FAIL: the payoff test is missing from the collected suite"; exit 1; }
 
       - name: Upload Playwright report
         if: ${{ !cancelled() }}

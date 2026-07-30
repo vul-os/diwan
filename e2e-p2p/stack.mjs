@@ -1,23 +1,39 @@
 /**
- * stack.mjs — boots the REAL stack the OS-free P2P claim depends on.
+ * stack.mjs — boots the REAL stack the peer-to-peer claim depends on.
  *
- * Nothing here is mocked. It builds and runs:
+ * Nothing here is mocked. Two topologies are supported, and the DEFAULT is the
+ * one that matters most:
  *
- *   • one `vulos-relayd` (from the sibling Ephor checkout, UNMODIFIED)
- *     with the rendezvous role enabled on a temp port, and
- *   • two STANDALONE `diwan` binaries — separate ports, separate data
- *     dirs, separate config files — each pointed at that relayd via
- *     `collab.rendezvous_url`, plus optionally a third with NO rendezvous
- *     configured for the negative case.
+ *   • 'builtin' (default) — ONE standalone `diwan` binary, serving its OWN
+ *     peer-discovery surface at /api/rendezvous/* (backend/rendezvous). Two
+ *     browsers load that one server and collaborate peer-to-peer through it. This
+ *     is the shape an operator actually deploys: one binary, one VPS, no other
+ *     product involved at all. It needs no external checkout, no external
+ *     binary, and no network beyond loopback — so it ALWAYS runs and can never be
+ *     silently skipped.
  *
- * Two SEPARATE Diwan servers (not one server + two tabs) is the honest shape:
- * the claim is that peers collaborate with no shared document server, so the
- * two browsers must have no server in common. The only thing they share is the
- * relayd — and the room key, which travels in the invite link's URL fragment
- * and never reaches any server.
+ *     "One shared server" is not a weaker claim than the two-server shape below,
+ *     it is a different one. What the two-server shape proved was that no
+ *     DOCUMENT server sits between the peers. Here that is proved differently and
+ *     just as concretely: the room key lives in the invite link's URL fragment and
+ *     never reaches the server, so every discovery payload it handles is
+ *     ciphertext it cannot read, and the edits themselves are asserted to have
+ *     crossed a direct WebRTC data channel.
  *
- * Everything is torn down in reverse order; ports are probed rather than slept
- * on.
+ *   • 'external' — two standalone `diwan` binaries (separate ports, separate data
+ *     dirs) with their built-in surface DISABLED, both pointed at a separately
+ *     supplied `vulos-relayd` (Ephor) via `collab.rendezvous_url`. This proves the
+ *     other supported posture: discovery delegated to an operator's own relay,
+ *     with nothing of ours in the discovery path at all.
+ *
+ *     It requires a PREBUILT relayd binary in VULOS_RELAYD_BIN. This module does
+ *     NOT clone, fetch or build anything from another repository. A test that
+ *     pulls a moving external repo at run time is not a test of this repo: when
+ *     that repo was renamed (`vulos-relay` → `ephor`) the job started failing for
+ *     a reason that had nothing to do with the code under test, while the claim it
+ *     was supposed to guard went unchecked.
+ *
+ * Everything is torn down in reverse order; ports are probed rather than slept on.
  */
 
 import { spawn, execFile } from 'node:child_process'
@@ -33,16 +49,23 @@ const execFileAsync = promisify(execFile)
 export const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 /**
- * Where the Ephor checkout lives. Overridable so CI (or a differently
- * laid-out working copy) can point at it explicitly. That repo is READ-ONLY
- * here: we only `go build` it to an output path OUTSIDE the checkout.
+ * Diwan's own built-in rendezvous mount prefix — must match
+ * backend/rendezvous.Prefix and what GET /api/reachability advertises as
+ * `builtin_rendezvous_prefix`.
  */
-export const RELAY_REPO =
-  process.env.VULOS_RELAY_REPO || path.resolve(REPO_ROOT, '..', 'ephor')
+export const BUILTIN_PREFIX = '/api/rendezvous'
 
-/** Returns true when the relay checkout needed to run this suite is present. */
-export function relayRepoAvailable() {
-  return existsSync(path.join(RELAY_REPO, 'cmd', 'vulos-relayd', 'main.go'))
+/**
+ * A prebuilt `vulos-relayd`, supplied explicitly by whoever wants the 'external'
+ * topology exercised. Absent by default and never inferred from a sibling
+ * directory: an implicit path is how a suite ends up quietly testing whatever
+ * happens to be checked out next door.
+ */
+export const RELAYD_BIN = process.env.VULOS_RELAYD_BIN || ''
+
+/** True when the 'external' topology can run at all. */
+export function relaydBinAvailable() {
+  return !!RELAYD_BIN && existsSync(RELAYD_BIN)
 }
 
 /** Reserve a free localhost port by binding and immediately releasing it. */
@@ -80,38 +103,15 @@ async function httpOk(url) {
 }
 
 /**
- * Build the binaries under test. The relayd build writes its output into our
- * temp dir — the Ephor checkout is never modified.
+ * Build the Diwan binary under test. The frontend is built first because the
+ * binary embeds dist/ via go:embed — without it the server would serve a stale or
+ * absent app and every browser assertion would be meaningless.
  */
 export async function buildBinaries(outDir) {
   const officeBin = path.join(outDir, 'diwan-e2e')
-  // A prebuilt relayd wins when supplied: CI can build the relay once (and
-  // pin its revision), and a local run is not blocked by whatever state the
-  // sibling checkout happens to be in.
-  const prebuilt = process.env.VULOS_RELAYD_BIN
-  const relaydBin = prebuilt && existsSync(prebuilt) ? prebuilt : path.join(outDir, 'vulos-relayd')
-
-  // The Diwan binary embeds dist/ (go:embed), so the frontend must be built
-  // first or the server would serve a stale/absent app.
   await execFileAsync('npx', ['vite', 'build'], { cwd: REPO_ROOT, timeout: 300_000, maxBuffer: 64 << 20 })
   await execFileAsync('go', ['build', '-o', officeBin, '.'], { cwd: REPO_ROOT, timeout: 300_000, maxBuffer: 64 << 20 })
-  if (relaydBin !== prebuilt) {
-    try {
-      await execFileAsync('go', ['build', '-o', relaydBin, './cmd/vulos-relayd'], {
-        cwd: RELAY_REPO, timeout: 300_000, maxBuffer: 64 << 20,
-      })
-    } catch (err) {
-      // Be explicit about WHOSE build broke: this suite never modifies the
-      // relay repo, so a compile error there is that checkout's state, not a
-      // failure of the claim under test.
-      throw new Error(
-        `could not build vulos-relayd from ${RELAY_REPO} (this suite never modifies that repo). ` +
-        `Point VULOS_RELAYD_BIN at a prebuilt binary to run anyway.\n${err.message}`,
-      )
-    }
-  }
-
-  return { relaydBin, officeBin }
+  return { officeBin }
 }
 
 function spawnLogged(bin, args, opts, name, logs) {
@@ -127,48 +127,61 @@ function spawnLogged(bin, args, opts, name, logs) {
 }
 
 /**
- * Boot relayd + N standalone Diwan instances.
+ * Boot the stack.
  *
  * @param {object} opts
- * @param {number} [opts.offices=2]  Diwan instances WITH the rendezvous configured
- * @param {boolean} [opts.localOnlyOffice=false] also boot one with NO rendezvous
+ * @param {'builtin'|'external'|'none'} [opts.rendezvous='builtin']
+ *   'builtin'  — Diwan serves discovery itself (default; no external anything)
+ *   'external' — discovery delegated to VULOS_RELAYD_BIN; built-in surface OFF
+ *   'none'     — no discovery at all (the honest local-only negative control)
+ * @param {number} [opts.offices=1] how many Diwan instances to boot
+ * @param {boolean} [opts.localOnlyOffice=false] also boot one with NO discovery
  * @returns {Promise<object>} the live stack (URLs, logs, stop())
  */
-export async function startStack({ offices = 2, localOnlyOffice = false } = {}) {
+export async function startStack({ rendezvous = 'builtin', offices = 1, localOnlyOffice = false } = {}) {
   const root = mkdtempSync(path.join(tmpdir(), 'diwan-p2p-'))
   const logs = []
   const procs = []
 
-  const { relaydBin, officeBin } = await buildBinaries(root)
+  const { officeBin } = await buildBinaries(root)
 
-  // ── relayd: rendezvous role on, tunnel role unused ────────────────────────
-  const relayPort = await freePort()
-  const relayAdminPort = await freePort()
-  // No -tokens-file: relayd starts ROLE-ONLY when it is given no agent grants,
-  // and its reverse-tunnel surface then authorizes nobody (an explicit deny-all
-  // token store, not an empty one that might fail open). That is exactly the
-  // shape this suite wants — a pure rendezvous node — and it means the tunnel
-  // role cannot be what makes any assertion below pass.
-  const relayd = spawnLogged(relaydBin, [
-    '-rendezvous',
-    // The rendezvous surface is served on the relay's APEX host, so any -domain
-    // that our 127.0.0.1 Host header does not match as a tunnel subdomain works.
-    '-domain', 'rdv.e2e.invalid',
-    '-addr', `127.0.0.1:${relayPort}`,
-    '-admin-addr', `127.0.0.1:${relayAdminPort}`,
-    // No public STUN: every candidate in this suite is a loopback host
-    // candidate, and reaching out to a public STUN server would make the test
-    // depend on internet access and add gathering latency for nothing.
-    '-rendezvous-disable-public-stun',
-  ], { cwd: root }, 'relayd', logs)
-  procs.push(relayd)
-
-  const relayUrl = `http://127.0.0.1:${relayPort}`
-  const relayAdminUrl = `http://127.0.0.1:${relayAdminPort}`
-  await waitFor(() => httpOk(`${relayUrl}/rendezvous/healthz`), { what: 'relayd rendezvous' })
+  // ── optional external relayd ───────────────────────────────────────────────
+  let relayUrl = ''
+  let relayAdminUrl = ''
+  if (rendezvous === 'external') {
+    if (!relaydBinAvailable()) {
+      throw new Error(
+        'the external-relay topology needs a prebuilt vulos-relayd: set VULOS_RELAYD_BIN. ' +
+        'This suite deliberately does not clone or build another repository.',
+      )
+    }
+    const relayPort = await freePort()
+    const relayAdminPort = await freePort()
+    // No -tokens-file: relayd starts ROLE-ONLY when it is given no agent grants,
+    // and its reverse-tunnel surface then authorizes nobody (an explicit deny-all
+    // token store, not an empty one that might fail open). That is exactly the
+    // shape this suite wants — a pure rendezvous node — and it means the tunnel
+    // role cannot be what makes any assertion pass.
+    const relayd = spawnLogged(RELAYD_BIN, [
+      '-rendezvous',
+      // The rendezvous surface is served on the relay's APEX host, so any -domain
+      // that our 127.0.0.1 Host header does not match as a tunnel subdomain works.
+      '-domain', 'rdv.e2e.invalid',
+      '-addr', `127.0.0.1:${relayPort}`,
+      '-admin-addr', `127.0.0.1:${relayAdminPort}`,
+      // No public STUN: every candidate in this suite is a loopback host
+      // candidate, and reaching out to a public STUN server would make the test
+      // depend on internet access and add gathering latency for nothing.
+      '-rendezvous-disable-public-stun',
+    ], { cwd: root }, 'relayd', logs)
+    procs.push(relayd)
+    relayUrl = `http://127.0.0.1:${relayPort}`
+    relayAdminUrl = `http://127.0.0.1:${relayAdminPort}`
+    await waitFor(() => httpOk(`${relayUrl}/rendezvous/healthz`), { what: 'relayd rendezvous' })
+  }
 
   // ── standalone Diwan instances ────────────────────────────────────────────
-  const startOffice = async (name, rendezvousUrl) => {
+  const startOffice = async (name, { rendezvousUrl = '', builtin = false } = {}) => {
     const dir = path.join(root, name)
     mkdirSync(path.join(dir, 'data'), { recursive: true })
     mkdirSync(path.join(dir, 'uploads'), { recursive: true })
@@ -184,6 +197,7 @@ export async function startStack({ offices = 2, localOnlyOffice = false } = {}) 
       'storage:',
       '  type: "local"',
       'collab:',
+      `  builtin_rendezvous: ${builtin ? 'true' : 'false'}`,
       `  rendezvous_url: "${rendezvousUrl}"`,
       '',
     ].join('\n'))
@@ -197,15 +211,30 @@ export async function startStack({ offices = 2, localOnlyOffice = false } = {}) 
     procs.push(proc)
 
     const url = `http://127.0.0.1:${port}`
-    await waitFor(() => httpOk(`${url}/api/reachability`), { what: `${name} (${url})` })
-    return { name, url, dir, port }
+    try {
+      await waitFor(() => httpOk(`${url}/api/reachability`), { what: `${name} (${url})` })
+    } catch (err) {
+      // Attach what the child process actually SAID. Without this a boot failure
+      // surfaces only as "timed out waiting for office1", and the server's own
+      // explanation — a port already taken, a data dir it cannot write, a config
+      // it rejected — is discarded in exactly the run that needed it.
+      const tail = logs.slice(-40).join('\n') || '(the process produced no output)'
+      throw new Error(`${err.message}\n──── ${name} output ────\n${tail}\n────────────────────────`)
+    }
+    return { name, url, dir, port, builtin, rendezvousUrl }
   }
 
+  const officeOpts = {
+    builtin: rendezvous === 'builtin',
+    rendezvousUrl: rendezvous === 'external' ? relayUrl : '',
+  }
   const officeList = []
   for (let i = 0; i < offices; i++) {
-    officeList.push(await startOffice(`office${i + 1}`, relayUrl))
+    officeList.push(await startOffice(`office${i + 1}`, officeOpts))
   }
-  const localOnly = localOnlyOffice ? await startOffice('office-local-only', '') : null
+  const localOnly = localOnlyOffice
+    ? await startOffice('office-local-only', { builtin: false, rendezvousUrl: '' })
+    : null
 
   const stop = async () => {
     for (const p of procs.reverse()) {
@@ -214,32 +243,40 @@ export async function startStack({ offices = 2, localOnlyOffice = false } = {}) 
     try { rmSync(root, { recursive: true, force: true }) } catch { /* best effort */ }
   }
 
-  return { root, relayUrl, relayAdminUrl, offices: officeList, localOnly, logs, stop }
+  return { root, mode: rendezvous, relayUrl, relayAdminUrl, offices: officeList, localOnly, logs, stop }
 }
 
 /**
- * Ask the RELAY ITSELF what it knows about a rendezvous key.
+ * Ask a RENDEZVOUS SERVER ITSELF what it knows about a key.
  *
- * This is the ground truth for "the signaling really went through the relayd":
- * the presence record is the relay's own soft state, written by an Ed25519-signed
- * announce, and read back here straight from the relay's origin (from Node, so no
- * CORS is involved). A client cannot fabricate it.
+ * This is the ground truth for "the signalling really went through that server":
+ * the presence record is the server's own soft state, written by an
+ * Ed25519-signed announce, and read back here from the server's origin (from
+ * Node, so no CORS is involved). A client cannot fabricate it.
  *
- * Presence (rather than relayd's /metrics, which does now carry rendezvous
- * counters) is deliberate: a counter only says "some announce happened", while a
- * presence record keyed by the exact key the browser signed says THIS peer got
- * through — which is the claim under test.
+ * Presence (rather than a metrics counter) is deliberate: a counter only says
+ * "some announce happened", while a presence record keyed by the exact key the
+ * browser signed says THIS peer got through — which is the claim under test.
  *
+ * @param {string} baseUrl origin of the rendezvous server
+ * @param {string} key base64url Ed25519 key to look up
+ * @param {string} [prefix] mount prefix ('/rendezvous' for relayd,
+ *   '/api/rendezvous' for Diwan's built-in surface)
  * @returns {Promise<{status: number, body: any}>}
  */
-export async function relayResolve(relayUrl, key) {
-  const res = await fetch(`${relayUrl}/rendezvous/resolve/${encodeURIComponent(key)}`)
+export async function rendezvousResolve(baseUrl, key, prefix = '/rendezvous') {
+  const res = await fetch(`${baseUrl}${prefix}/resolve/${encodeURIComponent(key)}`)
   let body = null
   try { body = await res.json() } catch { /* non-JSON (e.g. 404 text) */ }
   return { status: res.status, body }
 }
 
-/** Create a document on an Diwan instance through its real HTTP API. */
+/** Back-compat alias used by the external-relay suite. */
+export function relayResolve(relayUrl, key) {
+  return rendezvousResolve(relayUrl, key, '/rendezvous')
+}
+
+/** Create a document on a Diwan instance through its real HTTP API. */
 export async function createDoc(officeUrl, name) {
   const res = await fetch(`${officeUrl}/api/files`, {
     method: 'POST',

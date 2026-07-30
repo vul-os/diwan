@@ -134,7 +134,7 @@ Slides is a positioned-object canvas editor:
 Whiteboards are an infinite hand-drawn canvas, built on the open-source [Excalidraw](https://github.com/excalidraw/excalidraw) editor. Create one with **New → Whiteboard** (from Home, the app rail, or the file browser).
 
 - **Draw anything** — rectangles, ellipses, diamonds, arrows and lines, freehand pen, text labels, and pasted/inserted raster images, all on a pannable, zoomable canvas.
-- **Live collaboration is peer-to-peer**, exactly like Docs: share an invite link (`#vp2p=`) and co-editors connect directly over an end-to-end-encrypted room — every shape merges independently (a Yjs CRDT), and there is **no central whiteboard server**. On a plain standalone binary with no peering fabric AND no rendezvous URL configured, the board works **local-only** with autosave and shows an honest **Offline** pill rather than a fake "Live" (see §6.3 for how a standalone deployment can still get real P2P).
+- **Live collaboration is peer-to-peer**, exactly like Docs: share an invite link (`#vp2p=`) and co-editors connect directly over an end-to-end-encrypted room — every shape merges independently (a Yjs CRDT), and there is **no central whiteboard server**. A plain standalone binary serves its own peer discovery, so this works out of the box; only if your admin turned that off *and* configured no relay does the board fall back to **local-only** with autosave and an honest **Offline** pill rather than a fake "Live" (see §6.3).
 - Your whiteboard **autosaves** to its own file. A **view-only** invite lets someone watch live edits without being able to change the board.
 
 ---
@@ -180,7 +180,7 @@ For Docs, **Collaborate via link** starts an end-to-end encrypted peer session:
 - Read-only peers see live edits but cannot make authoritative changes.
 - A tampered or malformed invite link simply fails to join — the editor stays in normal local mode.
 
-> Note: the peer-to-peer channel needs a peer-discovery transport to be reachable — either the Vulos peering fabric (provided when Diwan runs inside a Vulos OS / Ephor deployment), **or** a self-hosted `vulos-relayd` your admin pointed this deployment at (`collab.rendezvous_url`, no Vulos OS or account needed — see [CONFIGURATION.md](CONFIGURATION.md)). On a bare standalone server with **neither** configured, invite-link collaboration cannot connect peers — account-based live collaboration (6.1) is the path that always works regardless.
+> Note: the peer-to-peer channel needs a peer-discovery transport to be reachable. By default the Diwan server you are using provides one itself (`/api/rendezvous/*`), so nothing needs configuring; an admin may instead put Diwan behind a Vulos OS / Ephor deployment (the `/api/peering/*` fabric) or point it at a self-hosted `vulos-relayd` (`collab.rendezvous_url` — see [CONFIGURATION.md](CONFIGURATION.md)). Only if an admin disables the built-in surface *and* configures neither of the others can invite-link collaboration not connect peers; account-based live collaboration (6.1) is the path that works regardless.
 
 ---
 
