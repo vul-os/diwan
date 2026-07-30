@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/diwan-logo.png" alt="Diwan" width="120" />
+<img src="brand/logo.svg" alt="Diwan" width="120" />
 
 # Diwan
 
@@ -254,6 +254,16 @@ and docs especially. For major changes, open an issue first. See
 invariants. No CLA required.
 
 ---
+
+## Brand
+
+The mark in [`brand/`](brand/) is the source of truth. Every icon this repo
+ships — favicon, PWA and app icons, the mark in the README and on the site — is
+rendered from `brand/logo.svg` rather than redrawn, so there is one approved
+drawing and no second copy to drift.
+
+Copy it outward, never edit a derived copy, and never edit `brand/` to match
+something downstream.
 
 ## License
 
