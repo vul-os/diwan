@@ -57,10 +57,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # go.mod has `replace github.com/vul-os/vulos-apps => ../vulos-apps`
-      # — clone the sibling so the module resolves on the CI runner.
-      - name: Clone vulos-apps (local replace)
-        run: git clone --depth 1 https://github.com/vul-os/vulos-apps "${{ github.workspace }}/../vulos-apps"
+      # NOTHING IS CLONED HERE. This job used to `git clone` a sibling
+      # `vulos-apps` repository, for a `replace github.com/vul-os/vulos-apps =>
+      # ../vulos-apps` directive that go.mod no longer has (and has not had for
+      # some time). Because the job is advisory (`continue-on-error: true`), the
+      # dead clone failing took gosec and govulncheck down with it silently — the
+      # scan reported nothing and the run stayed green. Diwan builds from this
+      # repository alone; if a step here ever needs another repo, that is the
+      # signal to remove the dependency, not to fetch it.
 
       - name: Set up Go
         uses: actions/setup-go@v5
