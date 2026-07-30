@@ -1,3 +1,7 @@
+// no-broker-dep:allow-file: names Ephor once, as an example of what a host box MIGHT be, in a
+// comment about STUN/TURN config — this file only calls same-origin/relative paths
+// (/api/peering/ice, /api/turn/credentials), never a broker-specific endpoint.
+//
 // ice.js — shared ICE-server fetch helper.
 //
 // Both the OS fabric path (/api/peering/ice → body.ice_servers) and

@@ -1,3 +1,7 @@
+// no-broker-dep:allow-file: this suite's own subject is proving Diwan needs NO Ephor/relay by
+// default ("No Vulos OS, no Ephor, no relay, no account") — it names the broker only to assert
+// its absence from the default path, the same pattern already recognised for a CI step
+// elsewhere in this suite.
 /**
  * builtin-rendezvous-p2p.e2e.js — the DEFAULT path, proved end to end with
  * nothing mocked and nothing external:

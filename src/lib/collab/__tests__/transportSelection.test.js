@@ -1,3 +1,6 @@
+// no-broker-dep:allow-file: this test's own doc comment names Ephor once, asserting the
+// built-in surface is the DEFAULT "with no Ephor and no other product deployed" — this is a
+// unit test PROVING the default-off/no-broker behaviour, not a dependency.
 /**
  * transportSelection.test.js — the collab transport decision.
  *

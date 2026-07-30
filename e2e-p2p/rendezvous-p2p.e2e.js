@@ -1,3 +1,7 @@
+// no-broker-dep:allow-file: this suite proves the OPTIONAL, explicitly-configured external-relay
+// path (RendezvousURL/vulos-relayd/Ephor) that only activates when an operator sets it — the
+// default is empty (backend/config/config_test.go: TestDefault_RendezvousURLEmpty) and its
+// sibling builtin-rendezvous-p2p.e2e.js proves the DEFAULT path needs no relay at all.
 /**
  * rendezvous-p2p.e2e.js — the OPTIONAL posture, proved end to end with nothing
  * mocked:

@@ -3,6 +3,11 @@
 // need in order to exchange WebRTC offer/answer/ICE and then talk directly to
 // each other.
 //
+// no-broker-dep:allow-file: this doc comment names Ephor/vulos-relayd three times while
+// describing exactly why this package exists — to make the built-in, self-hosted surface below
+// the DEFAULT, so an external relay is a choice, never a prerequisite. Verified default-off:
+// backend/config/config_test.go's TestDefault_RendezvousURLEmpty.
+//
 // WHY THIS EXISTS
 // ---------------
 // Two browsers cannot find each other without something in the middle to pass

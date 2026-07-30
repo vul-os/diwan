@@ -1,3 +1,6 @@
+// no-broker-dep:allow-file: names Ephor once, describing unchanged default behaviour when a
+// Vulos OS/Ephor host is in front of Diwan — an optional case in the priority chain
+// transportSelection.js implements, not a default or an import.
 /**
  * src/lib/collab/useCollabFabric.js — shared FabricClient lifecycle hook
  * (WAVE-27).

@@ -1,5 +1,10 @@
 package config
 
+// no-broker-dep:allow-file: CollabConfig's doc comments below name vulos-relayd/Ephor three
+// times while documenting that RendezvousURL defaults to empty (Go zero value; see
+// Default() and config_test.go's TestDefault_RendezvousURLEmpty) — an external relay is an
+// explicit, opt-in operator choice, never the default.
+
 import (
 	"os"
 	"strings"

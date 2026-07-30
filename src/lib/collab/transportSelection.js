@@ -1,3 +1,7 @@
+// no-broker-dep:allow-file: names Ephor/vulos-relayd three times below while documenting the
+// full priority chain — this file's own text states "NO DEFAULT ENDPOINT, in any branch" and
+// names RENDEZVOUS(built-in) as "THE DEFAULT". Verified: backend/config/config_test.go's
+// TestDefault_RendezvousURLEmpty.
 /**
  * transportSelection.js — the collaboration transport decision.
  *

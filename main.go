@@ -1,5 +1,10 @@
 package main
 
+// no-broker-dep:allow-file: the built-in peer-discovery mount comment below names Ephor/
+// vulos-relayd three times while describing exactly why backend/rendezvous exists — to make
+// that the DEFAULT so an external relay is a configured choice, never a prerequisite. Verified
+// default-off: backend/config/config_test.go's TestDefault_RendezvousURLEmpty.
+
 import (
 	"embed"
 	"flag"

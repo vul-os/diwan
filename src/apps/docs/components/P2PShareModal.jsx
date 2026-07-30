@@ -1,3 +1,6 @@
+// no-broker-dep:allow-file: the unavailable-P2P message below names Ephor once, as one of
+// several options a user is told about (account-based sharing, a Vulos OS/Ephor host, or any
+// self-hosted relayd) — rendered UI copy, no fetch/import/default endpoint.
 /**
  * P2PShareModal — "Share → collaborate via link (P2P)" (WAVE-25).
  *

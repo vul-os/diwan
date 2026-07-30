@@ -1,3 +1,8 @@
+# no-broker-dep:allow-file: the P2P E2E job further down names Ephor/vulos-relayd describing
+# the DEFAULT built-in surface's independence from any relay ("no Vulos OS, no Ephor, no relay
+# and no account") and a historical note about a since-removed sibling-repo clone step — no
+# workflow step here fetches, builds against, or depends on anything named ephor.
+#
 # .github/workflows/ci.yml — build, test, and vet diwan (Go + frontend)
 #
 # Triggers on:

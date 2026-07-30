@@ -1,5 +1,9 @@
 package rendezvous
 
+// no-broker-dep:allow-file: below (in the CORS doc comment) cites Ephor's rendezvous role as
+// prior art for this package's own no-auth-middleware argument — this file implements Diwan's
+// OWN built-in discovery surface (the default path), not a dependency on Ephor.
+
 import (
 	"errors"
 	"io"

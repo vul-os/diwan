@@ -1,3 +1,9 @@
+// no-broker-dep:allow-file: this is the reference client for the OPEN rendezvous role
+// (implemented by any conforming vulos-relayd, or by Diwan's OWN backend/rendezvous — the
+// default path). It is a protocol client the app calls at a URL the operator supplies; there
+// is no default endpoint (RendezvousURL defaults empty, verified by
+// backend/config/config_test.go's TestDefault_RendezvousURLEmpty).
+//
 // rendezvous.js — the reference JS client for the OPEN rendezvous role served by
 // any vulos-relayd (self-hosted or Vulos-run) under its /rendezvous prefix.
 //

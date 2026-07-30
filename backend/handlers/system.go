@@ -13,6 +13,10 @@ package handlers
 //
 // Everything reported here is derived from the live config + stores, never
 // hardcoded, so a self-hoster sees what their instance is ACTUALLY doing.
+//
+// no-broker-dep:allow-file: EnvPublicURL's doc comment below names Ephor once as an example of
+// what an operator might put behind DIWAN_PUBLIC_URL — an env var this binary only reads, with
+// no default value and no code that names or calls Ephor specifically.
 
 import (
 	"net/http"

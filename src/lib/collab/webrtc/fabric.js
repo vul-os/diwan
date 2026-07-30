@@ -1,3 +1,6 @@
+// no-broker-dep:allow-file: names vulos-relayd once, describing the OPTIONAL
+// rendezvousBaseUrl/relayBaseUrl parameters, both defaulted to '' below — "the existing
+// /api/peering/* path is untouched when this option is absent". No default endpoint.
 /**
  * fabric.js — Diwan fabric client adapter (OFFICE-20).
  *

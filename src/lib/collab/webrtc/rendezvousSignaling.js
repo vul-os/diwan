@@ -1,3 +1,8 @@
+// no-broker-dep:allow-file: implements the OPTIONAL external-relay transport (RendezvousURL,
+// default empty — backend/config/config_test.go's TestDefault_RendezvousURLEmpty) that
+// transportSelection.js only selects when an operator explicitly configures it; the built-in
+// surface (backend/rendezvous) is the default and needs none of this.
+//
 // rendezvousSignaling.js — a drop-in signaling transport for FabricClient that
 // runs the COMPLETE WebRTC signaling lifecycle (presence discovery + offer /
 // answer / ICE exchange + polite-peer negotiation) over any vulos-relayd's OPEN

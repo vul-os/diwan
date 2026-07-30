@@ -1,3 +1,8 @@
+// no-broker-dep:allow-file: names Ephor/vulos-relayd three times below describing the
+// OPTIONAL, explicitly-configured rendezvous_url and DIWAN_PUBLIC_URL — this file's own text
+// states "Empty when unset... callers must treat '' as 'not configured', never guess a
+// default" and documents the built-in surface as "the DEFAULT path — no other product at
+// all". Verified: backend/config/config_test.go's TestDefault_RendezvousURLEmpty.
 /**
  * reachableBase.js — deploy-time facts from GET /api/reachability: Office's
  * EXTERNALLY-REACHABLE base URL, and (new) the configured rendezvous URL for
