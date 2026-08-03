@@ -1,6 +1,6 @@
 package config
 
-// no-broker-dep:allow-file: CollabConfig's doc comments below name vulos-relayd/Ephor three
+// no-broker-dep:allow-file: CollabConfig's doc comments below name vulos-relayd/Pier three
 // times while documenting that RendezvousURL defaults to empty (Go zero value; see
 // Default() and config_test.go's TestDefault_RendezvousURLEmpty) — an external relay is an
 // explicit, opt-in operator choice, never the default.
@@ -34,9 +34,9 @@ type CollabConfig struct {
 	// browsers without something in the middle passing the first few packets;
 	// before this existed, a standalone Diwan had nowhere to get that and fell
 	// through to honestly-local-only unless the operator ran a separate
-	// vulos-relayd (Ephor) and set RendezvousURL. Collaboration therefore
+	// vulos-relayd (Pier) and set RendezvousURL. Collaboration therefore
 	// depended on a DIFFERENT product being deployed. Now one Diwan on one VPS is
-	// sufficient by itself, and Ephor is a choice rather than a prerequisite.
+	// sufficient by itself, and Pier is a choice rather than a prerequisite.
 	//
 	// Set false to turn it off. That is a real, supported posture — a deployment
 	// that wants no discovery state on its own box at all — and it degrades
@@ -60,7 +60,7 @@ type CollabConfig struct {
 	// its TURN/NAT-traversal help).
 	//
 	// Because the browser calls this URL CROSS-ORIGIN, the relayd behind it must
-	// serve its rendezvous role with CORS (every Ephor since the role
+	// serve its rendezvous role with CORS (every Pier since the role
 	// shipped with CORS does; e2e-p2p/ asserts the posture against a real one).
 	// It must also be reachable from wherever users load Diwan — an https page
 	// cannot call an http relay, so a public deployment needs TLS on the relay.

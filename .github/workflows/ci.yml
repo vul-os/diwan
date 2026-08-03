@@ -1,7 +1,7 @@
-# no-broker-dep:allow-file: the P2P E2E job further down names Ephor/vulos-relayd describing
-# the DEFAULT built-in surface's independence from any relay ("no Vulos OS, no Ephor, no relay
+# no-broker-dep:allow-file: the P2P E2E job further down names Pier/vulos-relayd describing
+# the DEFAULT built-in surface's independence from any relay ("no Vulos OS, no Pier, no relay
 # and no account") and a historical note about a since-removed sibling-repo clone step — no
-# workflow step here fetches, builds against, or depends on anything named ephor.
+# workflow step here fetches, builds against, or depends on anything named pier.
 #
 # .github/workflows/ci.yml — build, test, and vet diwan (Go + frontend)
 #
@@ -161,7 +161,7 @@ jobs:
   # binary, runs it with its OWN built-in peer-discovery surface
   # (backend/rendezvous — the default), and proves that two real browsers
   # collaborate peer-to-peer through it over a real WebRTC data channel, with no
-  # Vulos OS, no Ephor, no relay and no account. That is the repo's central
+  # Vulos OS, no Pier, no relay and no account. That is the repo's central
   # architectural claim, and this is the job that holds it.
   #
   # NOTHING IS FETCHED AT TEST TIME. This job used to `git clone` a sibling relay

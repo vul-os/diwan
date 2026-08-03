@@ -186,7 +186,7 @@ browsers **unaided**: something has to carry the first offer/answer/ICE frames.
 `collab.builtin_rendezvous` makes this binary that something. On by default, it
 serves the signed, content-blind announce/resolve/signal/mailbox protocol at
 `/api/rendezvous/*` on its own origin (`backend/rendezvous`), so **one `diwan` on
-one box is all two people need** — no Vulos OS, no Ephor, no relay, no account.
+one box is all two people need** — no Vulos OS, no Pier, no relay, no account.
 
 Before it existed, discovery had to come from another product, and a standalone
 binary with none available had no peer-to-peer at all.
@@ -245,7 +245,7 @@ TURN/NAT-traversal help.
 Diwan picks one of four discovery paths, in order:
 
 1. **This server's own peering fabric** (`/api/peering/*`) — present only when
-   a Vulos OS / Ephor deployment fronts Diwan. Unchanged default.
+   a Vulos OS / Pier deployment fronts Diwan. Unchanged default.
 2. **A configured rendezvous URL** — the base URL of any **self-hosted
    `vulos-relayd`**'s OPEN rendezvous surface (announce/resolve/signal/mailbox
    + ICE). No Vulos OS and no account are required.
@@ -256,7 +256,7 @@ Diwan picks one of four discovery paths, in order:
    [COLLABORATION.md](COLLABORATION.md) §3 for exactly what the relay does and
    does not see. Two things this puts on you as the operator:
 
-   - The relayd must serve **CORS** on its rendezvous role. Every Ephor
+   - The relayd must serve **CORS** on its rendezvous role. Every Pier
      deployment with the role does; `npm run test:e2e:p2p` asserts the posture
      against a real one, from a real browser.
    - It must be reachable from wherever users load Diwan, over a scheme the
@@ -283,7 +283,7 @@ externally-reachable origin:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DIWAN_PUBLIC_URL` | This Diwan instance's externally-reachable origin (a public domain, or an Ephor tunnel URL when behind NAT/CGNAT). Used to build P2P invite links / signaling targets an external peer can actually reach, instead of blindly trusting `window.location.origin` (which may be a LAN-only address). | — (falls back to the visitor's own origin) |
+| `DIWAN_PUBLIC_URL` | This Diwan instance's externally-reachable origin (a public domain, or a Pier tunnel URL when behind NAT/CGNAT). Used to build P2P invite links / signaling targets an external peer can actually reach, instead of blindly trusting `window.location.origin` (which may be a LAN-only address). | — (falls back to the visitor's own origin) |
 
 `rendezvous_url` is `""` when nothing is configured, and
 `builtin_rendezvous_prefix` is `""` when the built-in surface is off. Clients

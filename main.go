@@ -1,6 +1,6 @@
 package main
 
-// no-broker-dep:allow-file: the built-in peer-discovery mount comment below names Ephor/
+// no-broker-dep:allow-file: the built-in peer-discovery mount comment below names Pier/
 // vulos-relayd three times while describing exactly why backend/rendezvous exists — to make
 // that the DEFAULT so an external relay is a configured choice, never a prerequisite. Verified
 // default-off: backend/config/config_test.go's TestDefault_RendezvousURLEmpty.
@@ -270,7 +270,7 @@ func main() {
 	//
 	// WebRTC cannot introduce two browsers to each other unaided: something has to
 	// pass the first offer/answer/ICE frames. Diwan used to be able to get that
-	// ONLY from another product — a Vulos OS / Ephor host mounting
+	// ONLY from another product — a Vulos OS / Pier host mounting
 	// `/api/peering/*`, or an operator-run `vulos-relayd` named in
 	// `collab.rendezvous_url` — so with neither, a standalone binary had no P2P at
 	// all and every session fell through to honestly-local-only.
@@ -279,7 +279,7 @@ func main() {
 	// on one VPS is enough for two users to collaborate. It still carries no
 	// document content: every payload is opaque bytes sealed under a room key that
 	// lives in an invite link's fragment and reaches no server, and edits ride the
-	// direct data channel once the peers are introduced. Ephor stays supported and
+	// direct data channel once the peers are introduced. Pier stays supported and
 	// still WINS when configured (see transportSelection.js) — it is now a choice,
 	// not a prerequisite.
 	//

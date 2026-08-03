@@ -1,4 +1,4 @@
-// no-broker-dep:allow-file: names vulos-relayd/Ephor describing the OPTIONAL 'external relay'
+// no-broker-dep:allow-file: names vulos-relayd/Pier describing the OPTIONAL 'external relay'
 // topology this harness can boot for testing — RendezvousURL defaults empty (verified by
 // backend/config/config_test.go's TestDefault_RendezvousURLEmpty); the 'builtin' topology is
 // the default and needs no relay binary at all.
@@ -26,7 +26,7 @@
  *
  *   • 'external' — two standalone `diwan` binaries (separate ports, separate data
  *     dirs) with their built-in surface DISABLED, both pointed at a separately
- *     supplied `vulos-relayd` (Ephor) via `collab.rendezvous_url`. This proves the
+ *     supplied `vulos-relayd` (Pier) via `collab.rendezvous_url`. This proves the
  *     other supported posture: discovery delegated to an operator's own relay,
  *     with nothing of ours in the discovery path at all.
  *

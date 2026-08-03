@@ -51,7 +51,7 @@ Diwan is a collaborative document editing + e-signing service. It exposes:
 > - **The only server role** is content-blind peer **discovery** (signaling + ICE),
 >   resolved as a four-way choice (`src/lib/collab/transportSelection.js`, see
 >   docs/COLLABORATION.md §3): (1) this server's own `/api/peering/*`, provided
->   by a host (Vulos OS / Ephor) in front of Diwan; else (2) a configured
+>   by a host (Vulos OS / Pier) in front of Diwan; else (2) a configured
 >   rendezvous URL (`config.yaml` `collab.rendezvous_url` / `VULOS_RENDEZVOUS_URL`)
 >   pointing at ANY self-hosted `vulos-relayd`'s open rendezvous surface; else
 >   (3) **this binary's OWN built-in surface** at `/api/rendezvous/*`

@@ -3,7 +3,7 @@
 // need in order to exchange WebRTC offer/answer/ICE and then talk directly to
 // each other.
 //
-// no-broker-dep:allow-file: this doc comment names Ephor/vulos-relayd three times while
+// no-broker-dep:allow-file: this doc comment names Pier/vulos-relayd three times while
 // describing exactly why this package exists — to make the built-in, self-hosted surface below
 // the DEFAULT, so an external relay is a choice, never a prerequisite. Verified default-off:
 // backend/config/config_test.go's TestDefault_RendezvousURLEmpty.
@@ -13,7 +13,7 @@
 // Two browsers cannot find each other without something in the middle to pass
 // the first few packets. That "something" is signalling, and it is a genuine
 // requirement of WebRTC, not a design choice we can decline. Until now Diwan
-// could only get it from somewhere ELSE: a Vulos OS / Ephor host mounting
+// could only get it from somewhere ELSE: a Vulos OS / Pier host mounting
 // `/api/peering/*`, or an operator-run `vulos-relayd` named in
 // `collab.rendezvous_url`. With neither, a standalone Diwan binary had NO path
 // to peer-to-peer collaboration at all — `transportSelection.js` fell through to
@@ -22,7 +22,7 @@
 // That made the product's central claim conditional on another product being
 // deployed. This package removes that condition: the Diwan binary serves the
 // same protocol itself, on its own origin, so an operator who runs one Diwan on
-// one VPS has everything two users need. Ephor remains a legitimate CHOICE (an
+// one VPS has everything two users need. Pier remains a legitimate CHOICE (an
 // operator who wants a shared relay across several deployments, or its NAT
 // traversal) — it is no longer a prerequisite.
 //
@@ -58,7 +58,7 @@
 //
 // It is deliberately OPEN in the sense that no account is required — anonymous
 // invite-link collaboration is the feature — and same-origin only: unlike
-// Ephor's rendezvous role this surface serves NO CORS headers, because the only
+// Pier's rendezvous role this surface serves NO CORS headers, because the only
 // browsers that need it are the ones already loading Diwan from this origin.
 //
 // INTEROPERABILITY

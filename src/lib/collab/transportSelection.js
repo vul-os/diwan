@@ -1,4 +1,4 @@
-// no-broker-dep:allow-file: names Ephor/vulos-relayd three times below while documenting the
+// no-broker-dep:allow-file: names Pier/vulos-relayd three times below while documenting the
 // full priority chain — this file's own text states "NO DEFAULT ENDPOINT, in any branch" and
 // names RENDEZVOUS(built-in) as "THE DEFAULT". Verified: backend/config/config_test.go's
 // TestDefault_RendezvousURLEmpty.
@@ -11,7 +11,7 @@
  * priority order:
  *
  *   1. HOST_PEERING  — this server itself mounts `/api/peering/*` (a Vulos OS
- *      or Ephor host is in front of Diwan). Preferred when present:
+ *      or Pier host is in front of Diwan). Preferred when present:
  *      unchanged from Diwan's original behaviour, and it is the one transport
  *      that can carry an authToken tied to an account session.
  *   2. RENDEZVOUS (external) — no host-box peering, but this deployment names
@@ -31,7 +31,7 @@
  *      of real peer-to-peer collaboration on its own. WebRTC cannot introduce two
  *      browsers unaided — something has to pass the first offer/answer/ICE
  *      frames — and until this existed, Diwan could only get that from ANOTHER
- *      product (a Vulos OS / Ephor host, or an operator-run relayd). With
+ *      product (a Vulos OS / Pier host, or an operator-run relayd). With
  *      neither, every session fell through to local-only. One Diwan on one VPS is
  *      now sufficient.
  *

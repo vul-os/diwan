@@ -1,8 +1,8 @@
 package rendezvous
 
-// no-broker-dep:allow-file: below (in the CORS doc comment) cites Ephor's rendezvous role as
+// no-broker-dep:allow-file: below (in the CORS doc comment) cites Pier's rendezvous role as
 // prior art for this package's own no-auth-middleware argument — this file implements Diwan's
-// OWN built-in discovery surface (the default path), not a dependency on Ephor.
+// OWN built-in discovery surface (the default path), not a dependency on Pier.
 
 import (
 	"errors"
@@ -49,7 +49,7 @@ const MaxBodyBytes = 256 * 1024
 // the protocol never authenticates with ambient credentials. Authority comes
 // exclusively from an Ed25519 signature inside the body, so a cookie a browser
 // might attach to a cross-origin request buys an attacker nothing here — the same
-// argument Ephor's rendezvous role makes for its own wildcard.
+// argument Pier's rendezvous role makes for its own wildcard.
 //
 // NO AUTH MIDDLEWARE, and that is not an omission: anonymous invite-link
 // collaboration is the feature, and the protocol authenticates every write with

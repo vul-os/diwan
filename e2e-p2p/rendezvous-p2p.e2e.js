@@ -1,5 +1,5 @@
 // no-broker-dep:allow-file: this suite proves the OPTIONAL, explicitly-configured external-relay
-// path (RendezvousURL/vulos-relayd/Ephor) that only activates when an operator sets it — the
+// path (RendezvousURL/vulos-relayd/Pier) that only activates when an operator sets it — the
 // default is empty (backend/config/config_test.go: TestDefault_RendezvousURLEmpty) and its
 // sibling builtin-rendezvous-p2p.e2e.js proves the DEFAULT path needs no relay at all.
 /**
@@ -7,7 +7,7 @@
  * mocked:
  *
  *   "A standalone Diwan can delegate peer discovery to an operator's OWN
- *    external relay (a self-hosted `vulos-relayd` / Ephor), with nothing of ours
+ *    external relay (a self-hosted `vulos-relayd` / Pier), with nothing of ours
  *    in the discovery path at all."
  *
  * ── This is not the default path ─────────────────────────────────────────────

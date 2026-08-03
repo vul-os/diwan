@@ -1,4 +1,4 @@
-// no-broker-dep:allow-file: names Ephor once, as an example of what a host box MIGHT be, in a
+// no-broker-dep:allow-file: names Pier once, as an example of what a host box MIGHT be, in a
 // comment about STUN/TURN config — this file only calls same-origin/relative paths
 // (/api/peering/ice, /api/turn/credentials), never a broker-specific endpoint.
 //
@@ -11,7 +11,7 @@
 //
 // STUN/TURN configuration (no other Vulos product required):
 //   Diwan's default collaboration transport is direct WebRTC (see
-//   docs/COLLABORATION.md). A host box (Vulos OS / Ephor) can supply its
+//   docs/COLLABORATION.md). A host box (Vulos OS / Pier) can supply its
 //   own ICE servers via /api/peering/ice, but a standalone/self-hosted Diwan
 //   with no host box in front of it needs somewhere else to get STUN (NAT
 //   discovery) and, for the ~10-20% of peer pairs behind a symmetric NAT that

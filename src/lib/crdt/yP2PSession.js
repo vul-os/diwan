@@ -1,5 +1,5 @@
-// no-broker-dep:allow-file: names Ephor once, describing unchanged default behaviour when a
-// Vulos OS/Ephor host is in front of Diwan — an optional case in the priority chain
+// no-broker-dep:allow-file: names Pier once, describing unchanged default behaviour when a
+// Vulos OS/Pier host is in front of Diwan — an optional case in the priority chain
 // transportSelection.js implements, not a default or an import.
 /**
  * src/lib/crdt/yP2PSession.js — Yjs document sync over the E2E-encrypted P2P

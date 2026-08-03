@@ -1,4 +1,4 @@
-# no-broker-dep:allow-file: names vulos-relayd/Ephor twice below describing the OPTIONAL
+# no-broker-dep:allow-file: names vulos-relayd/Pier twice below describing the OPTIONAL
 # rendezvous_url override (shipped default: rendezvous_url: "", empty) — the actual default
 # path is builtin_rendezvous: true, Diwan's OWN self-hosted discovery surface. Verified by
 # backend/config/config_test.go's TestDefault_RendezvousURLEmpty.
@@ -44,7 +44,7 @@ collab:
   # /api/rendezvous/* (backend/rendezvous). ON by default, and that default is
   # the point: WebRTC cannot introduce two browsers unaided, so before this
   # existed a standalone Diwan had no peer-to-peer at all unless the operator
-  # also ran a vulos-relayd (Ephor) and set rendezvous_url below. One Diwan on
+  # also ran a vulos-relayd (Pier) and set rendezvous_url below. One Diwan on
   # one box is now sufficient by itself.
   #
   # It carries NO document content — payloads are opaque bytes sealed under a

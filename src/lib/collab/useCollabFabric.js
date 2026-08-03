@@ -1,5 +1,5 @@
-// no-broker-dep:allow-file: names Ephor once, describing unchanged default behaviour when a
-// Vulos OS/Ephor host is in front of Diwan — an optional case in the priority chain
+// no-broker-dep:allow-file: names Pier once, describing unchanged default behaviour when a
+// Vulos OS/Pier host is in front of Diwan — an optional case in the priority chain
 // transportSelection.js implements, not a default or an import.
 /**
  * src/lib/collab/useCollabFabric.js — shared FabricClient lifecycle hook
@@ -33,7 +33,7 @@
  * HONESTY GUARD — three-way reality (see docs/COLLABORATION.md §3):
  *
  *   1. HOST-BOX PEERING — this server mounts `/api/peering/*` (Vulos OS /
- *      Ephor in front of Diwan). Unchanged default behaviour.
+ *      Pier in front of Diwan). Unchanged default behaviour.
  *   2. ANY RELAYD RENDEZVOUS — no host-box peering, but this deployment has a
  *      configured rendezvous URL (config.yaml `collab.rendezvous_url` /
  *      VULOS_RENDEZVOUS_URL). The browser talks DIRECTLY to that relayd's

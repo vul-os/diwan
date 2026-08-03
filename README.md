@@ -188,7 +188,7 @@ an end-to-end-encrypted room whose key never reaches any server. The only server
 role is **content-blind peer discovery** — it learns *that* peers share a random
 room id, never any content — and **this binary serves that itself**, at
 `/api/rendezvous/*`, on by default. So one `diwan` on one box is all two people
-need: **no Vulos OS, no Ephor, no relay, no account, nothing to configure**. You
+need: **no Vulos OS, no Pier, no relay, no account, nothing to configure**. You
 *may* delegate discovery to your own `vulos-relayd` instead
 (`collab.rendezvous_url` / `VULOS_RENDEZVOUS_URL`), and it then takes precedence —
 the browser talks to that relay directly and Diwan's server is not in the

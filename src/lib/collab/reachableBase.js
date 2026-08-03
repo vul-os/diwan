@@ -1,4 +1,4 @@
-// no-broker-dep:allow-file: names Ephor/vulos-relayd three times below describing the
+// no-broker-dep:allow-file: names Pier/vulos-relayd three times below describing the
 // OPTIONAL, explicitly-configured rendezvous_url and DIWAN_PUBLIC_URL — this file's own text
 // states "Empty when unset... callers must treat '' as 'not configured', never guess a
 // default" and documents the built-in surface as "the DEFAULT path — no other product at
@@ -18,7 +18,7 @@
  * external peer can never connect.
  *
  * The box's operator surfaces the real public origin (a public domain, or an
- * Ephor tunnel URL when the box is behind NAT/CGNAT) via the backend env
+ * Pier tunnel URL when the box is behind NAT/CGNAT) via the backend env
  * DIWAN_PUBLIC_URL, exposed at the unauthenticated `GET /api/reachability`
  * endpoint (see backend/handlers/system.go).
  *
@@ -47,7 +47,7 @@
  * origin at which the Diwan binary serves its OWN signed, content-blind
  * peer-discovery protocol (backend/rendezvous, `/api/rendezvous/*`). It is on by
  * default, so a bare `diwan` on a VPS can introduce two browsers to each other
- * with no Vulos OS, no Ephor, and no external relay — which is the whole reason
+ * with no Vulos OS, no Pier, and no external relay — which is the whole reason
  * it exists. `''` when the operator turned it off (`collab.builtin_rendezvous:
  * false`) or the server predates it, and `''` must mean local-only rather than a
  * guessed path.

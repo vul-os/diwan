@@ -44,7 +44,7 @@ Diwan uses its own first-party `FabricClient` (`src/lib/collab/webrtc/fabric.js`
 
 Both of the above need peer discovery: a place to exchange WebRTC offer/answer/ICE candidates, and ICE/STUN-TURN config. Diwan picks **one of four transports** for that discovery, in this priority order (`src/lib/collab/transportSelection.js`, resolved fresh for every collab session):
 
-1. **Host-box peering (`/api/peering/*`)** — this Diwan server itself is fronted by a **Vulos OS / Ephor** deployment, which mounts:
+1. **Host-box peering (`/api/peering/*`)** — this Diwan server itself is fronted by a **Vulos OS / Pier** deployment, which mounts:
    - Signaling: `wss://<host>/api/peering/stream` — exchanges offer/answer/ICE candidates.
    - ICE config: `GET /api/peering/ice` — returns the STUN/TURN servers to use.
 
@@ -65,11 +65,11 @@ Both of the above need peer discovery: a place to exchange WebRTC offer/answer/I
 
    > **History.** Until Ephor shipped CORS on the rendezvous role, its surface sent no CORS headers and answered the preflight with `405`, so a direct call was impossible in a browser. Diwan carried a same-origin pass-through proxy at `/api/rendezvous/*` as a workaround. That proxy — and the `rendezvous_proxy_path` field it was advertised through — has been **removed**; the server-side of discovery is now nothing at all.
 
-3. **Diwan's own built-in surface — the DEFAULT.** No host box, and no relay named in the config: Diwan serves the *same* announce/resolve/signal/mailbox protocol **itself**, at `/api/rendezvous/*` on its own origin (`backend/rendezvous`). One `diwan` binary on one box is therefore all two people need — **no Vulos OS, no Ephor, no relay, no account**.
+3. **Diwan's own built-in surface — the DEFAULT.** No host box, and no relay named in the config: Diwan serves the *same* announce/resolve/signal/mailbox protocol **itself**, at `/api/rendezvous/*` on its own origin (`backend/rendezvous`). One `diwan` binary on one box is therefore all two people need — **no Vulos OS, no Pier, no relay, no account**.
 
    It is on by default and can be turned off with `collab.builtin_rendezvous: false` (see [CONFIGURATION.md](CONFIGURATION.md)), which degrades to item 4 rather than to anything broken.
 
-   **Why it exists.** WebRTC cannot introduce two browsers to each other unaided: something has to carry the first offer/answer/ICE frames. Until this surface existed, Diwan could only get that from *another product* — a Vulos OS / Ephor host, or an operator-run `vulos-relayd`. With neither, every session fell through to item 4 and a standalone binary had no peer-to-peer at all. Ephor is now a **choice** (one shared relay across several deployments, or its NAT-traversal help), not a prerequisite.
+   **Why it exists.** WebRTC cannot introduce two browsers to each other unaided: something has to carry the first offer/answer/ICE frames. Until this surface existed, Diwan could only get that from *another product* — a Vulos OS / Pier host, or an operator-run `vulos-relayd`. With neither, every session fell through to item 4 and a standalone binary had no peer-to-peer at all. Pier is now a **choice** (one shared relay across several deployments, or its NAT-traversal help), not a prerequisite.
 
    **What the server can see.** Discovery metadata, and nothing else: which Ed25519 keys are present, which key sent bytes to which, sizes, timing. Every payload it moves is opaque — sealed under the room key, which lives in the invite link's URL fragment and is never sent in an HTTP request (§4) — and live document edits never traverse it at all. That metadata is visible only to your own box, which is strictly less exposure than handing it to somebody else's relay.
 
@@ -169,7 +169,7 @@ All four editors are wired: **Docs** and **Whiteboard** are plain Y.Docs and use
 
 - **Account sharing (the ACL)** — `backend/fileacl/`: roles `viewer` < `commenter` < `editor`, plus `owner`. Grants are owner-gated server-side, land in the append-only **audit log**, and no-access responses are `404` to avoid existence leaks. Read-only **share links** (256-bit token stored only as a SHA-256 hash and shown to the owner once at mint, optional bcrypt-hashed password, expiry capped at one year) reach *only* the anonymous read path. This governs who may open the document from **your storage** — it does **not** put a server in the live-collaboration path.
 - **Live collaboration** — possession of the invite fragment. The host cannot enumerate, join, or read rooms; it also cannot audit their content. If your compliance posture requires all collaboration to be server-auditable, note that Diwan's collaboration is deliberately end-to-end and peer-to-peer — auditing happens at the account-save and version-history layer, not in the wire.
-- **Peer discovery** is available by default: this Diwan binary serves it itself at `/api/rendezvous/*` (§3), so no Vulos OS, Ephor, relay or account is required. A host-provided peering fabric or a configured rendezvous URL takes precedence when present. Only if you turn the built-in surface off *and* configure no relay is there no live P2P — and then the editor stays honestly local-only.
+- **Peer discovery** is available by default: this Diwan binary serves it itself at `/api/rendezvous/*` (§3), so no Vulos OS, Pier, relay or account is required. A host-provided peering fabric or a configured rendezvous URL takes precedence when present. Only if you turn the built-in surface off *and* configure no relay is there no live P2P — and then the editor stays honestly local-only.
 
 ---
 
@@ -241,7 +241,7 @@ In the browser, DevTools → Network shows the truth: opening a `#vp2p=` link pr
 
 **Does collaboration work across two different Diwan servers?** Yes, as long as the peers can reach the same discovery surface — either both point at the same host-box peering fabric, or both resolve the same rendezvous URL — collaboration is between *browsers*, not servers. The document does not live on either server for the purpose of the live session.
 
-**Does live P2P collaboration require a Vulos OS, an Ephor relay, or a Vulos account?** No — none of them, and nothing needs configuring. A bare `diwan` binary serves its own peer-discovery surface at `/api/rendezvous/*` (§3), so one binary on one box is enough for two people. You *may* delegate discovery to a self-hosted `vulos-relayd` by setting `collab.rendezvous_url` (see [CONFIGURATION.md](CONFIGURATION.md)) — for one shared relay across several deployments, or for its NAT-traversal help — and it then takes precedence. Either way discovery is content-blind and the document never touches it. This is not a claim on paper: `npm run test:e2e:p2p` boots the real binary and makes two real browsers converge through it, with the negative control included.
+**Does live P2P collaboration require a Vulos OS, a Pier relay, or a Vulos account?** No — none of them, and nothing needs configuring. A bare `diwan` binary serves its own peer-discovery surface at `/api/rendezvous/*` (§3), so one binary on one box is enough for two people. You *may* delegate discovery to a self-hosted `vulos-relayd` by setting `collab.rendezvous_url` (see [CONFIGURATION.md](CONFIGURATION.md)) — for one shared relay across several deployments, or for its NAT-traversal help — and it then takes precedence. Either way discovery is content-blind and the document never touches it. This is not a claim on paper: `npm run test:e2e:p2p` boots the real binary and makes two real browsers converge through it, with the negative control included.
 
 **What happens with no network at all?** You keep editing; the CRDT applies locally and an IndexedDB draft protects your work. It syncs to peers when you reconnect, and autosaves to your storage.
 

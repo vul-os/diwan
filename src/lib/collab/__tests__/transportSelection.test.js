@@ -1,5 +1,5 @@
-// no-broker-dep:allow-file: this test's own doc comment names Ephor once, asserting the
-// built-in surface is the DEFAULT "with no Ephor and no other product deployed" — this is a
+// no-broker-dep:allow-file: this test's own doc comment names Pier once, asserting the
+// built-in surface is the DEFAULT "with no Pier and no other product deployed" — this is a
 // unit test PROVING the default-off/no-broker behaviour, not a dependency.
 /**
  * transportSelection.test.js — the collab transport decision.
@@ -11,7 +11,7 @@
  *   • the priority order — host-box peering, then an EXPLICITLY configured
  *     external relay, then this server's OWN built-in surface, then local-only;
  *   • that the built-in surface is the DEFAULT (the reason a bare `diwan` binary
- *     can do P2P at all, with no Ephor and no other product deployed);
+ *     can do P2P at all, with no Pier and no other product deployed);
  *   • that "not available" is always honoured as local-only and NEVER turned into
  *     a guessed endpoint — the honesty contract the whole feature rests on;
  *   • that a malformed advertised prefix is refused rather than pasted onto our

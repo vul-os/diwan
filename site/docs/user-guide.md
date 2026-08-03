@@ -180,7 +180,7 @@ For Docs, **Collaborate via link** starts an end-to-end encrypted peer session:
 - Read-only peers see live edits but cannot make authoritative changes.
 - A tampered or malformed invite link simply fails to join — the editor stays in normal local mode.
 
-> Note: the peer-to-peer channel needs a peer-discovery transport to be reachable. By default the Diwan server you are using provides one itself (`/api/rendezvous/*`), so nothing needs configuring; an admin may instead put Diwan behind a Vulos OS / Ephor deployment (the `/api/peering/*` fabric) or point it at a self-hosted `vulos-relayd` (`collab.rendezvous_url` — see [CONFIGURATION.md](CONFIGURATION.md)). Only if an admin disables the built-in surface *and* configures neither of the others can invite-link collaboration not connect peers; account-based live collaboration (6.1) is the path that works regardless.
+> Note: the peer-to-peer channel needs a peer-discovery transport to be reachable. By default the Diwan server you are using provides one itself (`/api/rendezvous/*`), so nothing needs configuring; an admin may instead put Diwan behind a Vulos OS / Pier deployment (the `/api/peering/*` fabric) or point it at a self-hosted `vulos-relayd` (`collab.rendezvous_url` — see [CONFIGURATION.md](CONFIGURATION.md)). Only if an admin disables the built-in surface *and* configures neither of the others can invite-link collaboration not connect peers; account-based live collaboration (6.1) is the path that works regardless.
 
 ---
 

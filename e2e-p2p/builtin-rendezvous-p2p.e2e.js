@@ -1,5 +1,5 @@
-// no-broker-dep:allow-file: this suite's own subject is proving Diwan needs NO Ephor/relay by
-// default ("No Vulos OS, no Ephor, no relay, no account") — it names the broker only to assert
+// no-broker-dep:allow-file: this suite's own subject is proving Diwan needs NO Pier/relay by
+// default ("No Vulos OS, no Pier, no relay, no account") — it names the broker only to assert
 // its absence from the default path, the same pattern already recognised for a CI step
 // elsewhere in this suite.
 /**
@@ -7,7 +7,7 @@
  * nothing mocked and nothing external:
  *
  *   "One `diwan` binary on one box is enough for two people to collaborate
- *    peer-to-peer. No Vulos OS, no Ephor, no relay, no account."
+ *    peer-to-peer. No Vulos OS, no Pier, no relay, no account."
  *
  * That sentence is the whole reason backend/rendezvous exists. WebRTC cannot
  * introduce two browsers to each other unaided — something has to carry the first
@@ -67,7 +67,7 @@ test.afterAll(async () => {
 test('a bare standalone Diwan serves its own discovery surface and no host-box peering', async ({ request }) => {
   const [a] = stack.offices
 
-  // The premise: this binary is not fronted by a Vulos OS / Ephor host.
+  // The premise: this binary is not fronted by a Vulos OS / Pier host.
   const peering = await request.get(`${a.url}/api/peering/ice`)
   expect(peering.status(), 'a standalone Diwan must not serve host-box peering').toBe(404)
 

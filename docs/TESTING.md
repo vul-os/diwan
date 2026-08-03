@@ -81,7 +81,7 @@ comments, suggestions). The `officePage` fixture attaches it automatically;
 
 The one layer with **no mocks at all**. It exists because the repo's central
 architectural claim — *two people collaborate peer-to-peer through one bare
-`diwan` binary, with no Vulos OS, no Ephor, no relay and no account* — was
+`diwan` binary, with no Vulos OS, no Pier, no relay and no account* — was
 otherwise covered only by selector unit tests with a fake fabric.
 
 ```bash
