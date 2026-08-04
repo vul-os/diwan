@@ -4,7 +4,7 @@
 // is no default endpoint (RendezvousURL defaults empty, verified by
 // backend/config/config_test.go's TestDefault_RendezvousURLEmpty).
 //
-// rendezvous.js — the reference JS client for the OPEN rendezvous role served by
+// rendezvous.ts — the reference JS client for the OPEN rendezvous role served by
 // any vulos-relayd (self-hosted or Vulos-run) under its /rendezvous prefix.
 //
 // It speaks the key-addressed announce / resolve / signal / mailbox + ICE protocol
@@ -37,20 +37,20 @@ const DOMAIN = {
   mailboxDeposit: 'vulos-rdv/mailbox-deposit/1',
   mailboxPoll: 'vulos-rdv/mailbox-poll/1',
   mailboxAck: 'vulos-rdv/mailbox-ack/1',
-}
+} as const
 
 // ── base64url (unpadded) — the single binary encoding on the wire ─────────────
 
 /** Encode bytes to unpadded base64url. */
-export function b64urlEncode(bytes) {
+export function b64urlEncode(bytes: Uint8Array | ArrayBufferLike): string {
   let bin = ''
   const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
-  for (let i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i])
+  for (let i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i]!)
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
 /** Decode unpadded base64url to bytes. */
-export function b64urlDecode(str) {
+export function b64urlDecode(str: string): Uint8Array {
   const pad = str.length % 4 === 0 ? '' : '='.repeat(4 - (str.length % 4))
   const bin = atob(str.replace(/-/g, '+').replace(/_/g, '/') + pad)
   const out = new Uint8Array(bin.length)
@@ -67,7 +67,7 @@ const utf8 = new TextEncoder()
  * signature made here verifies there and vice-versa. All fields are strings
  * (binary as base64url, numbers as base-10).
  */
-export function canonicalMessage(domain, fields) {
+export function canonicalMessage(domain: string, fields: Array<string | number>): Uint8Array {
   const segs = [domain, ...fields].map((s) => utf8.encode(String(s)))
   let total = 0
   for (const s of segs) total += 4 + s.length
@@ -90,36 +90,123 @@ export function canonicalMessage(domain, fields) {
  * secret key, or call RendezvousIdentity.generate() for a fresh one.
  */
 export class RendezvousIdentity {
-  /** @param {Uint8Array} secretKey - 32-byte Ed25519 seed/secret */
-  constructor(secretKey) {
+  secretKey: Uint8Array
+  publicKey: Uint8Array
+  /** canonical base64url public key — the address of this identity */
+  key: string
+
+  /** @param secretKey - 32-byte Ed25519 seed/secret */
+  constructor(secretKey: Uint8Array | ArrayBufferLike) {
     this.secretKey = secretKey instanceof Uint8Array ? secretKey : new Uint8Array(secretKey)
     this.publicKey = ed25519.getPublicKey(this.secretKey)
-    /** canonical base64url public key — the address of this identity */
     this.key = b64urlEncode(this.publicKey)
   }
 
-  static generate() {
+  static generate(): RendezvousIdentity {
     return new RendezvousIdentity(ed25519.utils.randomSecretKey())
   }
 
   /** Sign a canonical message; returns the signature as base64url. */
-  sign(msg) {
+  sign(msg: Uint8Array): string {
     return b64urlEncode(ed25519.sign(msg, this.secretKey))
   }
 }
 
 /** Fresh random nonce (base64url of 16 bytes) for replay protection. */
-export function randomNonce() {
+export function randomNonce(): string {
   const b = new Uint8Array(16)
   globalThis.crypto.getRandomValues(b)
   return b64urlEncode(b)
 }
 
-function nowUnix() {
+function nowUnix(): number {
   return Math.floor(Date.now() / 1000)
 }
 
+// ── wire response shapes ────────────────────────────────────────────────────
+
+/** The minimal `fetch`-shaped response this client depends on. */
+export interface RendezvousFetchResponse {
+  ok: boolean
+  status: number
+  statusText?: string
+  json(): Promise<unknown>
+}
+
+/** An injectable fetch, matching the subset of `fetch` this client calls. */
+export type RendezvousFetch = (url: string, init?: RequestInit) => Promise<RendezvousFetchResponse>
+
+export interface AnnounceResult {
+  ok: boolean
+  key: string
+  ttl: number
+  expires_at: number
+}
+
+export interface ResolveResult {
+  key: string
+  online: boolean
+  endpoints?: string[]
+  meta?: string
+  expires_at?: number
+}
+
+export interface DepositResult {
+  ok: boolean
+  id: string
+  expires_at: number
+}
+
+/** One decoded blob from a signal/mailbox poll — the opaque `payload` bytes are pre-decoded. */
+export interface PolledBlob {
+  id: string
+  from: string
+  /** decoded opaque bytes */
+  payload: Uint8Array
+  payloadB64: string
+  ts: number
+  exp: number
+}
+
+export interface AckResult {
+  deleted: number
+}
+
+export interface IceServer {
+  urls: string[]
+  username?: string
+  credential?: string
+  ttl?: number
+}
+
+/** Wire shape of one poll-response blob, before payload decoding. */
+interface RawPolledBlob {
+  id: string
+  from: string
+  payload: string
+  ts: number
+  exp: number
+}
+
 // ── client ──────────────────────────────────────────────────────────────────
+
+/** Constructor options for {@link RendezvousClient}. */
+export interface RendezvousClientOptions {
+  /** relay origin, e.g. "https://relay.example.com" */
+  baseUrl: string
+  /** this peer's Ed25519 identity */
+  identity: RendezvousIdentity
+  /** mount prefix (default "/rendezvous") */
+  prefix?: string
+  /**
+   * optional Bearer token for the relay's own gate (the rendezvous protocol
+   * itself is signature-authenticated; a token is only for a paid/gated
+   * relay's edge). Refused on an insecure (plaintext non-loopback) baseUrl.
+   */
+  authToken?: string | null
+  /** injectable fetch (tests) */
+  fetch?: RendezvousFetch
+}
 
 /**
  * RendezvousClient talks to a single relayd's rendezvous surface.
@@ -134,19 +221,14 @@ function nowUnix() {
  *   await rdv.signalAck(msgs.map(m => m.id))
  */
 export class RendezvousClient {
-  /**
-   * @param {object} opts
-   * @param {string}  opts.baseUrl   - relay origin, e.g. "https://relay.example.com"
-   * @param {RendezvousIdentity} opts.identity - this peer's Ed25519 identity
-   * @param {string} [opts.prefix]   - mount prefix (default "/rendezvous")
-   * @param {string} [opts.authToken]- optional Bearer token for the relay's own
-   *                                    gate (the rendezvous protocol itself is
-   *                                    signature-authenticated; a token is only for
-   *                                    a paid/gated relay's edge). Refused on an
-   *                                    insecure (plaintext non-loopback) baseUrl.
-   * @param {typeof fetch} [opts.fetch] - injectable fetch (tests)
-   */
-  constructor({ baseUrl, identity, prefix = '/rendezvous', authToken = null, fetch: fetchImpl } = {}) {
+  baseUrl: string
+  prefix: string
+  identity: RendezvousIdentity
+  key: string
+  private _authToken: string | null | undefined
+  private _fetch: RendezvousFetch
+
+  constructor({ baseUrl, identity, prefix = '/rendezvous', authToken = null, fetch: fetchImpl }: RendezvousClientOptions) {
     if (!baseUrl) throw new RelayDepositError('rendezvous: baseUrl is required', { code: 'NO_BASE_URL' })
     if (!(identity instanceof RendezvousIdentity)) {
       throw new RelayDepositError('rendezvous: identity (RendezvousIdentity) is required', { code: 'NO_IDENTITY' })
@@ -162,7 +244,7 @@ export class RendezvousClient {
     this.identity = identity
     this.key = identity.key
     this._authToken = authToken
-    this._fetch = fetchImpl || ((...a) => (globalThis.fetch)(...a))
+    this._fetch = fetchImpl || ((url: string, init?: RequestInit) => globalThis.fetch(url, init))
   }
 
   /**
@@ -171,11 +253,8 @@ export class RendezvousClient {
    * the rendezvous signaling transport to hold both a per-peer "self" client and
    * a session-derived "room" client (whose private key every session member can
    * derive) against one relay without re-plumbing the transport config.
-   *
-   * @param {RendezvousIdentity} identity
-   * @returns {RendezvousClient}
    */
-  withIdentity(identity) {
+  withIdentity(identity: RendezvousIdentity): RendezvousClient {
     return new RendezvousClient({
       baseUrl: this.baseUrl,
       identity,
@@ -185,17 +264,17 @@ export class RendezvousClient {
     })
   }
 
-  _url(path) {
+  private _url(path: string): string {
     return this.baseUrl + this.prefix + path
   }
 
-  _headers() {
-    const h = { 'Content-Type': 'application/json' }
+  private _headers(): Record<string, string> {
+    const h: Record<string, string> = { 'Content-Type': 'application/json' }
     if (this._authToken) h.Authorization = `Bearer ${this._authToken}`
     return h
   }
 
-  async _postJSON(path, body) {
+  private async _postJSON(path: string, body: unknown): Promise<RendezvousFetchResponse> {
     const res = await this._fetch(this._url(path), {
       method: 'POST',
       headers: this._headers(),
@@ -209,14 +288,14 @@ export class RendezvousClient {
   /**
    * Announce this identity's presence (signed, TTL'd). endpoints are OPAQUE hints
    * the relay stores and echoes but never dials.
-   * @param {object} [opts]
-   * @param {string[]} [opts.endpoints] - connection hints (URLs / multiaddrs)
-   * @param {string}   [opts.meta]      - opaque app-defined blob (≤2 KiB)
-   * @param {number}   [opts.ttl]       - requested lifetime in seconds (clamped)
-   * @returns {Promise<{ok:boolean, key:string, ttl:number, expires_at:number}>}
+   * @param opts.endpoints - connection hints (URLs / multiaddrs)
+   * @param opts.meta      - opaque app-defined blob (≤2 KiB)
+   * @param opts.ttl       - requested lifetime in seconds (clamped)
    */
-  async announce({ endpoints = [], meta = '', ttl = 0 } = {}) {
-    const req = {
+  async announce({ endpoints = [], meta = '', ttl = 0 }: { endpoints?: string[], meta?: string, ttl?: number } = {}): Promise<AnnounceResult> {
+    const req: {
+      key: string, endpoints: string[], meta: string, ttl: number, nonce: string, ts: number, sig?: string
+    } = {
       key: this.key,
       endpoints,
       meta,
@@ -227,65 +306,64 @@ export class RendezvousClient {
     const fields = [req.key, String(req.ts), String(req.ttl), req.nonce, req.meta, ...endpoints]
     req.sig = this.identity.sign(canonicalMessage(DOMAIN.announce, fields))
     const res = await this._postJSON('/announce', req)
-    return this._json(res, 'announce')
+    return this._json<AnnounceResult>(res, 'announce')
   }
 
   /** Withdraw this identity's presence record (signed). */
-  async withdraw() {
-    const req = { key: this.key, nonce: randomNonce(), ts: nowUnix() }
+  async withdraw(): Promise<{ ok: boolean }> {
+    const req: { key: string, nonce: string, ts: number, sig?: string } = { key: this.key, nonce: randomNonce(), ts: nowUnix() }
     req.sig = this.identity.sign(canonicalMessage(DOMAIN.withdraw, [req.key, String(req.ts), req.nonce]))
     const res = await this._postJSON('/withdraw', req)
-    return this._json(res, 'withdraw')
+    return this._json<{ ok: boolean }>(res, 'withdraw')
   }
 
   /**
    * Resolve a key to its current presence. Unauthenticated read.
-   * @param {string} key - base64url Ed25519 public key
-   * @returns {Promise<{key:string, online:boolean, endpoints?:string[], meta?:string, expires_at?:number}>}
+   * @param key - base64url Ed25519 public key
    */
-  async resolve(key) {
+  async resolve(key: string): Promise<ResolveResult> {
     const res = await this._fetch(this._url('/resolve/' + encodeURIComponent(key)), {
       method: 'GET',
       headers: this._authToken ? { Authorization: `Bearer ${this._authToken}` } : {},
     })
     if (res.status === 404) {
-      const body = await res.json().catch(() => ({}))
+      const body = (await res.json().catch(() => ({}))) as Partial<ResolveResult>
       return { key, online: false, ...body }
     }
-    return this._json(res, 'resolve')
+    return this._json<ResolveResult>(res, 'resolve')
   }
 
   // ── SIGNAL (short-TTL WebRTC offer/answer/ICE) ───────────────────────────────
 
   /** Deposit an opaque WebRTC signal blob addressed to recipientKey. */
-  signalDeposit(recipientKey, payload, ttl = 0) {
+  signalDeposit(recipientKey: string, payload: Uint8Array | string, ttl = 0): Promise<DepositResult> {
     return this._deposit(DOMAIN.signalDeposit, '/signal/', recipientKey, payload, ttl)
   }
 
   /** Long-poll this identity's signal inbox. Returns an array of {id, from, payload(bytes), ts, exp}. */
-  signalPoll({ wait = 0 } = {}) {
+  signalPoll({ wait = 0 }: { wait?: number } = {}): Promise<PolledBlob[]> {
     return this._poll(DOMAIN.signalPoll, '/signal/', wait)
   }
 
   /** Ack (delete) consumed signal blobs by id. */
-  signalAck(ids) {
+  signalAck(ids: string | string[]): Promise<AckResult> {
     return this._ack(DOMAIN.signalAck, '/signal/', ids)
   }
 
   // ── MAILBOX (longer-TTL opaque encrypted blobs) ──────────────────────────────
 
   /** Deposit an opaque encrypted blob into recipientKey's mailbox. */
-  mailboxDeposit(recipientKey, payload, ttl = 0) {
+  mailboxDeposit(recipientKey: string, payload: Uint8Array | string, ttl = 0): Promise<DepositResult> {
     return this._deposit(DOMAIN.mailboxDeposit, '/mailbox/', recipientKey, payload, ttl)
   }
 
   /** Long-poll this identity's mailbox. */
-  mailboxPoll({ wait = 0 } = {}) {
+  mailboxPoll({ wait = 0 }: { wait?: number } = {}): Promise<PolledBlob[]> {
     return this._poll(DOMAIN.mailboxPoll, '/mailbox/', wait)
   }
 
   /** Ack (delete) consumed mailbox blobs by id. */
-  mailboxAck(ids) {
+  mailboxAck(ids: string | string[]): Promise<AckResult> {
     return this._ack(DOMAIN.mailboxAck, '/mailbox/', ids)
   }
 
@@ -294,32 +372,39 @@ export class RendezvousClient {
   /**
    * Fetch the relay's ICE server list (STUN + ephemeral-cred TURN). The optional
    * key hint is folded into the TURN username (non-authenticating bookkeeping).
-   * @returns {Promise<Array<{urls:string[], username?:string, credential?:string, ttl?:number}>>}
    */
-  async ice() {
+  async ice(): Promise<IceServer[]> {
     const q = this.key ? '?key=' + encodeURIComponent(this.key) : ''
     const res = await this._fetch(this._url('/ice' + q), {
       method: 'GET',
       headers: this._authToken ? { Authorization: `Bearer ${this._authToken}` } : {},
     })
-    const body = await this._json(res, 'ice')
+    const body = await this._json<{ ice_servers?: IceServer[] }>(res, 'ice')
     return body.ice_servers || []
   }
 
   /** The ICE URL (for handing to FabricClient's iceUrl option). */
-  iceUrl() {
+  iceUrl(): string {
     return this._url('/ice')
   }
 
   // ── shared internals ─────────────────────────────────────────────────────────
 
-  async _deposit(domain, pathBase, recipientKey, payload, ttl) {
+  private async _deposit(
+    domain: string,
+    pathBase: string,
+    recipientKey: string,
+    payload: Uint8Array | string,
+    ttl: number,
+  ): Promise<DepositResult> {
     // ArrayBuffer.isView() is realm-agnostic (unlike `instanceof Uint8Array`,
     // which fails for a Uint8Array minted in a different realm, e.g. a TextEncoder
     // output under jsdom) — so byte payloads are always base64url-encoded, and
     // only genuine strings are passed through as pre-encoded base64url.
     const payloadB64 = ArrayBuffer.isView(payload) ? b64urlEncode(payload) : String(payload)
-    const req = {
+    const req: {
+      from: string, to: string, payload: string, ttl: number, nonce: string, ts: number, sig?: string
+    } = {
       from: this.key,
       to: recipientKey,
       payload: payloadB64,
@@ -330,15 +415,17 @@ export class RendezvousClient {
     const fields = [req.from, req.to, String(req.ts), String(req.ttl), req.nonce, req.payload]
     req.sig = this.identity.sign(canonicalMessage(domain, fields))
     const res = await this._postJSON(pathBase + encodeURIComponent(recipientKey), req)
-    return this._json(res, 'deposit')
+    return this._json<DepositResult>(res, 'deposit')
   }
 
-  async _poll(domain, pathBase, wait) {
-    const req = { key: this.key, nonce: randomNonce(), ts: nowUnix(), wait: wait | 0 }
+  private async _poll(domain: string, pathBase: string, wait: number): Promise<PolledBlob[]> {
+    const req: { key: string, nonce: string, ts: number, wait: number, sig?: string } = {
+      key: this.key, nonce: randomNonce(), ts: nowUnix(), wait: wait | 0,
+    }
     req.sig = this.identity.sign(canonicalMessage(domain, [req.key, String(req.ts), req.nonce]))
     const res = await this._postJSON(pathBase + encodeURIComponent(this.key) + '/poll', req)
-    const body = await this._json(res, 'poll')
-    const blobs = (body.blobs || []).map((b) => ({
+    const body = await this._json<{ blobs?: RawPolledBlob[] }>(res, 'poll')
+    const blobs: PolledBlob[] = (body.blobs || []).map((b) => ({
       id: b.id,
       from: b.from,
       payload: b64urlDecode(b.payload), // decoded opaque bytes
@@ -349,20 +436,22 @@ export class RendezvousClient {
     return blobs
   }
 
-  async _ack(domain, pathBase, ids) {
+  private async _ack(domain: string, pathBase: string, ids: string | string[]): Promise<AckResult> {
     const list = Array.isArray(ids) ? ids : [ids]
     if (list.length === 0) return { deleted: 0 }
-    const req = { key: this.key, ids: list, nonce: randomNonce(), ts: nowUnix() }
+    const req: { key: string, ids: string[], nonce: string, ts: number, sig?: string } = {
+      key: this.key, ids: list, nonce: randomNonce(), ts: nowUnix(),
+    }
     req.sig = this.identity.sign(canonicalMessage(domain, [req.key, String(req.ts), req.nonce, ...list]))
     const res = await this._postJSON(pathBase + encodeURIComponent(this.key) + '/ack', req)
-    return this._json(res, 'ack')
+    return this._json<AckResult>(res, 'ack')
   }
 
-  async _json(res, op) {
+  private async _json<T>(res: RendezvousFetchResponse, op: string): Promise<T> {
     if (!res.ok) {
-      let reason = res.statusText || 'error'
+      let reason: unknown = res.statusText || 'error'
       try {
-        const b = await res.json()
+        const b = (await res.json()) as { error?: unknown } | null
         if (b && b.error) reason = b.error
       } catch { /* non-JSON body */ }
       throw new RelayDepositError(`rendezvous ${op} failed: ${res.status} ${reason}`, {
@@ -370,7 +459,7 @@ export class RendezvousClient {
         status: res.status,
       })
     }
-    return res.json()
+    return res.json() as Promise<T>
   }
 }
 

@@ -3,7 +3,7 @@
 // transportSelection.js only selects when an operator explicitly configures it; the built-in
 // surface (backend/rendezvous) is the default and needs none of this.
 //
-// rendezvousSignaling.js — a drop-in signaling transport for FabricClient that
+// rendezvousSignaling.ts — a drop-in signaling transport for FabricClient that
 // runs the COMPLETE WebRTC signaling lifecycle (presence discovery + offer /
 // answer / ICE exchange + polite-peer negotiation) over any vulos-relayd's OPEN
 // rendezvous surface (announce / resolve / signal), with NO host box and no
@@ -61,7 +61,7 @@
 // ECDSA key; the peerId↔rendezvous-key mapping is a routing hint the handshake
 // does not trust. Use unguessable session ids for private rooms.
 
-import { SignalingClient } from './signaling.js'
+import { SignalingClient, type SignFrameFn, type SignedPreKeyClaim, type SignalPayload } from './signaling.js'
 import { RendezvousClient, RendezvousIdentity, b64urlEncode } from './rendezvous.js'
 import { sha256 } from '@noble/hashes/sha2.js'
 
@@ -91,11 +91,8 @@ const SEEN_BOARD_MAX = 2_000
  * Derive the deterministic Ed25519 room identity for a sessionId. Every member of
  * the session computes the identical keypair, so its rendezvous inbox is a shared
  * discovery board. Not secret — knowing the sessionId is what grants membership.
- *
- * @param {string} sessionId
- * @returns {RendezvousIdentity}
  */
-export function deriveRoomIdentity(sessionId) {
+export function deriveRoomIdentity(sessionId: string): RendezvousIdentity {
   const seed = sha256(new TextEncoder().encode(ROOM_SEED_DOMAIN + String(sessionId)))
   return new RendezvousIdentity(seed) // sha256 → 32 bytes = an Ed25519 secret
 }
@@ -103,23 +100,62 @@ export function deriveRoomIdentity(sessionId) {
 const utf8 = new TextEncoder()
 const utf8dec = new TextDecoder()
 
-export class RendezvousSignalingClient extends EventTarget {
+/** The opaque envelope deposited/read on a rendezvous inbox — routing identity + the wrapped SignalPayload. */
+interface WrappedEnvelope {
+  from: string
+  rdvKey: string
+  payload: SignalPayload
+}
+
+/** Constructor options for {@link RendezvousSignalingClient}. */
+export interface RendezvousSignalingClientOptions {
   /**
-   * @param {object} opts
-   * @param {RendezvousClient} opts.selfClient - the caller's per-peer rendezvous
-   *        client (its Ed25519 identity is this peer's rendezvous address). The
-   *        room client is derived from it via withIdentity().
-   * @param {string} opts.sessionId
-   * @param {string} opts.peerId
-   * @param {() => (string|null)} [opts.getDepositPubKey]
-   * @param {() => (string|null)} [opts.getBoxPubKey]
-   * @param {() => (object|null)} [opts.getSignedPreKey]
-   * @param {((msg:string)=>Promise<string>)|null} [opts.signFrame]
-   * @param {boolean} [opts.requirePeerAuth=true]
-   * @param {number}  [opts.maxAttempts]
-   * @param {boolean} [opts.pollLoop=true] - start the recurring long-poll timers on
-   *        connect(). Tests set false and drive `_pollBoardOnce`/`_pollInboxOnce`.
+   * the caller's per-peer rendezvous client (its Ed25519 identity is this
+   * peer's rendezvous address). The room client is derived from it via
+   * withIdentity().
    */
+  selfClient: RendezvousClient
+  sessionId: string
+  peerId: string
+  getDepositPubKey?: (() => string | null) | null
+  getBoxPubKey?: (() => string | null) | null
+  getSignedPreKey?: (() => SignedPreKeyClaim | null) | null
+  signFrame?: SignFrameFn | null
+  requirePeerAuth?: boolean
+  maxAttempts?: number
+  /**
+   * start the recurring long-poll timers on connect(). Tests set false and
+   * drive `_pollBoardOnce`/`_pollInboxOnce`.
+   */
+  pollLoop?: boolean
+}
+
+export class RendezvousSignalingClient extends EventTarget {
+  private _self: RendezvousClient
+  private _room: RendezvousClient
+  private _session: string
+  private _peerId: string
+  private _signFrame: SignFrameFn | null | undefined
+  private _pollLoop: boolean
+  private _maxAttempts: number
+  private _core: SignalingClient
+
+  // peerId ↔ rendezvous address routing hints (learned from the board / inbox).
+  /** peerId → rendezvous key (base64url) */
+  private _peerRdvKey: Map<string, string>
+  /** peerIds we have already dispatched a `join` for */
+  private _knownPeers: Set<string>
+  /** processed board blob ids (bounded) */
+  private _seenBoard: Set<string>
+
+  private _stopped: boolean
+  private _open: boolean
+  private _degraded: boolean
+  private _reconnectAttempts: number
+  /** id of our own last board deposit (for heartbeat replace) */
+  private _boardBlobId: string | null
+  private _heartbeatTimer: ReturnType<typeof setInterval> | null
+
   constructor({
     selfClient,
     sessionId,
@@ -131,7 +167,7 @@ export class RendezvousSignalingClient extends EventTarget {
     requirePeerAuth = true,
     maxAttempts = RECONNECT_MAX_ATTEMPTS,
     pollLoop = true,
-  }) {
+  }: RendezvousSignalingClientOptions) {
     super()
     if (!(selfClient instanceof RendezvousClient)) {
       throw new TypeError('RendezvousSignalingClient: selfClient (RendezvousClient) is required')
@@ -163,33 +199,29 @@ export class RendezvousSignalingClient extends EventTarget {
     })
     // Surface the core's verified `signal` events to FabricClient unchanged.
     this._core.addEventListener('signal', (ev) => {
-      this.dispatchEvent(new CustomEvent('signal', { detail: ev.detail }))
+      this.dispatchEvent(new CustomEvent('signal', { detail: (ev as CustomEvent).detail }))
     })
 
-    // peerId ↔ rendezvous address routing hints (learned from the board / inbox).
-    /** @type {Map<string,string>} peerId → rendezvous key (base64url) */
     this._peerRdvKey = new Map()
-    /** @type {Set<string>} peerIds we have already dispatched a `join` for */
     this._knownPeers = new Set()
-    /** @type {Set<string>} processed board blob ids (bounded) */
     this._seenBoard = new Set()
 
     this._stopped = false
     this._open = false
     this._degraded = false
     this._reconnectAttempts = 0
-    this._boardBlobId = null // id of our own last board deposit (for heartbeat replace)
+    this._boardBlobId = null
     this._heartbeatTimer = null
   }
 
   /** This peer's rendezvous address (Ed25519 public key, base64url). */
-  get key() { return this._self.key }
+  get key(): string { return this._self.key }
 
   /** The shared session room's rendezvous address. */
-  get roomKey() { return this._room.key }
+  get roomKey(): string { return this._room.key }
 
   /** The rendezvous address learned for a peerId, or null. */
-  rdvKeyFor(peerId) { return this._peerRdvKey.get(peerId) ?? null }
+  rdvKeyFor(peerId: string): string | null { return this._peerRdvKey.get(peerId) ?? null }
 
   // ── lifecycle ────────────────────────────────────────────────────────────────
 
@@ -198,7 +230,7 @@ export class RendezvousSignalingClient extends EventTarget {
    * discovery + inbox long-poll loops. Mirrors SignalingClient.connect() (fire and
    * forget from FabricClient.join()); dispatches 'signaling-open' once established.
    */
-  async connect() {
+  async connect(): Promise<void> {
     this._stopped = false
     try {
       await this._announceAndJoin()
@@ -210,13 +242,13 @@ export class RendezvousSignalingClient extends EventTarget {
           this._announceAndJoin().catch(() => { /* retried next tick */ })
         }, HEARTBEAT_MS)
       }
-    } catch (err) {
+    } catch {
       this._scheduleReconnect()
     }
   }
 
   /** Announce our presence + (re)deposit our signed join onto the room board. */
-  async _announceAndJoin() {
+  async _announceAndJoin(): Promise<void> {
     // Announce our own presence so a peer can also resolve us directly. Endpoints
     // are opaque hints; we advertise none (the WebRTC/ICE path handles reachability).
     await this._self.announce({ meta: 'vulos-fabric', ttl: 0 }).catch(() => {})
@@ -233,12 +265,12 @@ export class RendezvousSignalingClient extends EventTarget {
   }
 
   /** Cleanly leave: tombstone on the board, withdraw presence, stop loops. */
-  close() {
+  close(): void {
     this._stopped = true
-    clearInterval(this._heartbeatTimer)
+    if (this._heartbeatTimer !== null) clearInterval(this._heartbeatTimer)
     this._heartbeatTimer = null
     // Best-effort leave tombstone so peers drop us promptly, then withdraw.
-    const leave = { type: 'leave', session: this._session }
+    const leave: SignalPayload = { type: 'leave', session: this._session }
     this._self.signalDeposit(this._room.key, this._wrap(leave)).catch(() => {})
     if (this._boardBlobId) this._room.signalAck([this._boardBlobId]).catch(() => {})
     this._self.withdraw().catch(() => {})
@@ -251,35 +283,37 @@ export class RendezvousSignalingClient extends EventTarget {
    * key. Silently drops if we have not learned the recipient's rendezvous address
    * yet (FabricClient only signals peers it discovered via the board).
    */
-  async signal(type, toId, data = {}) {
+  async signal(type: 'offer' | 'answer' | 'ice', toId: string, data: Record<string, unknown> = {}): Promise<void> {
     const rdvKey = this._peerRdvKey.get(toId)
     if (!rdvKey) return
     const payload = await this._core._buildSignalPayload(type, toId, data)
-    await this._self.signalDeposit(rdvKey, this._wrap(payload)).catch((err) => {
+    await this._self.signalDeposit(rdvKey, this._wrap(payload)).catch((err: unknown) => {
       // A deposit failure only delays this frame; ICE is best-effort and
       // offer/answer are re-driven on reconnect. Never throw into FabricClient.
-      if (typeof console !== 'undefined') console.warn('[rendezvous-signal] deposit failed:', err?.message)
+      if (typeof console !== 'undefined') {
+        console.warn('[rendezvous-signal] deposit failed:', err instanceof Error ? err.message : err)
+      }
     })
   }
 
   // ── peer-key helpers (delegated to the shared core, unchanged semantics) ──────
 
-  hasPeerKey(id) { return this._core.hasPeerKey(id) }
-  getPeerBoxKey(id) { return this._core.getPeerBoxKey(id) }
-  getPeerSignedPreKey(id) { return this._core.getPeerSignedPreKey(id) }
-  isPeerV2Capable(id) { return this._core.isPeerV2Capable(id) }
-  verifyPeerSignedPreKey(id, spk) { return this._core.verifyPeerSignedPreKey(id, spk) }
-  verifyPeerSig(id, msg, sig) { return this._core.verifyPeerSig(id, msg, sig) }
+  hasPeerKey(id: string): boolean { return this._core.hasPeerKey(id) }
+  getPeerBoxKey(id: string): string | null { return this._core.getPeerBoxKey(id) }
+  getPeerSignedPreKey(id: string): SignedPreKeyClaim | null { return this._core.getPeerSignedPreKey(id) }
+  isPeerV2Capable(id: string): boolean { return this._core.isPeerV2Capable(id) }
+  verifyPeerSignedPreKey(id: string, spk: { pub: string, sig: string }): Promise<boolean> { return this._core.verifyPeerSignedPreKey(id, spk) }
+  verifyPeerSig(id: string, msg: string, sig: string): Promise<boolean | null> { return this._core.verifyPeerSig(id, msg, sig) }
 
   // ── internals ─────────────────────────────────────────────────────────────────
 
   /** Wrap a SignalPayload with our routing identity → opaque bytes for a deposit. */
-  _wrap(payload) {
+  private _wrap(payload: SignalPayload): Uint8Array {
     return utf8.encode(JSON.stringify({ from: this._peerId, rdvKey: this._self.key, payload }))
   }
 
   /** Parse a deposited blob's opaque bytes back into { from, rdvKey, payload }. */
-  _unwrap(bytes) {
+  private _unwrap(bytes: Uint8Array): WrappedEnvelope | null {
     try {
       const obj = JSON.parse(utf8dec.decode(bytes))
       if (!obj || typeof obj !== 'object' || !obj.from || !obj.payload) return null
@@ -287,7 +321,7 @@ export class RendezvousSignalingClient extends EventTarget {
     } catch { return null }
   }
 
-  _markOpen() {
+  private _markOpen(): void {
     this._reconnectAttempts = 0
     this._degraded = false
     if (!this._open) {
@@ -296,14 +330,14 @@ export class RendezvousSignalingClient extends EventTarget {
     }
   }
 
-  _markClosed() {
+  private _markClosed(): void {
     if (this._open) {
       this._open = false
       this.dispatchEvent(new CustomEvent('signaling-close'))
     }
   }
 
-  _scheduleReconnect() {
+  private _scheduleReconnect(): void {
     if (this._stopped) return
     this._markClosed()
     this._reconnectAttempts++
@@ -316,7 +350,7 @@ export class RendezvousSignalingClient extends EventTarget {
   }
 
   /** One board poll → discover joins/leaves. Returns the number of blobs seen. */
-  async _pollBoardOnce(wait = 0) {
+  async _pollBoardOnce(wait = 0): Promise<number> {
     const blobs = await this._room.signalPoll({ wait })
     for (const b of blobs) {
       if (this._seenBoard.has(b.id)) continue
@@ -343,9 +377,9 @@ export class RendezvousSignalingClient extends EventTarget {
   }
 
   /** One inbox poll → deliver offer/answer/ice addressed to us, then ack them. */
-  async _pollInboxOnce(wait = 0) {
+  async _pollInboxOnce(wait = 0): Promise<number> {
     const blobs = await this._self.signalPoll({ wait })
-    const ackIds = []
+    const ackIds: string[] = []
     for (const b of blobs) {
       ackIds.push(b.id)
       const w = this._unwrap(b.payload)
@@ -357,14 +391,15 @@ export class RendezvousSignalingClient extends EventTarget {
     return blobs.length
   }
 
-  _rememberBoardBlob(id) {
+  private _rememberBoardBlob(id: string): void {
     if (this._seenBoard.size >= SEEN_BOARD_MAX) {
-      this._seenBoard.delete(this._seenBoard.values().next().value)
+      const oldest = this._seenBoard.values().next().value
+      if (oldest !== undefined) this._seenBoard.delete(oldest)
     }
     this._seenBoard.add(id)
   }
 
-  async _loopBoard() {
+  private async _loopBoard(): Promise<void> {
     while (!this._stopped) {
       try {
         await this._pollBoardOnce(POLL_WAIT_S)
@@ -377,7 +412,7 @@ export class RendezvousSignalingClient extends EventTarget {
     }
   }
 
-  async _loopInbox() {
+  private async _loopInbox(): Promise<void> {
     while (!this._stopped) {
       try {
         await this._pollInboxOnce(POLL_WAIT_S)
@@ -391,6 +426,6 @@ export class RendezvousSignalingClient extends EventTarget {
   }
 }
 
-function sleep(ms) {
+function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms))
 }

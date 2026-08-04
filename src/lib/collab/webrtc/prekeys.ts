@@ -1,9 +1,9 @@
 /**
- * prekeys.js — X3DH-style forward-secret content keys for the relay-fallback path.
+ * prekeys.ts — X3DH-style forward-secret content keys for the relay-fallback path.
  *
  * ## Why
  *
- * relayBox.js v1 derives the per-message AEAD key with STATIC-STATIC X25519 ECDH
+ * relayBox.ts v1 derives the per-message AEAD key with STATIC-STATIC X25519 ECDH
  * (`deriveKey(senderBoxPriv, recipientBoxPub)`): both sides use their long-term
  * (per-session) box key, so the shared key is the SAME for every message. A
  * stolen box/identity key therefore retroactively decrypts EVERY captured
@@ -42,7 +42,7 @@
  *   salt = the two ids sorted lexicographically and joined with ':';
  *   info = "vula-x3dh-content-v2"; HKDF-SHA256, 32-byte output.
  * Given identical X25519 key bytes a Go responder and this JS initiator derive
- * the SAME SK (see prekeys.test.js "matches the Go reference vector").
+ * the SAME SK (see prekeys.test.ts "matches the Go reference vector").
  *
  * Pure JS, audited @noble/* primitives only — no native deps.
  */
@@ -58,14 +58,18 @@ const X25519_LEN = 32
 
 const _enc = new TextEncoder()
 
-function _randPriv() {
-  return x25519.utils.randomSecretKey
-    ? x25519.utils.randomSecretKey()
-    : x25519.utils.randomPrivateKey()
+// @noble/curves 2.x exposes randomSecretKey(); fall back to the older name for
+// any older/newer copy on the resolution path that still exposes it under that
+// name (not present in the installed version's own .d.ts, hence the cast).
+type X25519UtilsCompat = { randomSecretKey?: () => Uint8Array, randomPrivateKey?: () => Uint8Array }
+
+function _randPriv(): Uint8Array {
+  const utils = x25519.utils as X25519UtilsCompat
+  return utils.randomSecretKey ? utils.randomSecretKey() : utils.randomPrivateKey!()
 }
 
 /** Random opaque key id (mirrors prekeys.go newKeyID: 12 random bytes, b64url). */
-function newKeyID() {
+function newKeyID(): string {
   const b = crypto.getRandomValues(new Uint8Array(12))
   // base64url, no padding (RawURLEncoding).
   return bytesToB64(b).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
@@ -80,12 +84,10 @@ function newKeyID() {
  *   salt = sort(idA,idB)[0] + ":" + sort(...)[1]
  *   info = "vula-x3dh-content-v2"
  *
- * @param {Uint8Array} dhConcat  DH1||DH2||DH3[||DH4]
- * @param {string} idA
- * @param {string} idB
- * @returns {Uint8Array} 32-byte SK
+ * @param dhConcat  DH1||DH2||DH3[||DH4]
+ * @returns 32-byte SK
  */
-export function x3dhKDF(dhConcat, idA, idB) {
+export function x3dhKDF(dhConcat: Uint8Array, idA: string, idB: string): Uint8Array {
   const ikm = new Uint8Array(32 + dhConcat.length)
   ikm.fill(0xff, 0, 32)
   ikm.set(dhConcat, 32)
@@ -96,7 +98,7 @@ export function x3dhKDF(dhConcat, idA, idB) {
   return hkdf(sha256, ikm, salt, _enc.encode(X3DH_HKDF_INFO), 32)
 }
 
-function _concat(parts) {
+function _concat(parts: Uint8Array[]): Uint8Array {
   let n = 0
   for (const p of parts) n += p.length
   const out = new Uint8Array(n)
@@ -105,24 +107,37 @@ function _concat(parts) {
   return out
 }
 
-function _x25519(priv, pub) {
+function _x25519(priv: Uint8Array, pub: Uint8Array): Uint8Array {
   return x25519.getSharedSecret(priv, pub)
 }
 
 // ─── Sender side (X3DHInitiate) ───────────────────────────────────────────────
 
+/** Arguments to {@link x3dhInitiate}. */
+export interface X3dhInitiateArgs {
+  /** sender long-term (box) X25519 private — IK_send */
+  identityPriv: Uint8Array
+  /** recipient long-term (box) X25519 public — IK_recv */
+  recipientIdentityPub: Uint8Array
+  /** recipient signed prekey public — SPK_recv */
+  signedPreKeyPub: Uint8Array
+  /** recipient one-time prekey public — OPK_recv */
+  oneTimePreKeyPub?: Uint8Array | null
+  /** sender identity id (salt input) */
+  senderId: string
+  /** recipient identity id (salt input) */
+  recipientId: string
+}
+
+/** Result of {@link x3dhInitiate}. */
+export interface X3dhInitiateResult {
+  ephemeralPub: Uint8Array
+  sk: Uint8Array
+}
+
 /**
  * Derive a forward-secret content key SK for sending to a recipient bundle.
  * Mirrors `prekeys.go:X3DHInitiate`. Generates a fresh ephemeral key.
- *
- * @param {object} p
- * @param {Uint8Array} p.identityPriv      sender long-term (box) X25519 private — IK_send
- * @param {Uint8Array} p.recipientIdentityPub  recipient long-term (box) X25519 public — IK_recv
- * @param {Uint8Array} p.signedPreKeyPub   recipient signed prekey public — SPK_recv
- * @param {Uint8Array|null} [p.oneTimePreKeyPub]  recipient one-time prekey public — OPK_recv
- * @param {string} p.senderId              sender identity id (salt input)
- * @param {string} p.recipientId           recipient identity id (salt input)
- * @returns {{ ephemeralPub: Uint8Array, sk: Uint8Array }}
  */
 export function x3dhInitiate({
   identityPriv,
@@ -131,7 +146,7 @@ export function x3dhInitiate({
   oneTimePreKeyPub = null,
   senderId,
   recipientId,
-}) {
+}: X3dhInitiateArgs): X3dhInitiateResult {
   const ekPriv = _randPriv()
   const ekPub = x25519.getPublicKey(ekPriv)
 
@@ -152,20 +167,33 @@ export function x3dhInitiate({
 
 // ─── Recipient side (X3DHRespond) ─────────────────────────────────────────────
 
+/** Arguments to {@link x3dhRespond}. */
+export interface X3dhRespondArgs {
+  /** recipient long-term (box) X25519 private — IK_recv */
+  identityPriv: Uint8Array
+  /** sender long-term (box) X25519 public — IK_send */
+  senderIdentityPub: Uint8Array
+  /**
+   * recipient signed prekey private — SPK_recv. Nullable because it typically
+   * comes straight from `PreKeyStore.signedPreKeyPriv(id)`, which returns null
+   * on an id it does not hold; the caller is expected to have already
+   * validated the id came from a bundle this store published.
+   */
+  signedPreKeyPriv: Uint8Array | null
+  /** recipient one-time prekey private — OPK_recv */
+  oneTimePreKeyPriv?: Uint8Array | null
+  /** sender ephemeral public — EK */
+  ephemeralPub: Uint8Array
+  senderId: string
+  recipientId: string
+}
+
 /**
  * Re-derive the same SK on the recipient side. Mirrors `prekeys.go:X3DHRespond`.
  * The one-time prekey (when used) MUST be deleted by the caller AFTER a
  * successful AEAD open — this module returns the SK only.
  *
- * @param {object} p
- * @param {Uint8Array} p.identityPriv        recipient long-term (box) X25519 private — IK_recv
- * @param {Uint8Array} p.senderIdentityPub   sender long-term (box) X25519 public — IK_send
- * @param {Uint8Array} p.signedPreKeyPriv    recipient signed prekey private — SPK_recv
- * @param {Uint8Array|null} [p.oneTimePreKeyPriv]  recipient one-time prekey private — OPK_recv
- * @param {Uint8Array} p.ephemeralPub        sender ephemeral public — EK
- * @param {string} p.senderId
- * @param {string} p.recipientId
- * @returns {Uint8Array} 32-byte SK
+ * @returns 32-byte SK
  */
 export function x3dhRespond({
   identityPriv,
@@ -175,14 +203,17 @@ export function x3dhRespond({
   ephemeralPub,
   senderId,
   recipientId,
-}) {
+}: X3dhRespondArgs): Uint8Array {
   if (!ephemeralPub || ephemeralPub.length !== X25519_LEN) {
     throw new Error('prekeys: bad ephemeral key')
   }
-  // Mirror the sender's DHs (ECDH commutes).
-  const dh1 = _x25519(signedPreKeyPriv, senderIdentityPub)   // DH(SPK_recv, IK_send)
-  const dh2 = _x25519(identityPriv, ephemeralPub)            // DH(IK_recv, EK)
-  const dh3 = _x25519(signedPreKeyPriv, ephemeralPub)        // DH(SPK_recv, EK)
+  // Mirror the sender's DHs (ECDH commutes). A null signedPreKeyPriv (unknown
+  // id) is passed straight through to the DH primitive rather than checked
+  // here — it will throw inside x25519.getSharedSecret, exactly as the
+  // pre-conversion JS did.
+  const dh1 = _x25519(signedPreKeyPriv as Uint8Array, senderIdentityPub)   // DH(SPK_recv, IK_send)
+  const dh2 = _x25519(identityPriv, ephemeralPub)                          // DH(IK_recv, EK)
+  const dh3 = _x25519(signedPreKeyPriv as Uint8Array, ephemeralPub)        // DH(SPK_recv, EK)
   const parts = [dh1, dh2, dh3]
   if (oneTimePreKeyPriv) {
     if (oneTimePreKeyPriv.length !== X25519_LEN) throw new Error('prekeys: bad one-time prekey')
@@ -193,17 +224,34 @@ export function x3dhRespond({
 
 // ─── Signed-prekey signature (ECDSA, mirroring depositPubKey) ─────────────────
 
+/** A signed prekey's PRIVATE record, as held by {@link PreKeyStore}. */
+export interface SignedPreKey {
+  id: string
+  priv: Uint8Array
+  pub: Uint8Array
+  pubB64: string
+  sigB64: string
+}
+
+/** The publishable {id, pub, sig} form of a signed prekey. */
+export interface SignedPreKeyPublic {
+  id: string
+  pub: string
+  sig: string
+}
+
+/** Signs raw bytes with the ECDSA identity key, returning a base64 signature. */
+export type SignRawFn = (msgBytes: Uint8Array) => Promise<string>
+
+/** Verifies a base64 ECDSA signature over raw bytes. */
+export type VerifyRawFn = (msgBytes: Uint8Array, sigB64: string) => Promise<boolean>
+
 /**
  * Generate a signed prekey: a fresh X25519 keypair whose PUBLIC key is signed by
  * the session ECDSA identity. Analogous to prekeys.go's signed prekey except the
  * signature is ECDSA P-256 (the relay identity) rather than Ed25519.
- *
- * @param {(msgBytes: Uint8Array) => Promise<string>} signRawFn
- *        signs raw bytes with the ECDSA identity key, returns base64 signature.
- * @returns {Promise<{ id: string, priv: Uint8Array, pub: Uint8Array,
- *                      pubB64: string, sigB64: string }>}
  */
-export async function generateSignedPreKey(signRawFn) {
+export async function generateSignedPreKey(signRawFn: SignRawFn): Promise<SignedPreKey> {
   const priv = _randPriv()
   const pub = x25519.getPublicKey(priv)
   const sigB64 = await signRawFn(pub)
@@ -215,11 +263,9 @@ export async function generateSignedPreKey(signRawFn) {
  * key. Fails closed (returns false on any error). JS analog of
  * prekeys.go:VerifySignedPreKey.
  *
- * @param {(msgBytes: Uint8Array, sigB64: string) => Promise<boolean>} verifyRawFn
- * @param {{ pub: string, sig: string }} signedPreKey  base64 pub + sig
- * @returns {Promise<boolean>}
+ * @param signedPreKey  base64 pub + sig
  */
-export async function verifySignedPreKey(verifyRawFn, signedPreKey) {
+export async function verifySignedPreKey(verifyRawFn: VerifyRawFn, signedPreKey: { pub: string, sig: string }): Promise<boolean> {
   try {
     const pub = b64ToBytes(signedPreKey.pub)
     if (pub.length !== X25519_LEN) return false
@@ -231,6 +277,13 @@ export async function verifySignedPreKey(verifyRawFn, signedPreKey) {
 
 // ─── PreKeyStore (per-session private prekey material) ────────────────────────
 
+/** The publishable prekey bundle produced by {@link PreKeyStore.publicBundle}. */
+export interface PublicPreKeyBundle {
+  identity_vula_id: string
+  signed_prekey: SignedPreKeyPublic
+  one_time_prekeys: Array<{ id: string, pub: string }>
+}
+
 /**
  * Owns this peer's PRIVATE prekey material (signed prekey + one-time prekey pool)
  * and produces the publishable bundle. In-memory / per-session (the relay path is
@@ -238,30 +291,23 @@ export async function verifySignedPreKey(verifyRawFn, signedPreKey) {
  * server). Consumed one-time prekeys are deleted (forward secrecy).
  */
 export class PreKeyStore {
-  /**
-   * @param {object} p
-   * @param {{ id, priv, pub, pubB64, sigB64 }} p.signedPreKey
-   * @param {number} [p.oneTimeCount=8]
-   */
-  constructor({ signedPreKey, oneTimeCount = 8 } = {}) {
+  private _signed: SignedPreKey
+  private _opks: Map<string, { priv: Uint8Array, pub: Uint8Array }>
+
+  constructor({ signedPreKey, oneTimeCount = 8 }: { signedPreKey: SignedPreKey, oneTimeCount?: number }) {
     this._signed = signedPreKey
-    /** @type {Map<string,{priv:Uint8Array,pub:Uint8Array}>} */
     this._opks = new Map()
     if (oneTimeCount > 0) this.replenish(oneTimeCount)
   }
 
-  /**
-   * Build a store, generating + signing a fresh signed prekey.
-   * @param {(msgBytes: Uint8Array) => Promise<string>} signRawFn
-   * @param {number} [oneTimeCount]
-   */
-  static async create(signRawFn, oneTimeCount = 8) {
+  /** Build a store, generating + signing a fresh signed prekey. */
+  static async create(signRawFn: SignRawFn, oneTimeCount = 8): Promise<PreKeyStore> {
     const signedPreKey = await generateSignedPreKey(signRawFn)
     return new PreKeyStore({ signedPreKey, oneTimeCount })
   }
 
   /** Top the one-time prekey pool back up to `target`. */
-  replenish(target) {
+  replenish(target: number): void {
     while (this._opks.size < target) {
       const priv = _randPriv()
       this._opks.set(newKeyID(), { priv, pub: x25519.getPublicKey(priv) })
@@ -269,23 +315,21 @@ export class PreKeyStore {
   }
 
   /** Number of one-time prekeys remaining. */
-  oneTimePreKeyCount() {
+  oneTimePreKeyCount(): number {
     return this._opks.size
   }
 
   /** The signed prekey id. */
-  get signedPreKeyId() {
+  get signedPreKeyId(): string {
     return this._signed.id
   }
 
   /**
    * The publishable bundle (signed prekey + remaining one-time prekey PUBLICS).
-   * @param {string} identityVulaId  this peer's identity id
-   * @returns {{ identity_vula_id, signed_prekey:{id,pub,sig},
-   *             one_time_prekeys:Array<{id,pub}> }}
+   * @param identityVulaId  this peer's identity id
    */
-  publicBundle(identityVulaId) {
-    const otps = []
+  publicBundle(identityVulaId: string): PublicPreKeyBundle {
+    const otps: Array<{ id: string, pub: string }> = []
     for (const [id, { pub }] of this._opks) otps.push({ id, pub: bytesToB64(pub) })
     return {
       identity_vula_id: identityVulaId,
@@ -295,20 +339,20 @@ export class PreKeyStore {
   }
 
   /** Private scalar of the signed prekey if `id` matches, else null. */
-  signedPreKeyPriv(id) {
+  signedPreKeyPriv(id: string): Uint8Array | null {
     return id === this._signed.id ? this._signed.priv : null
   }
 
   /** Private scalar of a one-time prekey by id, else null (no deletion). */
-  oneTimePreKeyPriv(id) {
-    return this._opks.get(id)?.priv ?? null
+  oneTimePreKeyPriv(id: string | null | undefined): Uint8Array | null {
+    return (id != null ? this._opks.get(id)?.priv : undefined) ?? null
   }
 
   /**
    * Delete a one-time prekey (forward secrecy). Returns true if it existed.
    * After this, the captured message can never again be decrypted via that OPK.
    */
-  consumeOneTimePreKey(id) {
-    return this._opks.delete(id)
+  consumeOneTimePreKey(id: string | null | undefined): boolean {
+    return id != null && this._opks.delete(id)
   }
 }
