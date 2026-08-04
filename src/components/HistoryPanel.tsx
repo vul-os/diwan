@@ -20,8 +20,46 @@ import { api } from '../lib/api'
 import { timeAgoLong as formatRelative } from '../lib/format'
 import { Button, IconButton, Modal, LoadingState, EmptyState, ErrorState } from './ui'
 
+// ─── Local shapes — `api` returns `unknown` by design; these document just
+// what this panel reads. ────────────────────────────────────────────────────
+interface Version {
+  id: string
+  label?: string
+  name: string
+  created_at: string
+  author?: string
+}
+
+interface DiffLine {
+  op: string
+  text?: string
+}
+interface DiffBody {
+  kind: string
+  lines?: DiffLine[]
+  added: number
+  removed: number
+  summary?: string
+}
+interface DiffResult {
+  type?: string
+  against?: string
+  old_label?: string
+  new_label?: string
+  diff?: DiffBody
+}
+
 // ─── VersionRow ───────────────────────────────────────────────────────────────
-function VersionRow({ v, idx, isLatest, restoring, onRestoreClick, onCompareClick }) {
+interface VersionRowProps {
+  v: Version
+  idx: number
+  isLatest: boolean
+  restoring: string | null
+  onRestoreClick: (v: Version) => void
+  onCompareClick: (v: Version) => void
+}
+
+function VersionRow({ v, isLatest, restoring, onRestoreClick, onCompareClick }: VersionRowProps) {
   const isNamed = !!v.label
 
   return (
@@ -111,10 +149,16 @@ function VersionRow({ v, idx, isLatest, restoring, onRestoreClick, onCompareClic
 
 // ─── DiffModal ────────────────────────────────────────────────────────────────
 // Renders a readable line-level diff (Docs) or a coarse summary (Sheets/Slides).
-function DiffModal({ fileId, version, onClose }) {
+interface DiffModalProps {
+  fileId: string
+  version: Version | null
+  onClose: () => void
+}
+
+function DiffModal({ fileId, version, onClose }: DiffModalProps) {
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [diff, setDiff] = useState(null)
+  const [error, setError] = useState<string | null>(null)
+  const [diff, setDiff] = useState<DiffResult | null>(null)
 
   useEffect(() => {
     let live = true
@@ -122,8 +166,8 @@ function DiffModal({ fileId, version, onClose }) {
     setLoading(true)
     setError(null)
     api.diffVersion(fileId, version.id, 'current')
-      .then((d) => { if (live) setDiff(d) })
-      .catch((e) => { if (live) setError(e.message || 'Could not load diff') })
+      .then((d) => { if (live) setDiff(d as DiffResult) })
+      .catch((e) => { if (live) setError(e instanceof Error ? e.message : 'Could not load diff') })
       .finally(() => { if (live) setLoading(false) })
     return () => { live = false }
   }, [fileId, version])
@@ -148,7 +192,7 @@ function DiffModal({ fileId, version, onClose }) {
               <span className="text-danger font-medium">−{body.removed} removed</span>
               {body.summary && <span className="text-ink-faint">{body.summary}</span>}
             </div>
-            {body.kind === 'line' && body.lines?.length > 0 ? (
+            {body.kind === 'line' && body.lines && body.lines.length > 0 ? (
               <div className="rounded-md border border-line overflow-hidden max-h-[50vh] overflow-y-auto font-mono text-2xs leading-relaxed">
                 {body.lines.map((l, i) => (
                   <div
@@ -163,7 +207,7 @@ function DiffModal({ fileId, version, onClose }) {
                     <span className="select-none opacity-60 w-3 flex-shrink-0">
                       {l.op === 'insert' ? '+' : l.op === 'delete' ? '−' : ' '}
                     </span>
-                    <span>{l.text || ' '}</span>
+                    <span>{l.text || ' '}</span>
                   </div>
                 ))}
               </div>
@@ -183,16 +227,22 @@ function DiffModal({ fileId, version, onClose }) {
 }
 
 // ─── HistoryPanel ─────────────────────────────────────────────────────────────
-export default function HistoryPanel({ fileId, onRestore, onClose }) {
-  const [versions, setVersions] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [restoring, setRestoring] = useState(null)
-  const [confirmVersion, setConfirmVersion] = useState(null)  // version to confirm restore
-  const [compareVersion, setCompareVersion] = useState(null)  // version to diff vs current
-  const [toast, setToast] = useState(null)
+interface HistoryPanelProps {
+  fileId: string
+  onRestore?: (updated: unknown) => void
+  onClose?: () => void
+}
 
-  const showToast = (msg, ok = true) => {
+export default function HistoryPanel({ fileId, onRestore, onClose }: HistoryPanelProps) {
+  const [versions, setVersions] = useState<Version[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [restoring, setRestoring] = useState<string | null>(null)
+  const [confirmVersion, setConfirmVersion] = useState<Version | null>(null)  // version to confirm restore
+  const [compareVersion, setCompareVersion] = useState<Version | null>(null)  // version to diff vs current
+  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null)
+
+  const showToast = (msg: string, ok = true) => {
     setToast({ msg, ok })
     setTimeout(() => setToast(null), 3000)
   }
@@ -202,10 +252,10 @@ export default function HistoryPanel({ fileId, onRestore, onClose }) {
     setLoading(true)
     setError(null)
     try {
-      const data = await api.listVersions(fileId)
+      const data = await api.listVersions(fileId) as Version[]
       setVersions(data)
     } catch (e) {
-      setError(e.message || 'Failed to load history')
+      setError(e instanceof Error ? e.message : 'Failed to load history')
     } finally {
       setLoading(false)
     }
@@ -213,7 +263,8 @@ export default function HistoryPanel({ fileId, onRestore, onClose }) {
 
   useEffect(() => { load() }, [load])
 
-  const doRestore = async (v) => {
+  const doRestore = async (v: Version | null) => {
+    if (!v) return
     setConfirmVersion(null)
     setRestoring(v.id)
     try {
@@ -222,7 +273,7 @@ export default function HistoryPanel({ fileId, onRestore, onClose }) {
       onRestore?.(updated)
       await load()
     } catch (e) {
-      showToast(e.message || 'Restore failed', false)
+      showToast(e instanceof Error ? e.message : 'Restore failed', false)
     } finally {
       setRestoring(null)
     }

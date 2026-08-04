@@ -12,7 +12,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
-import HistoryPanel from '../../components/HistoryPanel.jsx'
+import HistoryPanel from '../../components/HistoryPanel'
 import AccountShareModal from '../../components/AccountShareModal.jsx'
 import AnonDocView from '../../components/AnonDocView.jsx'
 import { server, resetMock, mockState } from './server.js'
