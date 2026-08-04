@@ -14,12 +14,29 @@
  */
 
 import * as XLSX from 'xlsx'
+import type { TiptapNode } from './templates.js'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function assert(label, cond, detail = '') {
+type CheckResult = { label: string; ok: boolean; detail: string }
+
+function assert(label: string, cond: unknown, detail = ''): CheckResult {
   return { label, ok: !!cond, detail }
 }
+
+type FortuneCell = { r: number; c: number; v?: { v?: unknown; m?: string; f?: string } }
+type FortuneMerge = { r: number; c: number; rs?: number; cs?: number }
+type FortuneSheet = {
+  name: string
+  celldata: FortuneCell[]
+  config?: { merge?: Record<string, FortuneMerge> }
+}
+// xlsx's own types describe a real Worksheet strictly (typed cell/range/merge
+// entries); this fixture builds one field-by-field via string-keyed access
+// (encode_cell()) which the library's own type doesn't model that way, so a
+// plain string-indexed record is the more honest fit here.
+type WorkSheetLike = Record<string, unknown>
+
 
 // ─── Fixture 1: Merged-cell xlsx round-trip ─────────────────────────────────
 //
@@ -27,8 +44,8 @@ function assert(label, cond, detail = '') {
 // logic, read it back via importFile logic, and verify the merge config
 // survives.
 
-function fortuneToWorksheet(sheet) {
-  const ws = {}
+function fortuneToWorksheet(sheet: FortuneSheet): WorkSheetLike {
+  const ws: WorkSheetLike = {}
   const cells = sheet.celldata || []
   let maxR = 0, maxC = 0
   for (const { r, c, v } of cells) {
@@ -49,13 +66,13 @@ function fortuneToWorksheet(sheet) {
   return ws
 }
 
-function xlsxBufToFortuneSheets(buf) {
+function xlsxBufToFortuneSheets(buf: unknown): FortuneSheet[] {
   const wb = XLSX.read(buf, { type: 'array' })
   return wb.SheetNames.map(name => {
     const ws = wb.Sheets[name]
     if (!ws['!ref']) return { name, celldata: [], config: {} }
     const range = XLSX.utils.decode_range(ws['!ref'])
-    const celldata = []
+    const celldata: FortuneCell[] = []
     for (let r = range.s.r; r <= range.e.r; r++) {
       for (let c = range.s.c; c <= range.e.c; c++) {
         const addr = XLSX.utils.encode_cell({ r, c })
@@ -68,7 +85,7 @@ function xlsxBufToFortuneSheets(buf) {
       }
     }
     const merges = ws['!merges'] || []
-    const mc = {}
+    const mc: Record<string, FortuneMerge> = {}
     for (const merge of merges) {
       const key = `${merge.s.r}_${merge.s.c}`
       mc[key] = { r: merge.s.r, c: merge.s.c, rs: merge.e.r - merge.s.r + 1, cs: merge.e.c - merge.s.c + 1 }
@@ -104,7 +121,7 @@ function checkMergedCellRoundTrip() {
   XLSX.utils.book_append_sheet(wb, ws, original.name)
   const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
 
-  results.push(assert('merged-cell export: produces !merges in worksheet', (ws['!merges'] || []).length === 2))
+  results.push(assert('merged-cell export: produces !merges in worksheet', ((ws['!merges'] as unknown[]) || []).length === 2))
 
   // Re-import
   const reimported = xlsxBufToFortuneSheets(buf)
@@ -190,12 +207,13 @@ function checkNestedListDocxLogic() {
   }
 
   // Run the same listToDocx logic used in docsExport
-  function inlineText(nodes) {
+  function inlineText(nodes: TiptapNode[] | undefined): string {
     return (nodes || []).map(n => n.text || '').join('')
   }
 
-  function listToFlat(listNode, depth) {
-    const items = []
+  type FlatListItem = { depth: number; text: string }
+  function listToFlat(listNode: TiptapNode, depth: number): FlatListItem[] {
+    const items: FlatListItem[] = []
     for (const item of listNode.content || []) {
       for (const child of item.content || []) {
         if (child.type === 'bulletList' || child.type === 'orderedList') {

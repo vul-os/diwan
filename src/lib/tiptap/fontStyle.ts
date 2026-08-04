@@ -28,7 +28,7 @@ const SIZE_UNIT_RE = /^\d+(\.\d+)?(pt|px|em|rem|%)$/
  * normalizeFontSize — coerce a user/library value into a safe CSS length.
  * Returns null for empty/invalid input (which clears the attribute).
  */
-export function normalizeFontSize(value) {
+export function normalizeFontSize(value: unknown): string | null {
   if (value == null) return null
   const v = String(value).trim()
   if (!v) return null
@@ -43,7 +43,7 @@ export function normalizeFontSize(value) {
  * attribute. Font stacks are quoted/comma-separated identifiers; a semicolon
  * or angle bracket has no business there.
  */
-export function sanitizeFontFamily(value) {
+export function sanitizeFontFamily(value: unknown): string | null {
   if (value == null) return null
   const v = String(value).trim()
   if (!v) return null
@@ -53,9 +53,9 @@ export function sanitizeFontFamily(value) {
 
 // Exported attribute config for `fontSize` on textStyle (unit-testable).
 export const fontSizeAttribute = {
-  default: null,
-  parseHTML: (element) => element.style.fontSize || null,
-  renderHTML: (attributes) => {
+  default: null as string | null,
+  parseHTML: (element: HTMLElement) => element.style.fontSize || null,
+  renderHTML: (attributes: { fontSize?: unknown }) => {
     const size = normalizeFontSize(attributes.fontSize)
     if (!size) return {}
     return { style: `font-size: ${size}` }
@@ -64,9 +64,9 @@ export const fontSizeAttribute = {
 
 // Exported attribute config for `fontFamily` on textStyle (unit-testable).
 export const fontFamilyAttribute = {
-  default: null,
-  parseHTML: (element) => element.style.fontFamily?.replace(/['"]/g, '') || null,
-  renderHTML: (attributes) => {
+  default: null as string | null,
+  parseHTML: (element: HTMLElement) => element.style.fontFamily?.replace(/['"]/g, '') || null,
+  renderHTML: (attributes: { fontFamily?: unknown }) => {
     const family = sanitizeFontFamily(attributes.fontFamily)
     if (!family) return {}
     return { style: `font-family: ${family}` }

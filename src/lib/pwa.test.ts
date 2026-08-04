@@ -28,7 +28,7 @@ describe('isEmbedded', () => {
   })
 
   test('true when nested in another browsing context', () => {
-    const spy = vi.spyOn(window, 'top', 'get').mockReturnValue({})
+    const spy = vi.spyOn(window, 'top', 'get').mockReturnValue({} as unknown as Window)
     expect(isEmbedded()).toBe(true)
     spy.mockRestore()
   })
@@ -43,7 +43,7 @@ describe('pwaEnabled / registerServiceWorker guards', () => {
   })
 
   test('disabled when embedded even if everything else is fine', () => {
-    const spy = vi.spyOn(window, 'top', 'get').mockReturnValue({})
+    const spy = vi.spyOn(window, 'top', 'get').mockReturnValue({} as unknown as Window)
     expect(pwaEnabled()).toBe(false)
     registerServiceWorker()
     expect(bootstrapOffline).not.toHaveBeenCalled()

@@ -1,5 +1,6 @@
 import { marked } from 'marked'
 import mammoth from 'mammoth'
+import type { NavigateFunction } from 'react-router-dom'
 import { api } from './api'
 import { useFilesStore } from '../store/filesStore'
 import { assertFileSize, assertArchiveBounds, ImportError } from './importBounds'
@@ -8,6 +9,9 @@ import { csvToSheet } from '../apps/sheets/csvImport'
 import { odtToHtml } from '../apps/docs/odtImport'
 import { pptxToSlides, odpToSlides } from '../apps/slides/slidesImport'
 import { sanitizeObjects } from '../apps/slides/slideObjects'
+
+export type DocType = 'doc' | 'sheet' | 'slide' | 'pdf'
+type CreatedFile = { id: string; [key: string]: unknown }
 
 // ── Format detection / routing ────────────────────────────────────────────────
 // Every supported inbound format maps to exactly one app. The unified Open flow
@@ -25,7 +29,7 @@ export const SUPPORTED_EXTS = [
 export const OPENABLE_ACCEPT =
   '.md,.txt,.docx,.rtf,.html,.htm,.odt,.xlsx,.xls,.csv,.tsv,.ods,.pptx,.odp,.pdf'
 
-export function detectType(filename) {
+export function detectType(filename: string): DocType | null {
   const ext = (filename.split('.').pop() || '').toLowerCase()
   if (['md', 'txt', 'doc', 'docx', 'rtf', 'html', 'htm', 'odt'].includes(ext)) return 'doc'
   if (['xlsx', 'xls', 'csv', 'tsv', 'ods'].includes(ext)) return 'sheet'
@@ -34,7 +38,7 @@ export function detectType(filename) {
   return null
 }
 
-export function typeToRoute(type) {
+export function typeToRoute(type: string): string | null {
   if (type === 'doc') return 'docs'
   if (type === 'sheet') return 'sheets'
   if (type === 'slide') return 'slides'
@@ -42,7 +46,7 @@ export function typeToRoute(type) {
 }
 
 /** Human-facing "we can't open this" message for an unsupported extension. */
-export function unsupportedMessage(filename) {
+export function unsupportedMessage(filename: string): string {
   const ext = (filename.split('.').pop() || '').toLowerCase()
   if (['doc', 'xls', 'ppt'].includes(ext)) {
     return `Legacy binary .${ext} files aren't supported yet — please re-save as ` +
@@ -53,19 +57,19 @@ export function unsupportedMessage(filename) {
 
 // ── Low-level readers ─────────────────────────────────────────────────────────
 
-async function fileToText(file) {
+async function fileToText(file: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
-    reader.onload = (e) => resolve(e.target.result)
+    reader.onload = () => resolve(reader.result as string)
     reader.onerror = reject
     reader.readAsText(file)
   })
 }
 
-async function fileToArrayBuffer(file) {
+async function fileToArrayBuffer(file: Blob): Promise<ArrayBuffer> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
-    reader.onload = (e) => resolve(e.target.result)
+    reader.onload = () => resolve(reader.result as ArrayBuffer)
     reader.onerror = reject
     reader.readAsArrayBuffer(file)
   })
@@ -88,7 +92,7 @@ const MAMMOTH_OPTS = {
   ),
 }
 
-async function docFromText(text) {
+async function docFromText(text: string) {
   const paragraphs = String(text).split(/\n\n+/).map((para) => ({
     type: 'paragraph',
     content: para.trim() ? [{ type: 'text', text: para.replace(/\n/g, ' ').trim() }] : [],
@@ -96,11 +100,12 @@ async function docFromText(text) {
   return { type: 'doc', content: paragraphs.length ? paragraphs : [{ type: 'paragraph' }] }
 }
 
-async function convertDocFromBuffer(ext, buf, text) {
-  if (ext === 'md') return { type: 'doc', _html: await marked.parse(text), content: [{ type: 'paragraph' }] }
+async function convertDocFromBuffer(ext: string, buf: ArrayBuffer | null, text?: string) {
+  if (ext === 'md') return { type: 'doc', _html: await marked.parse(text || ''), content: [{ type: 'paragraph' }] }
   if (ext === 'html' || ext === 'htm') return { type: 'doc', _html: text, content: [{ type: 'paragraph' }] }
-  if (ext === 'txt') return docFromText(text)
+  if (ext === 'txt') return docFromText(text || '')
   if (ext === 'docx') {
+    if (!buf) throw new ImportError('document is missing its bytes')
     assertFileSize(buf.byteLength, 'document')
     // Zip-bomb guard BEFORE mammoth's own unbounded inflate: reject a lying-CD /
     // oversize .docx while it is still a validated, bounded archive (see
@@ -110,14 +115,15 @@ async function convertDocFromBuffer(ext, buf, text) {
     return { type: 'doc', _html: result.value || '<p></p>', content: [{ type: 'paragraph' }] }
   }
   if (ext === 'odt') {
+    if (!buf) throw new ImportError('document is missing its bytes')
     const html = await odtToHtml(buf, 'document.odt')
     return { type: 'doc', _html: html, content: [{ type: 'paragraph' }] }
   }
   // rtf / legacy .doc / unknown → plain-text best-effort.
-  return docFromText(text)
+  return docFromText(text || '')
 }
 
-export async function convertToDocContent(file) {
+export async function convertToDocContent(file: File) {
   const ext = (file.name.split('.').pop() || '').toLowerCase()
   // Binary formats need the ArrayBuffer; text formats need the decoded text.
   if (['docx', 'odt'].includes(ext)) {
@@ -129,7 +135,7 @@ export async function convertToDocContent(file) {
 
 // ── Sheets ──────────────────────────────────────────────────────────────────
 
-export async function convertToSheetContent(file) {
+export async function convertToSheetContent(file: File) {
   const ext = (file.name.split('.').pop() || '').toLowerCase()
   if (ext === 'csv' || ext === 'tsv') {
     const text = await fileToText(file)
@@ -158,16 +164,20 @@ export async function convertToSheetContent(file) {
 // ── Slides ────────────────────────────────────────────────────────────────────
 // Imported decks carry positioned objects[]; sanitize every object at import
 // (script/CSS/href + geometry clamp) so nothing untrusted is ever persisted raw.
-async function convertToSlideContent(file) {
+async function convertToSlideContent(file: File) {
   const ext = (file.name.split('.').pop() || '').toLowerCase()
   const buf = await fileToArrayBuffer(file)
   const deck = ext === 'odp' ? await odpToSlides(buf, file.name) : await pptxToSlides(buf, file.name)
-  deck.slides = deck.slides.map((s) => ({ ...s, objects: sanitizeObjects(s.objects || []) }))
+  // sanitizeObjects' inferred (JS) return shape and the importer's inferred
+  // per-format object union agree at runtime (both are "positioned slide
+  // object" records) but are structurally distinct types as TS infers them
+  // from plain JS — an assertion here, not a behaviour change.
+  deck.slides = deck.slides.map((s) => ({ ...s, objects: sanitizeObjects(s.objects || []) })) as typeof deck.slides
   return deck
 }
 
 // ── PDF ────────────────────────────────────────────────────────────────────────
-async function stashPdf(file, name) {
+async function stashPdf(file: File, name: string) {
   const buf = await fileToArrayBuffer(file)
   assertFileSize(buf.byteLength, name)
   sessionStorage.setItem('pendingPDF', JSON.stringify({
@@ -178,7 +188,7 @@ async function stashPdf(file, name) {
 
 // ── Public: import a File (picker / drag-drop) ──────────────────────────────────
 
-export async function importFile(file, navigate) {
+export async function importFile(file: File, navigate: NavigateFunction): Promise<void> {
   assertFileSize(file.size, file.name)
   const type = detectType(file.name)
 
@@ -190,13 +200,13 @@ export async function importFile(file, navigate) {
   if (!type) throw new ImportError(unsupportedMessage(file.name))
 
   const baseName = file.name.replace(/\.[^.]+$/, '')
-  let content
+  let content: unknown
   if (type === 'doc') content = await convertToDocContent(file)
   else if (type === 'sheet') content = await convertToSheetContent(file)
   else if (type === 'slide') content = await convertToSlideContent(file)
 
-  const created = await api.createFile(baseName, type, content)
-  useFilesStore.setState({ files: [created, ...useFilesStore.getState().files.filter((f) => f.id !== created.id)] })
+  const created = await api.createFile(baseName, type, content) as CreatedFile
+  useFilesStore.setState({ files: [created, ...useFilesStore.getState().files.filter((f: CreatedFile) => f.id !== created.id)] })
   navigate(`/${typeToRoute(type)}/${created.id}`)
 }
 
@@ -204,7 +214,10 @@ export async function importFile(file, navigate) {
 // Wraps the fetched bytes in a File so it flows through the SAME importers +
 // bounds as a drag-dropped file — one code path, one trust boundary.
 
-export async function importFromUrl(localFile, navigate) {
+export async function importFromUrl(
+  localFile: { name: string; path: string; appType: string },
+  navigate: NavigateFunction
+): Promise<void> {
   const { name, path, appType } = localFile
   const baseName = name.replace(/\.[^.]+$/, '')
   const url = api.localFileUrl(path)
@@ -220,13 +233,13 @@ export async function importFromUrl(localFile, navigate) {
   const buf = await res.arrayBuffer()
   const pseudoFile = new File([buf], name)
 
-  let content
+  let content: unknown
   if (appType === 'doc') content = await convertToDocContent(pseudoFile)
   else if (appType === 'sheet') content = await convertToSheetContent(pseudoFile)
   else if (appType === 'slide') content = await convertToSlideContent(pseudoFile)
   else throw new ImportError(unsupportedMessage(name))
 
-  const created = await api.createFile(baseName, appType, content)
-  useFilesStore.setState({ files: [created, ...useFilesStore.getState().files.filter((f) => f.id !== created.id)] })
+  const created = await api.createFile(baseName, appType, content) as CreatedFile
+  useFilesStore.setState({ files: [created, ...useFilesStore.getState().files.filter((f: CreatedFile) => f.id !== created.id)] })
   navigate(`/${typeToRoute(appType)}/${created.id}`)
 }

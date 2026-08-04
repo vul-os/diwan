@@ -56,7 +56,7 @@ export const RICH_HTML_CONFIG = {
 }
 
 /** Sanitise rich HTML (Tiptap / Reveal slide content). */
-export function sanitizeRichHtml(html) {
+export function sanitizeRichHtml(html: string | null | undefined): string {
   return DOMPurify.sanitize(html ?? '', RICH_HTML_CONFIG)
 }
 
@@ -121,7 +121,7 @@ const DANGEROUS_CSS_VALUE =
 // Parse a `style` attribute value, keep only allow-listed properties whose
 // value is free of fetch/exec constructs. Returns the rebuilt (possibly empty)
 // declaration string. Fail-closed: anything not understood is dropped.
-export function sanitizeStyleValue(styleValue) {
+export function sanitizeStyleValue(styleValue: unknown): string {
   if (typeof styleValue !== 'string' || !styleValue) return ''
   const kept = []
   for (const decl of styleValue.split(';')) {
@@ -182,7 +182,7 @@ const SAFE_RASTER_DATA_URI =
   /^\s*data:image\/(?:png|jpe?g|gif|webp|bmp|x-icon|vnd\.microsoft\.icon|apng|avif);base64,/i
 
 /** True for a data: URI that is NOT an allow-listed raster image (svg/xml/html/…). */
-function isUnsafeDataUri(v) {
+function isUnsafeDataUri(v: string): boolean {
   return DATA_URI.test(v) && !SAFE_RASTER_DATA_URI.test(v)
 }
 
@@ -203,7 +203,7 @@ const IMG_STRIP_ATTRS = new Set(['srcset', 'imagesrcset', 'ping'])
  * other exec scheme is rejected fail-closed.
  */
 const EXEC_SCHEME = /^\s*(?:javascript|vbscript|data\s*:\s*text|data\s*:\s*application|file|blob\s*:\s*javascript)/i
-export function isSafeImageSrc(v) {
+export function isSafeImageSrc(v: unknown): boolean {
   if (typeof v !== 'string') return false
   const s = v.trim()
   if (!s) return false
@@ -276,7 +276,7 @@ export const DOC_HTML_CONFIG = RICH_HTML_CONFIG
  * legitimate "insert image from URL" feature. The XSS surface (script exec) is
  * closed regardless; only the network-fetch privacy trade-off is accepted here.
  */
-export function sanitizeDocHtml(html) {
+export function sanitizeDocHtml(html: string | null | undefined): string {
   ensureDocStyleHook()
   _docStyleGuardActive = true
   try {
@@ -290,7 +290,7 @@ export function sanitizeDocHtml(html) {
 export const sanitizeSlideHtml = sanitizeRichHtml
 
 /** Sanitise, then return plain text content only (no markup). */
-export function stripHtml(html) {
+export function stripHtml(html: string | null | undefined): string {
   const div = document.createElement('div')
   // Sanitise before DOM assignment so text extraction can't execute payloads.
   div.innerHTML = sanitizeRichHtml(html)
@@ -309,12 +309,12 @@ export const SEARCH_HIGHLIGHT_CONFIG = {
 }
 
 /** Sanitise search-result HTML, keeping only <mark> highlights. */
-export function sanitizeSearchHighlight(html) {
+export function sanitizeSearchHighlight(html: string | null | undefined): string {
   return DOMPurify.sanitize(html ?? '', SEARCH_HIGHLIGHT_CONFIG)
 }
 
 /** Strip all markup, returning plain text (captions, defence-in-depth). */
-export function sanitizeToText(text) {
+export function sanitizeToText(text: unknown): string {
   if (typeof text !== 'string') return ''
   return DOMPurify.sanitize(text, { ALLOWED_TAGS: [], ALLOWED_ATTR: [] })
 }

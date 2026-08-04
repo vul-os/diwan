@@ -31,7 +31,7 @@ import { bootstrapOffline } from './endpoints/offlineBootstrap.js'
 // True when this document is nested inside another browsing context. Reading
 // window.top is allowed cross-origin (only touching its properties would throw),
 // and the identity comparison never throws, so this is safe under an OS embed.
-export function isEmbedded() {
+export function isEmbedded(): boolean {
   try {
     return typeof window !== 'undefined' && window.top !== window.self
   } catch {
@@ -43,7 +43,7 @@ export function isEmbedded() {
 // PWA is active only in a production build, at top level (not an OS-hub embed),
 // on a browser that supports service workers. Centralises the guard so the
 // entry, the install affordance, and the tests all agree on when the SW is on.
-export function pwaEnabled() {
+export function pwaEnabled(): boolean {
   if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return false
   if (isEmbedded()) return false // OS-hosted embed: don't fight the host shell.
   if (!import.meta.env.PROD) return false // dev serves un-hashed modules; skip.
@@ -53,7 +53,7 @@ export function pwaEnabled() {
 // Register the app-shell service worker (via the shared offline bootstrap:
 // SW registration + cloud↔LAN endpoint priming + update detection). No-op in
 // dev, when embedded in the OS hub, or on unsupported browsers. Never throws.
-export function registerServiceWorker() {
+export function registerServiceWorker(): void {
   if (!pwaEnabled()) return
   try {
     bootstrapOffline()

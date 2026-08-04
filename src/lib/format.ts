@@ -11,8 +11,10 @@
  * fallback) rather than "Invalid Date".
  */
 
+export type DateInput = Date | string | number | null | undefined
+
 // Coerce a Date | ISO-string | epoch-ms into a Date, or null if unparseable.
-function toDate(input) {
+function toDate(input: DateInput): Date | null {
   if (input == null || input === '') return null
   const d = input instanceof Date ? input : new Date(input)
   return Number.isNaN(d.getTime()) ? null : d
@@ -25,7 +27,7 @@ function toDate(input) {
  * Accepts a Date, an ISO string, or epoch milliseconds so every call site's
  * existing contract keeps working.
  */
-export function timeAgo(input) {
+export function timeAgo(input: DateInput): string {
   const d = toDate(input)
   if (!d) return ''
   const diff = Date.now() - d.getTime()
@@ -41,7 +43,7 @@ export function timeAgo(input) {
  * falling back to a full locale date. Matches the older HistoryPanel/ActivityFeed
  * treatment where the timeline wants day granularity for up to a month.
  */
-export function timeAgoLong(input) {
+export function timeAgoLong(input: DateInput): string {
   const d = toDate(input)
   if (!d) return ''
   const diffSec = Math.floor((Date.now() - d.getTime()) / 1000)
@@ -59,7 +61,7 @@ export function timeAgoLong(input) {
  * formatTs — absolute short date + time, e.g. "Mar 4, 09:30". Used by the
  * comment / suggestion panels for exact edit timestamps.
  */
-export function formatTs(input) {
+export function formatTs(input: DateInput): string {
   const d = toDate(input)
   if (!d) return ''
   return (
@@ -72,7 +74,7 @@ export function formatTs(input) {
 /**
  * formatBytes — compact human-readable file size: "820 B", "12 KB", "3.4 MB".
  */
-export function formatBytes(b) {
+export function formatBytes(b: number | string | null | undefined): string {
   const n = Number(b) || 0
   if (n < 1024)          return `${n} B`
   if (n < 1024 * 1024)   return `${(n / 1024).toFixed(0)} KB`

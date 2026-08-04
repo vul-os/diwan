@@ -15,6 +15,26 @@
 
 import JSZip from 'jszip'
 
+// JSZip's public typings omit the internal streaming/metadata surface this
+// module deliberately reaches into (internalStream, the central-directory
+// _data, and the per-archive __inflatedRemaining budget this module stashes
+// on the instance). Narrow, local extensions rather than `any` at each call site.
+interface JSZipInternalStream {
+  on(event: 'data', cb: (chunk: Uint8Array) => void): JSZipInternalStream
+  on(event: 'error', cb: (err: unknown) => void): JSZipInternalStream
+  on(event: 'end', cb: () => void): JSZipInternalStream
+  pause(): void
+  resume(): void
+}
+interface JSZipObjectInternal extends JSZip.JSZipObject {
+  _data?: { uncompressedSize?: number }
+  internalStream(type: 'uint8array'): JSZipInternalStream
+}
+interface JSZipInternal extends JSZip {
+  files: { [key: string]: JSZipObjectInternal }
+  __inflatedRemaining?: number
+}
+
 // ── Caps ─────────────────────────────────────────────────────────────────────
 // Chosen generously enough for real office documents, tight enough that a bomb
 // is refused long before it can hurt. All are enforced fail-closed (over cap ⇒
@@ -35,14 +55,14 @@ export const MAX_SLIDES = 1000
 export const MAX_HTML_BYTES = 20 * 1024 * 1024         // parsed doc/odt HTML size
 
 export class ImportError extends Error {
-  constructor(message) {
+  constructor(message?: string) {
     super(message)
     this.name = 'ImportError'
   }
 }
 
 /** Reject an oversize input before we even read it into memory. */
-export function assertFileSize(byteLength, filename = 'file') {
+export function assertFileSize(byteLength: number, filename = 'file'): void {
   if (typeof byteLength === 'number' && byteLength > MAX_FILE_BYTES) {
     throw new ImportError(
       `${filename} is too large (${Math.round(byteLength / 1048576)} MB). ` +
@@ -55,7 +75,7 @@ export function assertFileSize(byteLength, filename = 'file') {
 // never write extracted bytes to the filesystem — everything stays in memory —
 // but a `..`/absolute/backslash path is still a red flag and could be misused by
 // any downstream that keys on the name, so we refuse the whole archive.
-function isUnsafeEntryName(name) {
+function isUnsafeEntryName(name: unknown): boolean {
   if (typeof name !== 'string' || !name) return true
   if (name.startsWith('/') || name.startsWith('\\')) return true
   if (/(?:^|[\\/])\.\.(?:[\\/]|$)/.test(name)) return true   // any `..` path segment
@@ -76,13 +96,13 @@ function isUnsafeEntryName(name) {
  * single byte. Callers should still prefer `entryText()` below to read entries
  * (it re-checks the actual inflated length as belt-and-braces).
  */
-export async function safeLoadZip(arrayBuffer, filename = 'file') {
+export async function safeLoadZip(arrayBuffer: ArrayBuffer, filename = 'file'): Promise<JSZipInternal> {
   assertFileSize(arrayBuffer.byteLength, filename)
-  let zip
+  let zip: JSZipInternal
   try {
-    zip = await JSZip.loadAsync(arrayBuffer, { createFolders: false })
+    zip = await JSZip.loadAsync(arrayBuffer, { createFolders: false }) as JSZipInternal
   } catch (e) {
-    throw new ImportError(`${filename} is not a readable archive: ${e.message}`)
+    throw new ImportError(`${filename} is not a readable archive: ${e instanceof Error ? e.message : String(e)}`)
   }
   const names = Object.keys(zip.files)
   if (names.length > MAX_ZIP_ENTRIES) {
@@ -135,7 +155,12 @@ export async function safeLoadZip(arrayBuffer, filename = 'file') {
  * across MANY lying entries (each individually under the single-entry cap) still
  * cannot exceed the total-decompressed ceiling.
  */
-function inflateEntryBounded(zip, name, perEntryCap = MAX_SINGLE_ENTRY, discard = false) {
+function inflateEntryBounded(
+  zip: JSZipInternal,
+  name: string,
+  perEntryCap = MAX_SINGLE_ENTRY,
+  discard = false
+): Promise<Uint8Array | number | null> {
   const f = zip.files[name]
   if (!f) return Promise.resolve(null)
   const remaining = typeof zip.__inflatedRemaining === 'number'
@@ -143,26 +168,26 @@ function inflateEntryBounded(zip, name, perEntryCap = MAX_SINGLE_ENTRY, discard 
     : MAX_TOTAL_UNCOMPRESSED
   const cap = Math.min(perEntryCap, remaining)
   return new Promise((resolve, reject) => {
-    let stream
+    let stream: JSZipInternalStream
     try {
       stream = f.internalStream('uint8array')
     } catch (e) {
-      reject(new ImportError(`entry "${name}" could not be read: ${e.message}`))
+      reject(new ImportError(`entry "${name}" could not be read: ${e instanceof Error ? e.message : String(e)}`))
       return
     }
     // `discard` mode (validation-only, used by assertArchiveBounds): enforce the
     // cap on the streamed bytes but never accumulate them — so the bomb pre-check
     // never allocates the (up to per-entry-cap) contiguous buffer it is guarding.
-    const chunks = []
+    const chunks: Uint8Array[] = []
     let total = 0
     let settled = false
-    const fail = (msg) => {
+    const fail = (msg: string) => {
       if (settled) return
       settled = true
       try { stream.pause() } catch { /* best-effort */ }
       reject(new ImportError(msg))
     }
-    stream.on('data', (chunk) => {
+    stream.on('data', (chunk: Uint8Array) => {
       if (settled) return
       total += chunk.length
       if (total > cap) {
@@ -172,7 +197,7 @@ function inflateEntryBounded(zip, name, perEntryCap = MAX_SINGLE_ENTRY, discard 
       }
       if (!discard) chunks.push(chunk)
     })
-    stream.on('error', (e) => fail(`entry "${name}" could not be decompressed: ${(e && e.message) || e}`))
+    stream.on('error', (e: unknown) => fail(`entry "${name}" could not be decompressed: ${(e as Error)?.message || e}`))
     stream.on('end', () => {
       if (settled) return
       settled = true
@@ -214,7 +239,11 @@ function inflateEntryBounded(zip, name, perEntryCap = MAX_SINGLE_ENTRY, discard 
  * their own entity-free XML readers; the no-network-fetch guarantee for both is
  * covered by importNoFetch.test.js.)
  */
-export async function assertArchiveBounds(arrayBuffer, filename = 'file', perEntryCap = MAX_SINGLE_ENTRY) {
+export async function assertArchiveBounds(
+  arrayBuffer: ArrayBuffer,
+  filename = 'file',
+  perEntryCap = MAX_SINGLE_ENTRY
+): Promise<JSZipInternal> {
   const zip = await safeLoadZip(arrayBuffer, filename)
   for (const name of Object.keys(zip.files)) {
     if (zip.files[name]?.dir) continue
@@ -228,21 +257,21 @@ export async function assertArchiveBounds(arrayBuffer, filename = 'file', perEnt
  * per-archive decompressed caps *during* inflation (see inflateEntryBounded).
  * Returns '' for a missing entry.
  */
-export async function entryText(zip, name) {
+export async function entryText(zip: JSZipInternal, name: string): Promise<string> {
   const buf = await inflateEntryBounded(zip, name)
-  if (buf === null) return ''
+  if (buf === null || typeof buf === 'number') return ''
   return new TextDecoder('utf-8').decode(buf)
 }
 
 /** Read one zip entry as a base64 data: URI with the given MIME — bounded. */
-export async function entryDataUri(zip, name, mime) {
+export async function entryDataUri(zip: JSZipInternal, name: string, mime: string): Promise<string> {
   const buf = await inflateEntryBounded(zip, name)
-  if (buf === null) return ''
+  if (buf === null || typeof buf === 'number') return ''
   // Chunked base64 to avoid a call-stack blow-up on large arrays.
   let bin = ''
   const CHUNK = 0x8000
   for (let i = 0; i < buf.length; i += CHUNK) {
-    bin += String.fromCharCode.apply(null, buf.subarray(i, i + CHUNK))
+    bin += String.fromCharCode.apply(null, buf.subarray(i, i + CHUNK) as unknown as number[])
   }
   return `data:${mime};base64,${btoa(bin)}`
 }
@@ -254,7 +283,7 @@ export async function entryDataUri(zip, name, mime) {
 // blow-up, and a DOCTYPE has no legitimate place in an office part. So we STRIP
 // any DOCTYPE / ENTITY declaration before parsing — fail-closed: the parse sees
 // only element markup, never an entity-expansion or external-DTD reference.
-export function stripDoctype(xml) {
+export function stripDoctype(xml: unknown): string {
   if (typeof xml !== 'string') return ''
   // Remove the whole <!DOCTYPE ...> production (with or without an internal
   // subset) and any stray <!ENTITY ...> declarations. Also drop external-entity
@@ -268,7 +297,7 @@ export function stripDoctype(xml) {
  * parseXmlSafe — DOMParser over XML with DOCTYPE/ENTITY stripped first. Returns
  * a Document. Throws ImportError on a parse error (a hostile/corrupt part).
  */
-export function parseXmlSafe(xml, label = 'xml') {
+export function parseXmlSafe(xml: string, label = 'xml'): Document {
   if (typeof DOMParser === 'undefined') {
     throw new ImportError('XML parsing is unavailable in this environment.')
   }

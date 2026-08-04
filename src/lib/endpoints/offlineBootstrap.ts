@@ -40,12 +40,12 @@
 import { selectEndpoint } from './index.js'
 
 let _booted = false
-let _waitingWorker = null
-let _registration = null
-let _tierHint = undefined
-const _updateListeners = new Set()
+let _waitingWorker: ServiceWorker | null = null
+let _registration: ServiceWorkerRegistration | null = null
+let _tierHint: unknown = undefined
+const _updateListeners = new Set<() => void>()
 
-function notifyUpdateAvailable(worker) {
+function notifyUpdateAvailable(worker: ServiceWorker) {
   _waitingWorker = worker
   for (const fn of _updateListeners) {
     try { fn() } catch { /* listener errors are non-fatal */ }
@@ -56,7 +56,7 @@ function notifyUpdateAvailable(worker) {
  * Subscribe to "a new SW is waiting" events. The callback fires whenever a
  * fresh SW has installed and is sitting in `waiting`. Returns an unsubscribe fn.
  */
-export function onUpdateAvailable(cb) {
+export function onUpdateAvailable(cb: () => void) {
   _updateListeners.add(cb)
   // If a worker is already waiting at the time of subscription, fire once.
   if (_waitingWorker) {
@@ -69,7 +69,7 @@ export function onUpdateAvailable(cb) {
  * Apply a pending SW update: posts SKIP_WAITING to the waiting worker, then
  * reloads the page once it takes over (controllerchange).
  */
-export function applyUpdate() {
+export function applyUpdate(): boolean {
   if (!_waitingWorker) return false
   let reloaded = false
   const reloadOnce = () => {
@@ -86,7 +86,7 @@ export function applyUpdate() {
   return true
 }
 
-function wireUpdateDetection(registration) {
+function wireUpdateDetection(registration: ServiceWorkerRegistration) {
   _registration = registration
   // Worker already waiting at registration time.
   if (registration.waiting && navigator.serviceWorker.controller) {
@@ -108,13 +108,14 @@ function wireUpdateDetection(registration) {
 /**
  * Boot the offline-first shell. Idempotent.
  *
- * @param {{
- *   swPath?:    string,
- *   onBoot?:    () => void,
- *   tierHint?:  () => any,
- * }} [opts]
  */
-export function bootstrapOffline(opts = {}) {
+export type BootstrapOfflineOptions = {
+  swPath?: string
+  onBoot?: () => void
+  tierHint?: () => unknown
+}
+
+export function bootstrapOffline(opts: BootstrapOfflineOptions = {}) {
   if (_booted) return
   _booted = true
 

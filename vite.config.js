@@ -55,7 +55,7 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test-setup.js'],
-    include: ['src/**/*.test.{js,jsx}', 'src/__tests__/**/*.test.{js,jsx}'],
+    include: ['src/**/*.test.{js,jsx,ts,tsx}', 'src/__tests__/**/*.test.{js,jsx,ts,tsx}'],
     // The collaboration suites mount REAL ProseMirror editors (two per test, full
     // Docs schema) — that is the point of them, and it is slow in jsdom. With the
     // pool running them alongside everything else, vitest's 5s default started

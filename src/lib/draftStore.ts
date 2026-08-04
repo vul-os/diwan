@@ -13,29 +13,31 @@ const DB_NAME = 'diwan-drafts'
 const STORE_NAME = 'drafts'
 const DB_VERSION = 1
 
-function openDB() {
+export type Draft = { id: string; name: string; content: unknown; ts: number }
+
+function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION)
-    req.onupgradeneeded = (e) => {
-      const db = e.target.result
+    req.onupgradeneeded = () => {
+      const db = req.result
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: 'id' })
       }
     }
-    req.onsuccess = (e) => resolve(e.target.result)
-    req.onerror = (e) => reject(e.target.error)
+    req.onsuccess = () => resolve(req.result)
+    req.onerror = () => reject(req.error)
   })
 }
 
 /** Persist a draft before the network write. */
-export async function writeDraft(id, name, content) {
+export async function writeDraft(id: string, name: string, content: unknown): Promise<void> {
   try {
     const db = await openDB()
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite')
       tx.objectStore(STORE_NAME).put({ id, name, content, ts: Date.now() })
-      tx.oncomplete = resolve
-      tx.onerror = (e) => reject(e.target.error)
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
     })
   } catch {
     // IndexedDB unavailable — silently ignore so we don't block saves
@@ -43,14 +45,14 @@ export async function writeDraft(id, name, content) {
 }
 
 /** Remove draft after a successful network write. */
-export async function clearDraft(id) {
+export async function clearDraft(id: string): Promise<void> {
   try {
     const db = await openDB()
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite')
       tx.objectStore(STORE_NAME).delete(id)
-      tx.oncomplete = resolve
-      tx.onerror = (e) => reject(e.target.error)
+      tx.oncomplete = () => resolve()
+      tx.onerror = () => reject(tx.error)
     })
   } catch {
     // ignore
@@ -58,14 +60,14 @@ export async function clearDraft(id) {
 }
 
 /** Read a pending draft (returns null if none). */
-export async function readDraft(id) {
+export async function readDraft(id: string): Promise<Draft | null> {
   try {
     const db = await openDB()
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readonly')
       const req = tx.objectStore(STORE_NAME).get(id)
-      req.onsuccess = (e) => resolve(e.target.result || null)
-      req.onerror = (e) => reject(e.target.error)
+      req.onsuccess = () => resolve(req.result || null)
+      req.onerror = () => reject(req.error)
     })
   } catch {
     return null

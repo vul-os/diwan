@@ -9,17 +9,30 @@
 // import guards on load, exactly like the blank shapes in filesStore.
 
 // ── helpers to keep the Tiptap JSON terse ──────────────────────────────────
-const text = (s, marks) => (marks ? { type: 'text', text: s, marks } : { type: 'text', text: s })
-const bold = (s) => text(s, [{ type: 'bold' }])
-const heading = (level, ...content) => ({ type: 'heading', attrs: { level }, content })
-const para = (...content) => (content.length ? { type: 'paragraph', content } : { type: 'paragraph' })
-const bullet = (...items) => ({
+export type TiptapMark = { type: string; attrs?: Record<string, unknown> }
+export type TiptapNode = {
+  type: string
+  attrs?: Record<string, unknown>
+  content?: TiptapNode[]
+  text?: string
+  marks?: TiptapMark[]
+}
+
+const text = (s: string, marks?: TiptapMark[]): TiptapNode =>
+  (marks ? { type: 'text', text: s, marks } : { type: 'text', text: s })
+const bold = (s: string): TiptapNode => text(s, [{ type: 'bold' }])
+const heading = (level: number, ...content: TiptapNode[]): TiptapNode => ({ type: 'heading', attrs: { level }, content })
+const para = (...content: TiptapNode[]): TiptapNode => (content.length ? { type: 'paragraph', content } : { type: 'paragraph' })
+const bullet = (...items: string[]): TiptapNode => ({
   type: 'bulletList',
   content: items.map((s) => ({ type: 'listItem', content: [{ type: 'paragraph', content: [text(s)] }] })),
 })
 
+export type DocTemplate = { id: string; label: string; desc: string; content: TiptapNode }
+export type SheetTemplate = { id: string; label: string; desc: string; content: SheetTab[] }
+
 // ── Docs templates (Tiptap JSON) ───────────────────────────────────────────
-export const DOC_TEMPLATES = [
+export const DOC_TEMPLATES: DocTemplate[] = [
   {
     id: 'blank',
     label: 'Blank',
@@ -93,10 +106,15 @@ export const DOC_TEMPLATES = [
 
 // ── Sheets templates (luckysheet-style: [{ name, celldata, config }]) ───────
 // celldata entries are { r, c, v: { v: value, m: display, bl?: 1 } }.
-const cell = (r, c, v, boldCell) => ({ r, c, v: { v, m: String(v), ...(boldCell ? { bl: 1 } : {}) } })
+export type SheetCellValue = string | number
+export type SheetCell = { r: number; c: number; v: { v: SheetCellValue; m: string; bl?: 1 } }
+export type SheetTab = { name: string; celldata: SheetCell[]; config: Record<string, unknown> }
 
-function sheet(name, rows) {
-  const celldata = []
+const cell = (r: number, c: number, v: SheetCellValue, boldCell: boolean): SheetCell =>
+  ({ r, c, v: { v, m: String(v), ...(boldCell ? { bl: 1 } : {}) } })
+
+function sheet(name: string, rows: SheetCellValue[][]): SheetTab[] {
+  const celldata: SheetCell[] = []
   rows.forEach((row, r) => {
     row.forEach((val, c) => {
       if (val === null || val === undefined || val === '') return
@@ -106,7 +124,7 @@ function sheet(name, rows) {
   return [{ name, celldata, config: {} }]
 }
 
-export const SHEET_TEMPLATES = [
+export const SHEET_TEMPLATES: SheetTemplate[] = [
   {
     id: 'blank',
     label: 'Blank',
@@ -158,7 +176,7 @@ export const SHEET_TEMPLATES = [
   },
 ]
 
-export function templatesFor(type) {
+export function templatesFor(type: string): DocTemplate[] | SheetTemplate[] | null {
   if (type === 'doc') return DOC_TEMPLATES
   if (type === 'sheet') return SHEET_TEMPLATES
   return null

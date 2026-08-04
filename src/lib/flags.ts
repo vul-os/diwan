@@ -37,7 +37,7 @@
  * insert could land inside the wrong node and corrupt it.)
  */
 
-function env(name) {
+function env(name: string): string | undefined {
   try {
     // import.meta.env is replaced at build time by Vite; guard for non-Vite
     // consumers of the library build (jest/node) where it may be undefined.
@@ -52,7 +52,7 @@ function env(name) {
   return undefined
 }
 
-function boolFlag(name, dflt) {
+function boolFlag(name: string, dflt: boolean): boolean {
   const raw = env(name)
   if (raw === undefined || raw === '') return dflt
   const v = raw.trim().toLowerCase()
