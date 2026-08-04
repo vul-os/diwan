@@ -9,28 +9,100 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import type { Mock } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import React from 'react'
+import type { Editor } from '@tiptap/react'
 
 // ─── Minimal editor mock ──────────────────────────────────────────────────────
 
-function makeChain(store) {
-  const chain = new Proxy(store, {
+interface ChainCall {
+  cmd: string
+  args: unknown[]
+}
+interface ChainStore {
+  _calls: ChainCall[]
+}
+
+// The real chain API is huge; this suite only ever calls the methods below, so
+// the mock's static type covers exactly that finite set rather than trying to
+// type the Proxy generically.
+interface MockChain {
+  focus: (...args: unknown[]) => MockChain
+  toggleBold: (...args: unknown[]) => MockChain
+  toggleItalic: (...args: unknown[]) => MockChain
+  toggleUnderline: (...args: unknown[]) => MockChain
+  clearNodes: (...args: unknown[]) => MockChain
+  unsetAllMarks: (...args: unknown[]) => MockChain
+  setTextAlign: (...args: unknown[]) => MockChain
+  toggleHeading: (...args: unknown[]) => MockChain
+  setLink: (...args: unknown[]) => MockChain
+  unsetLink: (...args: unknown[]) => MockChain
+  insertTable: (...args: unknown[]) => MockChain
+  addRowAfter: (...args: unknown[]) => MockChain
+  deleteTable: (...args: unknown[]) => MockChain
+  insertContentAt: (...args: unknown[]) => MockChain
+  deleteRange: (...args: unknown[]) => MockChain
+  toggleMark: (...args: unknown[]) => MockChain
+  setMark: (...args: unknown[]) => MockChain
+  run: () => boolean
+}
+
+function makeChain(store: ChainStore): MockChain {
+  const chain: MockChain = new Proxy(store, {
     get(target, prop) {
       if (prop === 'run') return () => true
       // any command call just records itself and returns the chain
-      return (...args) => {
-        target._calls.push({ cmd: prop, args })
+      return (...args: unknown[]) => {
+        target._calls.push({ cmd: prop as string, args })
         return chain
       }
     },
-  })
+  }) as unknown as MockChain
   return chain
 }
 
-function makeEditor(overrides = {}) {
-  const store = { _calls: [] }
+interface MockPMNode {
+  type: { name: string }
+  attrs?: Record<string, unknown>
+  textContent?: string
+}
+
+interface MockDoc {
+  textBetween?: (...args: unknown[]) => string
+  textContent?: string
+  descendants?: (fn: (node: MockPMNode) => void) => void
+  content?: { content: Array<{ type: { name: string } }> }
+}
+
+interface MockEditorState {
+  selection: { from: number; to: number }
+  doc: MockDoc
+}
+
+interface MockEditor {
+  _store: ChainStore
+  isActive: Mock
+  can: () => { undo: () => boolean; redo: () => boolean }
+  getAttributes: Mock
+  getHTML: Mock
+  getText: Mock
+  getJSON: Mock
+  state: MockEditorState
+  storage: { characterCount: { words: () => number; characters: () => number } }
+  chain: () => MockChain
+  commands: { setContent: Mock; setTextSelection: Mock }
+  on: Mock
+  off: Mock
+}
+
+// The mock deliberately doesn't implement the real (huge) Editor shape — cast
+// through unknown at each call site that hands it to real component/helper
+// code, same pattern used for the other DOM/editor stand-ins in this suite.
+const asEditor = (e: MockEditor): Editor => e as unknown as Editor
+
+function makeEditor(overrides: Partial<MockEditor> = {}): MockEditor {
+  const store: ChainStore = { _calls: [] }
   const chain = makeChain(store)
   return {
     _store: store,
@@ -64,6 +136,15 @@ function makeEditor(overrides = {}) {
     off: vi.fn(),
     ...overrides,
   }
+}
+
+/** `.find()` narrowed to a throw — every call site here has already
+ *  established (via toBeDefined()/toBeTruthy(), or simply by construction)
+ *  that the element exists; this just gives TS the same certainty. */
+function mustFind<T>(arr: T[], pred: (x: T) => boolean): T {
+  const found = arr.find(pred)
+  if (!found) throw new Error('expected element not found')
+  return found
 }
 
 // ─── Import components under test ─────────────────────────────────────────────
@@ -118,7 +199,7 @@ describe('Toolbar formatting commands', () => {
   it('should call setTextAlign with justify', () => {
     const editor = makeEditor()
     editor.chain().focus().setTextAlign('justify').run()
-    const alignCall = editor._store._calls.find((c) => c.cmd === 'setTextAlign')
+    const alignCall = mustFind(editor._store._calls, (c) => c.cmd === 'setTextAlign')
     expect(alignCall).toBeDefined()
     expect(alignCall.args[0]).toBe('justify')
   })
@@ -126,7 +207,7 @@ describe('Toolbar formatting commands', () => {
   it('should call toggleHeading with level 2', () => {
     const editor = makeEditor()
     editor.chain().focus().toggleHeading({ level: 2 }).run()
-    const call = editor._store._calls.find((c) => c.cmd === 'toggleHeading')
+    const call = mustFind(editor._store._calls, (c) => c.cmd === 'toggleHeading')
     expect(call).toBeDefined()
     expect(call.args[0]).toEqual({ level: 2 })
   })
@@ -138,9 +219,9 @@ describe('Link insertion', () => {
   it('setLink call routes href through chain', () => {
     const editor = makeEditor()
     editor.chain().focus().setLink({ href: 'https://vulos.org', target: '_blank' }).run()
-    const call = editor._store._calls.find((c) => c.cmd === 'setLink')
+    const call = mustFind(editor._store._calls, (c) => c.cmd === 'setLink')
     expect(call).toBeDefined()
-    expect(call.args[0].href).toBe('https://vulos.org')
+    expect((call.args[0] as { href: string }).href).toBe('https://vulos.org')
   })
 
   it('unsetLink call routes through chain', () => {
@@ -156,7 +237,7 @@ describe('Table insertion', () => {
   it('insertTable with 3×3 routes through chain', () => {
     const editor = makeEditor()
     editor.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
-    const call = editor._store._calls.find((c) => c.cmd === 'insertTable')
+    const call = mustFind(editor._store._calls, (c) => c.cmd === 'insertTable')
     expect(call).toBeDefined()
     expect(call.args[0]).toMatchObject({ rows: 3, cols: 3, withHeaderRow: true })
   })
@@ -189,20 +270,20 @@ describe('FindReplace component', () => {
       },
     })
     const onClose = vi.fn()
-    render(<FindReplace editor={editor} mode="find" onClose={onClose} />)
+    render(<FindReplace editor={asEditor(editor)} mode="find" onClose={onClose} />)
     expect(screen.getByPlaceholderText('Find…')).toBeInTheDocument()
   })
 
   it('shows replace input in replace mode', () => {
     const editor = makeEditor()
-    render(<FindReplace editor={editor} mode="replace" onClose={vi.fn()} />)
+    render(<FindReplace editor={asEditor(editor)} mode="replace" onClose={vi.fn()} />)
     expect(screen.getByPlaceholderText('Replace with…')).toBeInTheDocument()
   })
 
   it('calls onClose when Escape is pressed', async () => {
     const editor = makeEditor()
     const onClose = vi.fn()
-    render(<FindReplace editor={editor} mode="find" onClose={onClose} />)
+    render(<FindReplace editor={asEditor(editor)} mode="find" onClose={onClose} />)
     const input = screen.getByPlaceholderText('Find…')
     fireEvent.keyDown(input, { key: 'Escape' })
     expect(onClose).toHaveBeenCalled()
@@ -211,7 +292,7 @@ describe('FindReplace component', () => {
   it('calls onClose when X button is clicked', async () => {
     const editor = makeEditor()
     const onClose = vi.fn()
-    render(<FindReplace editor={editor} mode="find" onClose={onClose} />)
+    render(<FindReplace editor={asEditor(editor)} mode="find" onClose={onClose} />)
     const closeBtn = screen.getByLabelText('Close find bar')
     fireEvent.click(closeBtn)
     expect(onClose).toHaveBeenCalled()
@@ -223,7 +304,7 @@ describe('FindReplace component', () => {
 describe('WordCountModal', () => {
   it('renders word and character counts', () => {
     const editor = makeEditor()
-    render(<WordCountModal editor={editor} onClose={vi.fn()} />)
+    render(<WordCountModal editor={asEditor(editor)} onClose={vi.fn()} />)
     // Use getAllByText since "Words" may appear in multiple sections
     const wordLabels = screen.getAllByText('Words')
     expect(wordLabels.length).toBeGreaterThanOrEqual(1)
@@ -234,18 +315,19 @@ describe('WordCountModal', () => {
     const editor = makeEditor({
       getText: vi.fn().mockReturnValue('word '.repeat(260)), // 260 words → 2 pages
     })
-    render(<WordCountModal editor={editor} onClose={vi.fn()} />)
+    render(<WordCountModal editor={asEditor(editor)} onClose={vi.fn()} />)
     expect(screen.getByText('Pages (est.)')).toBeInTheDocument()
   })
 
   it('calls onClose when clicking outside', () => {
     const editor = makeEditor()
     const onClose = vi.fn()
-    const { container } = render(<WordCountModal editor={editor} onClose={onClose} />)
+    const { container } = render(<WordCountModal editor={asEditor(editor)} onClose={onClose} />)
     // Click the backdrop scrim (the outermost fixed-inset div that wraps the
     // role=dialog box). The dialog role now sits on the content box per correct
     // ARIA, so the click-to-dismiss target is the scrim's parent overlay.
     const overlay = container.querySelector('.fixed.inset-0')
+    if (!overlay) throw new Error('overlay not found')
     fireEvent.click(overlay)
     expect(onClose).toHaveBeenCalled()
   })
@@ -253,7 +335,7 @@ describe('WordCountModal', () => {
   it('calls onClose when X button clicked', () => {
     const editor = makeEditor()
     const onClose = vi.fn()
-    render(<WordCountModal editor={editor} onClose={onClose} />)
+    render(<WordCountModal editor={asEditor(editor)} onClose={onClose} />)
     fireEvent.click(screen.getByLabelText('Close'))
     expect(onClose).toHaveBeenCalled()
   })
@@ -274,7 +356,7 @@ describe('TableOfContents helpers', () => {
         },
       },
     })
-    const headings = extractHeadings(editor)
+    const headings = extractHeadings(asEditor(editor))
     expect(headings).toHaveLength(0)
   })
 
@@ -291,7 +373,7 @@ describe('TableOfContents helpers', () => {
         },
       },
     })
-    const headings = extractHeadings(editor)
+    const headings = extractHeadings(asEditor(editor))
     expect(headings).toHaveLength(2)
     expect(headings[0].level).toBe(1)
     expect(headings[0].text).toBe('Title')
@@ -322,7 +404,7 @@ describe('Suggestion accept routing', () => {
     const sg = { kind: 'insert', from: 3, to: 3, text: 'new text' }
     // Simulate what handleAcceptSuggestion does
     editor.chain().focus().insertContentAt(sg.from + 1, sg.text).run()
-    const call = editor._store._calls.find((c) => c.cmd === 'insertContentAt')
+    const call = mustFind(editor._store._calls, (c) => c.cmd === 'insertContentAt')
     expect(call).toBeDefined()
     expect(call.args[0]).toBe(4)
     expect(call.args[1]).toBe('new text')
@@ -332,7 +414,7 @@ describe('Suggestion accept routing', () => {
     const editor = makeEditor()
     const sg = { kind: 'delete', from: 2, to: 5 }
     editor.chain().focus().deleteRange({ from: sg.from + 1, to: sg.to + 1 }).run()
-    const call = editor._store._calls.find((c) => c.cmd === 'deleteRange')
+    const call = mustFind(editor._store._calls, (c) => c.cmd === 'deleteRange')
     expect(call).toBeDefined()
     expect(call.args[0]).toEqual({ from: 3, to: 6 })
   })
@@ -355,9 +437,10 @@ describe('Responsive layout classes', () => {
   it('FindReplace has z-50 and absolute positioning classes', () => {
     const editor = makeEditor()
     const { container } = render(
-      <FindReplace editor={editor} mode="find" onClose={vi.fn()} />
+      <FindReplace editor={asEditor(editor)} mode="find" onClose={vi.fn()} />
     )
     const dialog = container.querySelector('[role="dialog"]')
+    if (!dialog) throw new Error('dialog not found')
     expect(dialog.className).toMatch(/absolute/)
     expect(dialog.className).toMatch(/z-50/)
   })
@@ -365,11 +448,12 @@ describe('Responsive layout classes', () => {
   it('WordCountModal has fixed inset-0 overlay class', () => {
     const editor = makeEditor()
     const { container } = render(
-      <WordCountModal editor={editor} onClose={vi.fn()} />
+      <WordCountModal editor={asEditor(editor)} onClose={vi.fn()} />
     )
     // The full-screen backdrop scrim carries the fixed/inset positioning; the
     // role=dialog box is the centred content within it.
     const overlay = container.firstChild
+    if (!(overlay instanceof Element)) throw new Error('overlay not an element')
     expect(overlay.className).toMatch(/fixed/)
     expect(overlay.className).toMatch(/inset-0/)
     // And the accessible dialog box is nested inside that overlay.
@@ -392,8 +476,8 @@ describe('FindReplace match count', () => {
         },
       },
     })
-    render(<FindReplace editor={editor} mode="find" onClose={vi.fn()} />)
-    const input = screen.getByPlaceholderText('Find…')
+    render(<FindReplace editor={asEditor(editor)} mode="find" onClose={vi.fn()} />)
+    const input = screen.getByPlaceholderText<HTMLInputElement>('Find…')
     await userEvent.type(input, 'zzznomatch')
     // The count label should eventually show "No results" or be empty
     // (actual match logic uses doc.textContent which is a property on our mock)
@@ -407,13 +491,13 @@ describe('FindReplace match count', () => {
 describe('HTML export', () => {
   it('exportToHtml produces a valid HTML blob and calls saveAs', async () => {
     const { exportToHtml } = await import('../docsExport')
-    const { saveAs } = await import('file-saver')
+    await import('file-saver')
 
     const editor = makeEditor({
       getHTML: vi.fn().mockReturnValue('<p>Hello <strong>world</strong></p>'),
     })
 
-    exportToHtml(editor, 'test-doc')
+    exportToHtml(asEditor(editor), 'test-doc')
 
     // We just verify getHTML was called and saveAs was invoked — full
     // integration of the Blob is handled by file-saver.
@@ -441,7 +525,7 @@ describe('Subscript and Superscript toolbar commands', () => {
   it('toggleMark subscript routes through chain', () => {
     const editor = makeEditor()
     editor.chain().focus().toggleMark('subscript').run()
-    const call = editor._store._calls.find((c) => c.cmd === 'toggleMark')
+    const call = mustFind(editor._store._calls, (c) => c.cmd === 'toggleMark')
     expect(call).toBeDefined()
     expect(call.args[0]).toBe('subscript')
   })
@@ -449,7 +533,7 @@ describe('Subscript and Superscript toolbar commands', () => {
   it('toggleMark superscript routes through chain', () => {
     const editor = makeEditor()
     editor.chain().focus().toggleMark('superscript').run()
-    const call = editor._store._calls.find((c) => c.cmd === 'toggleMark')
+    const call = mustFind(editor._store._calls, (c) => c.cmd === 'toggleMark')
     expect(call).toBeDefined()
     expect(call.args[0]).toBe('superscript')
   })
@@ -461,15 +545,15 @@ describe('Custom font size input', () => {
   it('setMark textStyle with custom font size routes through chain', () => {
     const editor = makeEditor()
     editor.chain().focus().setMark('textStyle', { fontSize: '28pt' }).run()
-    const call = editor._store._calls.find((c) => c.cmd === 'setMark')
+    const call = mustFind(editor._store._calls, (c) => c.cmd === 'setMark')
     expect(call).toBeDefined()
     expect(call.args[0]).toBe('textStyle')
-    expect(call.args[1].fontSize).toBe('28pt')
+    expect((call.args[1] as { fontSize: string }).fontSize).toBe('28pt')
   })
 
   it('custom font size of 0 or negative should not be applied', () => {
     // Simulate the guard: n > 0 && n <= 400
-    const validate = (n) => n > 0 && n <= 400
+    const validate = (n: number): boolean => n > 0 && n <= 400
     expect(validate(0)).toBe(false)
     expect(validate(-5)).toBe(false)
     expect(validate(28)).toBe(true)
@@ -480,17 +564,50 @@ describe('Custom font size input', () => {
 
 // ─── 14. Sheets Find/Replace helpers ─────────────────────────────────────────
 
+// The module under test here lives in ../../sheets (a sibling app owned by a
+// different conversion pass, still .jsx) — these types describe only the
+// shape this suite reads/writes, cast onto the untyped dynamic import rather
+// than assuming sheets' internal representation.
+interface SheetCellValue {
+  v: string
+  m: string
+}
+interface SheetCell {
+  r: number
+  c: number
+  v: SheetCellValue | string | number
+}
+interface SheetData {
+  name: string
+  celldata: SheetCell[]
+}
+interface FlatCell {
+  sheetIdx: number
+  r: number
+  c: number
+  value: string
+}
+
 describe('Sheets FindReplace helpers', () => {
-  let collectCells, findMatches, applyReplace
+  let collectCells!: (data: SheetData[]) => FlatCell[]
+  let findMatches!: (cells: FlatCell[], term: string, matchCase: boolean) => number[]
+  let applyReplace!: (
+    data: SheetData[],
+    cells: FlatCell[],
+    matchIndices: number[],
+    term: string,
+    replacement: string,
+    matchCase: boolean,
+  ) => SheetData[]
 
   beforeEach(async () => {
     const mod = await import('../../sheets/SheetsFindReplace.jsx')
-    collectCells  = mod.collectCells
-    findMatches   = mod.findMatches
-    applyReplace  = mod.applyReplace
+    collectCells = mod.collectCells as typeof collectCells
+    findMatches = mod.findMatches as typeof findMatches
+    applyReplace = mod.applyReplace as typeof applyReplace
   })
 
-  const sampleData = [
+  const sampleData: SheetData[] = [
     {
       name: 'Sheet1',
       celldata: [
@@ -533,10 +650,10 @@ describe('Sheets FindReplace helpers', () => {
     const matchIdxs = findMatches(cells, 'hello', false)
     const newData = applyReplace(sampleData, cells, matchIdxs, 'hello', 'Hi', false)
     const sheet = newData[0]
-    const cell00 = sheet.celldata.find((c) => c.r === 0 && c.c === 0)
-    const cell10 = sheet.celldata.find((c) => c.r === 1 && c.c === 0)
-    expect(cell00.v.v).toBe('Hi')
-    expect(cell10.v.v).toBe('Hi again')
+    const cell00 = mustFind(sheet.celldata, (c) => c.r === 0 && c.c === 0)
+    const cell10 = mustFind(sheet.celldata, (c) => c.r === 1 && c.c === 0)
+    expect((cell00.v as SheetCellValue).v).toBe('Hi')
+    expect((cell10.v as SheetCellValue).v).toBe('Hi again')
   })
 
   it('applyReplace leaves non-matching cells unchanged', () => {
@@ -544,9 +661,9 @@ describe('Sheets FindReplace helpers', () => {
     const matchIdxs = findMatches(cells, 'World', true)
     const newData = applyReplace(sampleData, cells, matchIdxs, 'World', 'Earth', true)
     const sheet = newData[0]
-    const cell00 = sheet.celldata.find((c) => c.r === 0 && c.c === 0)
-    expect(cell00.v.v).toBe('Hello') // unchanged
-    const cell01 = sheet.celldata.find((c) => c.r === 0 && c.c === 1)
-    expect(cell01.v.v).toBe('Earth')
+    const cell00 = mustFind(sheet.celldata, (c) => c.r === 0 && c.c === 0)
+    expect((cell00.v as SheetCellValue).v).toBe('Hello') // unchanged
+    const cell01 = mustFind(sheet.celldata, (c) => c.r === 0 && c.c === 1)
+    expect((cell01.v as SheetCellValue).v).toBe('Earth')
   })
 })
