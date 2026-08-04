@@ -23,18 +23,30 @@
  */
 
 import { useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Home as HomeIcon, FileText, Table2, Presentation, FileSearch, PenTool,
   LogOut, PanelLeftOpen, Settings as SettingsIcon, Plus,
   Menu, Bell,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 import { useFilesStore } from '../store/filesStore'
+import type { DiwanFile } from '../store/filesStore'
 import { useNotificationsStore } from '../store/notificationsStore'
 import NewFileModal from './NewFileModal'
 import NotificationsPanel from './NotificationsPanel'
 import { Sidebar, IconButton, Tooltip, ThemeSwitch, DiwanMark } from './ui'
+import type { SidebarMode } from './ui/Sidebar'
+
+interface NavApp {
+  label: string
+  icon: LucideIcon
+  route: string
+  tint: string
+  beta?: boolean
+}
 
 // Each app icon carries one low-saturation tint at rest (so users find
 // Sheets/Slides/PDF at a glance); it brightens to accent only when its app is
@@ -42,7 +54,7 @@ import { Sidebar, IconButton, Tooltip, ThemeSwitch, DiwanMark } from './ui'
 // only (never a row bg) and match the Home page cards so rail ↔ content agree.
 // Office is documents-only: chat/video and calendar/contacts are third-party and
 // are NOT launched from here.
-const NAV_APPS = [
+const NAV_APPS: NavApp[] = [
   { label: 'Docs',        icon: FileText,      route: '/docs',        tint: 'text-app-docs'   },
   { label: 'Sheets',      icon: Table2,        route: '/sheets',      tint: 'text-app-sheets' },
   { label: 'Slides',      icon: Presentation,  route: '/slides',      tint: 'text-app-slides' },
@@ -52,15 +64,22 @@ const NAV_APPS = [
 
 // Recent-file rows mirror the app tints so a recent doc/sheet/slide/whiteboard
 // reads the same hue as its app in the rail above.
-const RECENT_ICON = { doc: FileText, sheet: Table2, slide: Presentation, whiteboard: PenTool }
-const RECENT_TINT = { doc: 'text-app-docs', sheet: 'text-app-sheets', slide: 'text-app-slides', whiteboard: 'text-app-board' }
+const RECENT_ICON: Record<string, LucideIcon> = { doc: FileText, sheet: Table2, slide: Presentation, whiteboard: PenTool }
+const RECENT_TINT: Record<string, string> = { doc: 'text-app-docs', sheet: 'text-app-sheets', slide: 'text-app-slides', whiteboard: 'text-app-board' }
 
 /**
  * SidebarContent — the rail body, shared between the persistent (≥lg) column
  * and the mobile drawer. `collapsed` only applies to the desktop column;
  * `onNavigate` is fired on any destination tap so the drawer can close itself.
  */
-function SidebarContent({ collapsed, onNavigate, onNewFile, onSetMode }) {
+interface SidebarContentProps {
+  collapsed: boolean
+  onNavigate?: () => void
+  onNewFile: () => void
+  onSetMode?: (mode: SidebarMode) => void
+}
+
+function SidebarContent({ collapsed, onNavigate, onNewFile, onSetMode }: SidebarContentProps) {
   const { status, logout } = useAuthStore()
   const { files } = useFilesStore()
   const navigate = useNavigate()
@@ -74,11 +93,11 @@ function SidebarContent({ collapsed, onNavigate, onNewFile, onSetMode }) {
     return () => clearInterval(t)
   }, [fetchNotifs])
   const unread = notifs.filter((n) => !n.read).length
-  const fileTypeOf = (id) => files.find((f) => f.id === id)?.type
+  const fileTypeOf = (id: string) => files.find((f) => f.id === id)?.type
 
   const recentFiles = files.slice(0, 5)
-  const TYPE_ROUTE = { doc: 'docs', sheet: 'sheets', slide: 'slides', whiteboard: 'whiteboards' }
-  const typeRoute = (f) => `/${TYPE_ROUTE[f.type] || 'docs'}/${f.id}`
+  const TYPE_ROUTE: Record<string, string> = { doc: 'docs', sheet: 'sheets', slide: 'slides', whiteboard: 'whiteboards' }
+  const typeRoute = (f: DiwanFile) => `/${TYPE_ROUTE[f.type] || 'docs'}/${f.id}`
 
   return (
     <>
@@ -193,14 +212,14 @@ function SidebarContent({ collapsed, onNavigate, onNewFile, onSetMode }) {
 }
 
 const SIDEBAR_KEY = 'diwan.sidebar'
-const SIDEBAR_MODES = ['expanded', 'mini', 'hidden']
+const SIDEBAR_MODES: SidebarMode[] = ['expanded', 'mini', 'hidden']
 
-function Shell({ children }) {
+function Shell({ children }: { children?: ReactNode }) {
   // Desktop rail state — persisted across sessions. 'expanded' | 'mini' | 'hidden'.
-  const [mode, setMode] = useState(() => {
+  const [mode, setMode] = useState<SidebarMode>(() => {
     try {
       const m = localStorage.getItem(SIDEBAR_KEY)
-      return SIDEBAR_MODES.includes(m) ? m : 'expanded'
+      return SIDEBAR_MODES.includes(m as SidebarMode) ? (m as SidebarMode) : 'expanded'
     } catch { return 'expanded' }
   })
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -210,7 +229,7 @@ function Shell({ children }) {
   const closeMobile = () => setMobileOpen(false)
   const collapsed = mode === 'mini'
 
-  const applyMode = (m) => {
+  const applyMode = (m: SidebarMode) => {
     setMode(m)
     try { localStorage.setItem(SIDEBAR_KEY, m) } catch { /* private mode */ }
   }
@@ -218,7 +237,7 @@ function Shell({ children }) {
   // Esc closes the mobile drawer.
   useEffect(() => {
     if (!mobileOpen) return
-    const onKey = (e) => { if (e.key === 'Escape') closeMobile() }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeMobile() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [mobileOpen])
@@ -286,6 +305,6 @@ function Shell({ children }) {
   )
 }
 
-export default function Layout({ children }) {
+export default function Layout({ children }: { children?: ReactNode }) {
   return <Shell>{children}</Shell>
 }

@@ -19,7 +19,7 @@
 import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import RequireAuth from './RequireAuth.jsx'
-import Layout from '../components/Layout.jsx'
+import Layout from '../components/Layout'
 import Home from '../components/Home'
 import AppHome from '../components/AppHome'
 import Settings from '../components/Settings.jsx'
