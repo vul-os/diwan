@@ -30,13 +30,35 @@
  */
 
 import { Node, Extension, mergeAttributes } from '@tiptap/react'
-import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { Plugin, PluginKey, type EditorState, type Transaction } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
+import type { Node as PMNode } from '@tiptap/pm/model'
+
+declare module '@tiptap/core' {
+  interface Commands<ReturnType> {
+    footnoteRef: {
+      insertFootnote: () => ReturnType
+    }
+  }
+}
+
+export interface FootnoteScan {
+  bodyRefIds: string[]
+  listPos: number | null
+  listNode: PMNode | null
+  itemIds: string[]
+}
+
+export interface FootnoteReconciliation {
+  toAdd: string[]
+  toRemove: string[]
+  ordered: string[]
+}
 
 let _fnCounter = 0
 
 /** Generate a process-unique footnote id. */
-export function nextFootnoteId() {
+export function nextFootnoteId(): string {
   _fnCounter += 1
   const rand = (typeof crypto !== 'undefined' && crypto.randomUUID)
     ? crypto.randomUUID().slice(0, 8)
@@ -53,7 +75,7 @@ export function nextFootnoteId() {
  * @param {string[]} refIds  footnote ids in the order they appear in the body
  * @returns {Map<string, number>}  id → 1-based number
  */
-export function computeFootnoteOrder(refIds) {
+export function computeFootnoteOrder(refIds: string[]): Map<string, number> {
   const map = new Map()
   let n = 0
   for (const id of refIds) {
@@ -74,11 +96,11 @@ export function computeFootnoteOrder(refIds) {
  * @param {string[]} bodyRefIds  ref ids in body order
  * @param {string[]} itemIds     ids currently present in the footnotes list
  */
-export function reconcileFootnoteItems(bodyRefIds, itemIds) {
+export function reconcileFootnoteItems(bodyRefIds: string[], itemIds: string[]): FootnoteReconciliation {
   const bodySet = new Set(bodyRefIds)
   const itemSet = new Set(itemIds)
-  const seen = new Set()
-  const ordered = []
+  const seen = new Set<string>()
+  const ordered: string[] = []
   for (const id of bodyRefIds) {
     if (!seen.has(id)) { seen.add(id); ordered.push(id) }
   }
@@ -95,15 +117,16 @@ export function reconcileFootnoteItems(bodyRefIds, itemIds) {
  * @param {object} json  a doc node ({ type, content }) or its content array
  * @returns {string[]}   footnote ref ids in document order (refs only, not items)
  */
-export function collectFootnoteRefIds(json) {
-  const ids = []
-  const walk = (node) => {
+export function collectFootnoteRefIds(json: unknown): string[] {
+  const ids: string[] = []
+  const walk = (node: unknown): void => {
     if (!node || typeof node !== 'object') return
     if (Array.isArray(node)) { node.forEach(walk); return }
-    if (node.type === 'footnoteRef' && node.attrs && node.attrs.id) {
-      ids.push(node.attrs.id)
+    const n = node as { type?: unknown; attrs?: { id?: unknown }; content?: unknown }
+    if (n.type === 'footnoteRef' && n.attrs && n.attrs.id) {
+      ids.push(String(n.attrs.id))
     }
-    if (Array.isArray(node.content)) node.content.forEach(walk)
+    if (Array.isArray(n.content)) n.content.forEach(walk)
   }
   walk(json)
   return ids
@@ -132,23 +155,24 @@ export function collectFootnoteRefIds(json) {
  * @param {string} html  serialized editor HTML
  * @returns {string}     HTML with sequential footnote numbers baked in
  */
-export function numberFootnotesInHtml(html) {
-  if (typeof html !== 'string' || !html.includes('data-fn-id')) return html
-  if (typeof DOMParser === 'undefined') return html
+export function numberFootnotesInHtml(html: unknown): string {
+  const src = typeof html === 'string' ? html : ''
+  if (!src.includes('data-fn-id')) return src
+  if (typeof DOMParser === 'undefined') return src
   try {
     const parser = new DOMParser()
-    const doc = parser.parseFromString(`<body>${html}</body>`, 'text/html')
+    const doc = parser.parseFromString(`<body>${src}</body>`, 'text/html')
     const refs = Array.from(doc.querySelectorAll('sup[data-fn-id]'))
-    const order = computeFootnoteOrder(refs.map((el) => el.getAttribute('data-fn-id')))
+    const order = computeFootnoteOrder(refs.map((el) => el.getAttribute('data-fn-id') || ''))
 
     for (const el of refs) {
-      const num = order.get(el.getAttribute('data-fn-id'))
+      const num = order.get(el.getAttribute('data-fn-id') || '')
       if (!num) continue
       el.setAttribute('data-fn-num', String(num))
       el.textContent = String(num)
     }
     for (const el of Array.from(doc.querySelectorAll('li[data-fn-id]'))) {
-      const num = order.get(el.getAttribute('data-fn-id'))
+      const num = order.get(el.getAttribute('data-fn-id') || '')
       if (!num) continue
       el.setAttribute('data-fn-num', String(num))
       // Prefix the item text with "N. " so the number is visible without CSS.
@@ -161,7 +185,7 @@ export function numberFootnotesInHtml(html) {
     }
     return doc.body.innerHTML
   } catch {
-    return html
+    return src
   }
 }
 
@@ -180,8 +204,8 @@ export const FootnoteRef = Node.create({
     return {
       id: {
         default: null,
-        parseHTML: (el) => el.getAttribute('data-fn-id'),
-        renderHTML: (attrs) => (attrs.id ? { 'data-fn-id': attrs.id } : {}),
+        parseHTML: (el: HTMLElement) => el.getAttribute('data-fn-id'),
+        renderHTML: (attrs: { id?: string | null }) => (attrs.id ? { 'data-fn-id': attrs.id } : {}),
       },
     }
   },
@@ -207,7 +231,7 @@ export const FootnoteRef = Node.create({
         // Insert the inline ref at the cursor, then ensure a list item exists.
         return chain()
           .insertContent({ type: this.name, attrs: { id } })
-          .command(({ tr, dispatch }) => {
+          .command(({ tr, dispatch }: { tr: Transaction; dispatch?: (tr: Transaction) => void }) => {
             if (dispatch) ensureFootnoteItem(state, tr, id)
             return true
           })
@@ -231,8 +255,8 @@ export const FootnoteItem = Node.create({
     return {
       id: {
         default: null,
-        parseHTML: (el) => el.getAttribute('data-fn-id'),
-        renderHTML: (attrs) => (attrs.id ? { 'data-fn-id': attrs.id } : {}),
+        parseHTML: (el: HTMLElement) => el.getAttribute('data-fn-id'),
+        renderHTML: (attrs: { id?: string | null }) => (attrs.id ? { 'data-fn-id': attrs.id } : {}),
       },
     }
   },
@@ -271,11 +295,11 @@ export const FootnotesList = Node.create({
 // ---------------------------------------------------------------------------
 
 /** Collect footnoteRef ids in body order + the list node position/items. */
-export function scanFootnotes(doc) {
-  const bodyRefIds = []
-  let listPos = null
-  let listNode = null
-  const itemIds = []
+export function scanFootnotes(doc: PMNode): FootnoteScan {
+  const bodyRefIds: string[] = []
+  let listPos: number | null = null
+  let listNode: PMNode | null = null
+  const itemIds: string[] = []
   doc.descendants((node, pos) => {
     if (node.type.name === 'footnoteRef' && node.attrs.id) {
       bodyRefIds.push(node.attrs.id)
@@ -294,7 +318,7 @@ export function scanFootnotes(doc) {
  * Ensure a footnoteItem with `id` exists inside the footnotesList, creating the
  * list at the document end if needed. Mutates `tr`. Best-effort — never throws.
  */
-export function ensureFootnoteItem(state, tr, id) {
+export function ensureFootnoteItem(state: EditorState, tr: Transaction, id: string): Transaction {
   const { schema } = state
   const itemType = schema.nodes.footnoteItem
   const listType = schema.nodes.footnotesList
@@ -306,7 +330,7 @@ export function ensureFootnoteItem(state, tr, id) {
 
   const item = itemType.create({ id }, paraType.create())
 
-  if (listPos === null) {
+  if (listPos === null || !listNode) {
     // No list yet: append a fresh list at the very end of the document.
     const list = listType.create(null, item)
     const end = tr.doc.content.size
@@ -326,10 +350,10 @@ export function ensureFootnoteItem(state, tr, id) {
 
 const FN_NUMBER_KEY = new PluginKey('footnoteNumbering')
 
-function buildNumberDecorations(doc) {
+function buildNumberDecorations(doc: PMNode) {
   const { bodyRefIds } = scanFootnotes(doc)
   const order = computeFootnoteOrder(bodyRefIds)
-  const decos = []
+  const decos: Decoration[] = []
   doc.descendants((node, pos) => {
     if (node.type.name === 'footnoteRef' && node.attrs.id) {
       const num = order.get(node.attrs.id)
@@ -378,13 +402,13 @@ export function createFootnoteSyncPlugin() {
     appendTransaction(transactions, _oldState, newState) {
       if (!transactions.some((t) => t.docChanged)) return null
       const { bodyRefIds, listPos, listNode, itemIds } = scanFootnotes(newState.doc)
-      if (listPos === null) return null
+      if (listPos === null || !listNode) return null
       const { toRemove } = reconcileFootnoteItems(bodyRefIds, itemIds)
       if (toRemove.length === 0) return null
 
       const tr = newState.tr
       // Delete orphaned items from the end backwards so positions stay valid.
-      const positions = []
+      const positions: { from: number; to: number }[] = []
       newState.doc.descendants((node, pos) => {
         if (node.type.name === 'footnoteItem' && toRemove.includes(node.attrs.id)) {
           positions.push({ from: pos, to: pos + node.nodeSize })
