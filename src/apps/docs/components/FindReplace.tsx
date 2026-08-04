@@ -8,15 +8,12 @@
  * Highlights ALL matches in the document canvas using ProseMirror decorations
  * (registered via editor.registerPlugin). The current match uses a brighter
  * highlight class. Also supports regex mode via the .* toggle.
- *
- * Props:
- *   editor      {Editor}   TipTap editor instance
- *   mode        {'find'|'replace'}
- *   onClose     {function}
  */
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, type KeyboardEvent } from 'react'
 import { X, ChevronUp, ChevronDown, Replace, ReplaceAll } from 'lucide-react'
+import type { Editor } from '@tiptap/react'
+import type { Node as PMNode } from '@tiptap/pm/model'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
 
 // ---------------------------------------------------------------------------
@@ -41,20 +38,25 @@ export const FIND_HIGHLIGHT_PLUGIN_KEY_NAME = 'findHighlight'
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-function escapeRegex(str) {
+function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-export function findAllMatches(doc, term, caseSensitive, useRegex) {
+export interface TextMatch {
+  index: number
+  length: number
+}
+
+export function findAllMatches(doc: PMNode, term: string, caseSensitive: boolean, useRegex: boolean): TextMatch[] {
   if (!term) return []
   const fullText = doc.textContent || ''
   const flags = caseSensitive ? 'g' : 'gi'
-  let re
+  let re: RegExp
   try {
     re = new RegExp(useRegex ? term : escapeRegex(term), flags)
   } catch { return [] }
-  const matches = []
-  let m
+  const matches: TextMatch[] = []
+  let m: RegExpExecArray | null
   while ((m = re.exec(fullText)) !== null) {
     matches.push({ index: m.index, length: m[0].length })
     if (re.lastIndex === m.index) re.lastIndex++
@@ -62,14 +64,14 @@ export function findAllMatches(doc, term, caseSensitive, useRegex) {
   return matches
 }
 
-function buildDecorations(doc, matches, currentIdx) {
+function buildDecorations(doc: PMNode, matches: TextMatch[], currentIdx: number): DecorationSet {
   if (!matches || matches.length === 0) return DecorationSet.empty
-  const decos = []
+  const decos: Decoration[] = []
   let textOffset = 0
   let matchIdx = 0
   doc.descendants((node, pos) => {
     if (!node.isText) return
-    const nodeText = node.text
+    const nodeText = node.text || ''
     while (matchIdx < matches.length) {
       const m = matches[matchIdx]
       const localStart = m.index - textOffset
@@ -90,22 +92,42 @@ function buildDecorations(doc, matches, currentIdx) {
   return DecorationSet.create(doc, decos)
 }
 
+/** Loose shape covering the plugin-key internals this lookup reaches for — the
+ *  same kind of local cast helper as commentDecorations.ts's DecorationLike.
+ *  PluginKey's public .d.ts exposes only get()/getState(), not the internal
+ *  string `key` field ("findHighlight$") this uses to find the pre-registered
+ *  plugin by name without importing its actual PluginKey instance; some pm
+ *  versions instead surface a plain string `.key` on the Plugin itself, so
+ *  both are checked, exactly as before. */
+interface PluginLike {
+  spec?: { key?: { key?: string } }
+  key?: unknown
+}
+
 // Dispatch highlight decorations via the plugin pre-registered in DocsEditor.
 // If the plugin is not present (e.g. in tests), this is a no-op.
-function applyHighlights(editor, matches, currentIdx) {
+//
+// Accepts a possibly-null editor (goNext/goPrev below call this without a
+// prior `if (!editor)` guard, same as the original untyped helper) — the cast
+// keeps `editor.view` a genuine property access, so a null/undefined editor
+// still throws here and is swallowed by the catch below exactly as before,
+// rather than silently short-circuiting on an added optional-chain.
+function applyHighlights(editor: Editor | null | undefined, matches: TextMatch[], currentIdx: number): void {
   try {
-    const pluginKey = editor.view?.state?.plugins?.find?.(
+    const e = editor as Editor
+    const plugins = e.view?.state?.plugins as unknown as PluginLike[] | undefined
+    const pluginKey = plugins?.find?.(
       (p) => p.spec?.key?.key === FIND_HIGHLIGHT_PLUGIN_KEY_NAME + '$'
         || (p.key && typeof p.key === 'string' && p.key.startsWith(FIND_HIGHLIGHT_PLUGIN_KEY_NAME))
     )
     if (!pluginKey) return
-    const set = buildDecorations(editor.state.doc, matches, currentIdx)
-    const tr = editor.state.tr.setMeta(FIND_HIGHLIGHT_PLUGIN_KEY_NAME, set)
-    editor.view.dispatch(tr)
+    const set = buildDecorations(e.state.doc, matches, currentIdx)
+    const tr = e.state.tr.setMeta(FIND_HIGHLIGHT_PLUGIN_KEY_NAME, set)
+    e.view.dispatch(tr)
   } catch { /* non-fatal: plugin may not be registered */ }
 }
 
-function clearHighlights(editor) {
+function clearHighlights(editor: Editor): void {
   try {
     const tr = editor.state.tr.setMeta(FIND_HIGHLIGHT_PLUGIN_KEY_NAME, DecorationSet.empty)
     editor.view.dispatch(tr)
@@ -115,16 +137,22 @@ function clearHighlights(editor) {
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
-export default function FindReplace({ editor, mode: initialMode, onClose }) {
-  const [mode, setMode] = useState(initialMode || 'find')
+export interface FindReplaceProps {
+  editor: Editor | null | undefined
+  mode?: 'find' | 'replace'
+  onClose: () => void
+}
+
+export default function FindReplace({ editor, mode: initialMode, onClose }: FindReplaceProps) {
+  const [mode, setMode] = useState<'find' | 'replace'>(initialMode || 'find')
   const [term, setTerm] = useState('')
   const [replace, setReplace] = useState('')
   const [caseSensitive, setCaseSensitive] = useState(false)
   const [useRegex, setUseRegex] = useState(false)
   const [regexError, setRegexError] = useState(false)
-  const [matches, setMatches] = useState([])
+  const [matches, setMatches] = useState<TextMatch[]>([])
   const [current, setCurrent] = useState(0)
-  const termRef = useRef(null)
+  const termRef = useRef<HTMLInputElement>(null)
 
   // Clear highlights when the bar is unmounted
   useEffect(() => {
@@ -159,7 +187,7 @@ export default function FindReplace({ editor, mode: initialMode, onClose }) {
   }, [term, caseSensitive, useRegex, editor])
 
   // Scroll to and select the current match
-  const selectMatch = useCallback((idx, matchList) => {
+  const selectMatch = useCallback((idx: number, matchList?: TextMatch[]) => {
     const m = matchList ?? matches
     if (!editor || m.length === 0 || idx < 0) return
     const match = m[idx]
@@ -168,7 +196,7 @@ export default function FindReplace({ editor, mode: initialMode, onClose }) {
     editor.state.doc.descendants((node, nodePos) => {
       if (found || !node.isText) return
       const start = pos
-      const end = pos + node.text.length
+      const end = pos + (node.text || '').length
       if (match.index >= start && match.index < end) {
         const from = nodePos + (match.index - start)
         const to = from + match.length
@@ -176,7 +204,7 @@ export default function FindReplace({ editor, mode: initialMode, onClose }) {
         found = true
         return false
       }
-      pos += node.isText ? node.text.length : 0
+      pos += node.isText ? (node.text || '').length : 0
     })
   }, [editor, matches])
 
@@ -214,15 +242,15 @@ export default function FindReplace({ editor, mode: initialMode, onClose }) {
   const doReplaceAll = () => {
     if (!editor || !term) return
     const flags = caseSensitive ? 'g' : 'gi'
-    let re
+    let re: RegExp
     try { re = new RegExp(useRegex ? term : escapeRegex(term), flags) } catch { return }
     const { doc } = editor.state
-    const edits = []
+    const edits: { from: number; to: number }[] = []
     doc.descendants((node, pos) => {
       if (!node.isText) return
       re.lastIndex = 0
-      let m
-      while ((m = re.exec(node.text)) !== null) {
+      let m: RegExpExecArray | null
+      while ((m = re.exec(node.text || '')) !== null) {
         edits.push({ from: pos + m.index, to: pos + m.index + m[0].length })
       }
     })
@@ -237,7 +265,7 @@ export default function FindReplace({ editor, mode: initialMode, onClose }) {
     clearHighlights(editor)
   }
 
-  const handleKeyDown = (e) => {
+  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Escape') { onClose(); return }
     if (e.key === 'Enter') {
       if (e.shiftKey) goPrev()
