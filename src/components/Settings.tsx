@@ -18,20 +18,53 @@
  */
 
 import { useState, useEffect } from 'react'
+import type { ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ArrowLeft, Save, Shield, Eye, EyeOff, CheckCircle2, AlertCircle, Loader2,
   Sun, Moon, Monitor, HardDrive, Server, Cloud, KeyRound,
   Database, Lock, LogOut, Folder, Boxes,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 import { api } from '../lib/api'
 import { Button, IconButton, Input, Card, Tabs, Tooltip, useToast } from './ui'
 import { useTheme } from './ui/useTheme'
 import { InvitesPanel, AuditPanel } from '../apps/admin/AdminApp.jsx'
 
+// ─── Local shape — `api.systemInfo` returns `unknown` by design; this
+// documents just what this page reads. ─────────────────────────────────────
+interface SystemInfo {
+  account_id?: string
+  version?: string
+  is_admin?: boolean
+  integration_mode?: string
+  auth?: {
+    mode?: string
+    user_count?: number
+  }
+  storage?: {
+    backend?: string
+    data_dir?: string
+    uploads_dir?: string
+    object_store?: {
+      active?: boolean
+      kind?: string
+      endpoint?: string
+      bucket?: string
+    }
+  }
+}
+
 // ─── Row ─────────────────────────────────────────────────────────────────────
-function Row({ label, hint, children, stacked }) {
+interface RowProps {
+  label: string
+  hint?: string
+  children?: ReactNode
+  stacked?: boolean
+}
+
+function Row({ label, hint, children, stacked }: RowProps) {
   return (
     <div className={[
       'px-5 py-4 gap-x-6 gap-y-3',
@@ -47,7 +80,13 @@ function Row({ label, hint, children, stacked }) {
 }
 
 // ─── Toggle ──────────────────────────────────────────────────────────────────
-function Toggle({ checked, onChange, label }) {
+interface ToggleProps {
+  checked: boolean
+  onChange: (v: boolean) => void
+  label?: string
+}
+
+function Toggle({ checked, onChange, label }: ToggleProps) {
   return (
     <button
       role="switch"
@@ -71,7 +110,18 @@ function Toggle({ checked, onChange, label }) {
 }
 
 // ─── Segmented control ───────────────────────────────────────────────────────
-function Segmented({ value, onChange, options }) {
+interface SegmentedOption {
+  value: string
+  Icon?: LucideIcon
+  label: string
+}
+interface SegmentedProps {
+  value: string
+  onChange: (v: string) => void
+  options: SegmentedOption[]
+}
+
+function Segmented({ value, onChange, options }: SegmentedProps) {
   return (
     <div className="flex items-center gap-0.5 p-0.5 bg-bg-elev2 border border-line rounded-md">
       {options.map(({ value: v, Icon, label }) => {
@@ -114,7 +164,7 @@ function ThemePicker() {
 }
 
 // ─── Mono key/value chip ─────────────────────────────────────────────────────
-function Code({ children }) {
+function Code({ children }: { children?: ReactNode }) {
   return (
     <code className="text-2xs font-mono bg-bg-elev2 text-ink-muted border border-line px-2.5 py-1 rounded-md break-all">
       {children}
@@ -122,8 +172,14 @@ function Code({ children }) {
   )
 }
 
-function Pill({ tone = 'neutral', Icon, children }) {
-  const tones = {
+interface PillProps {
+  tone?: 'ok' | 'neutral' | 'info'
+  Icon?: LucideIcon
+  children?: ReactNode
+}
+
+function Pill({ tone = 'neutral', Icon, children }: PillProps) {
+  const tones: Record<string, string> = {
     ok:      'text-success bg-success-bg border-success',
     neutral: 'text-ink-faint bg-bg-elev2 border-line',
     info:    'text-accent-press bg-accent-tint border-accent-tint-2',
@@ -136,7 +192,7 @@ function Pill({ tone = 'neutral', Icon, children }) {
 }
 
 // ─── Section header inside a card ────────────────────────────────────────────
-function SectionLabel({ Icon, children }) {
+function SectionLabel({ Icon, children }: { Icon?: LucideIcon; children?: ReactNode }) {
   return (
     <div className="flex items-center gap-2 px-5 pt-4 pb-1">
       {Icon && <Icon size={13} className="text-ink-faint" />}
@@ -150,14 +206,14 @@ export default function Settings() {
   const { status, logout } = useAuthStore()
   const { showToast, toast } = useToast()
 
-  const [info, setInfo] = useState(null)
+  const [info, setInfo] = useState<SystemInfo | null>(null)
   const [infoLoading, setInfoLoading] = useState(true)
   const [tab, setTab] = useState('account')
 
   useEffect(() => {
     let live = true
     api.systemInfo()
-      .then(d => { if (live) setInfo(d) })
+      .then(d => { if (live) setInfo(d as SystemInfo) })
       .catch(() => { if (live) setInfo(null) })
       .finally(() => { if (live) setInfoLoading(false) })
     return () => { live = false }
@@ -172,28 +228,32 @@ export default function Settings() {
     localStorage.getItem('vulos_default_view') ?? 'grid')
 
   const savePrefs = () => {
-    localStorage.setItem('vulos_autosave_delay', autosaveDelay)
-    localStorage.setItem('vulos_spellcheck', spellcheck)
+    localStorage.setItem('vulos_autosave_delay', String(autosaveDelay))
+    localStorage.setItem('vulos_spellcheck', String(spellcheck))
     localStorage.setItem('vulos_default_view', defaultView)
     showToast('Preferences saved')
   }
 
   // ── Identity (local display name) ───────────────────────────────────────────
-  const readIdentity = () => {
+  interface Identity {
+    displayName: string
+    accountId: string
+  }
+  const readIdentity = (): Identity => {
     try {
       const p = JSON.parse(localStorage.getItem('presence_identity') || '{}')
       if (p?.displayName) return p
-    } catch {}
+    } catch { /* ignore */ }
     return { displayName: 'You', accountId: '' }
   }
-  const [identity, setIdentity] = useState(readIdentity)
+  const [identity, setIdentity] = useState<Identity>(readIdentity)
   const [nameDraft, setNameDraft] = useState(identity.displayName)
   const accountId = info?.account_id && info.account_id !== 'self' ? info.account_id : identity.accountId
 
   const saveName = () => {
     const next = { ...identity, displayName: nameDraft.trim() || 'You' }
     setIdentity(next)
-    try { localStorage.setItem('presence_identity', JSON.stringify(next)) } catch {}
+    try { localStorage.setItem('presence_identity', JSON.stringify(next)) } catch { /* ignore */ }
     showToast('Display name updated')
   }
 
@@ -214,7 +274,7 @@ export default function Settings() {
       setCurPw(''); setNewPw(''); setConfirmPw('')
       showToast('Password updated')
     } catch (e) {
-      showToast(e.message || 'Failed to update password', 'error')
+      showToast(e instanceof Error ? e.message : 'Failed to update password', 'error')
     } finally {
       setSavingPw(false)
     }
@@ -494,14 +554,14 @@ export default function Settings() {
                   <Shield size={14} className="text-accent-press" />
                   <p className="mono-label">Invite tokens</p>
                 </div>
-                <InvitesPanel onError={(m) => m && showToast(m, 'error')} />
+                <InvitesPanel onError={(m: string) => m && showToast(m, 'error')} />
               </div>
               <div>
                 <div className="flex items-center gap-2 mb-3">
                   <Shield size={14} className="text-accent-press" />
                   <p className="mono-label">Audit log</p>
                 </div>
-                <AuditPanel onError={(m) => m && showToast(m, 'error')} />
+                <AuditPanel onError={(m: string) => m && showToast(m, 'error')} />
               </div>
             </div>
           )}
