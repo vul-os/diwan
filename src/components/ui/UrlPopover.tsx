@@ -12,15 +12,27 @@
 
 import { useEffect, useRef, useState } from 'react'
 
-export function isSafeUrl(raw) {
+export function isSafeUrl(raw?: string): boolean {
   const v = (raw || '').trim()
   if (!v) return false
   return !/^\s*(javascript|data|vbscript):/i.test(v)
 }
 
-export function normalizeUrl(raw) {
+export function normalizeUrl(raw?: string): string {
   const v = (raw || '').trim()
   return /^(https?:|mailto:|\/|#)/i.test(v) ? v : `https://${v}`
+}
+
+interface UrlPopoverProps {
+  initialValue?: string
+  placeholder?: string
+  label?: string
+  submitLabel?: string
+  onSubmit?: (url: string) => void
+  onRemove?: () => void
+  onClose?: () => void
+  align?: 'left' | 'right'
+  className?: string
 }
 
 export default function UrlPopover({
@@ -33,17 +45,17 @@ export default function UrlPopover({
   onClose,
   align = 'left',
   className = '',
-}) {
+}: UrlPopoverProps) {
   const [val, setVal] = useState(initialValue)
   const [err, setErr] = useState('')
-  const inputRef = useRef(null)
-  const rootRef = useRef(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => { inputRef.current?.focus(); inputRef.current?.select() }, [])
 
   useEffect(() => {
-    const onDown = (e) => { if (!rootRef.current?.contains(e.target)) onClose?.() }
-    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); onClose?.() } }
+    const onDown = (e: MouseEvent) => { if (!rootRef.current?.contains(e.target as Node)) onClose?.() }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose?.() } }
     document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onKey)
     return () => {
