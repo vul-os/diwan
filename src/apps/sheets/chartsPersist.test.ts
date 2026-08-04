@@ -16,23 +16,26 @@ import { describe, it, expect } from 'vitest'
 import {
   makeChart, insertChart, getCharts, extractChartData,
   chartsBySheetId, mergeCharts, clampCharts,
+  type ChartSheet, type ChartInput,
 } from './charts.js'
+
+type ChartsAuthoritativeOpts = { chartsAuthoritative?: boolean }
 
 // ── A faithful mini-model of SheetsEditor's data plumbing ────────────────────
 // Mirrors the real component: `data` is the authoritative state; handleChange
 // merges the app-owned charts back onto the normalised FortuneSheet payload
 // (unless the update is chart-authoritative). This is the code under test.
-function makeEditor(initialContent) {
-  let data = clampCharts(normalizeSheets(initialContent))
-  let lastSaved = null
-  const saves = []
+function makeEditor(initialContent: ChartSheet[]) {
+  let data: ChartSheet[] | null | undefined = clampCharts(normalizeSheets(initialContent))
+  let lastSaved: ChartSheet[] | null | undefined = null
+  const saves: (ChartSheet[] | null | undefined)[] = []
 
-  const setData = (updater) => {
+  const setData = (updater: ChartSheet[] | null | undefined | ((prev: ChartSheet[] | null | undefined) => ChartSheet[] | null | undefined)) => {
     data = typeof updater === 'function' ? updater(data) : updater
   }
 
   // Exact port of SheetsEditor.handleChange's charts-merge behaviour.
-  const handleChange = (newData, opts = {}) => {
+  const handleChange = (newData: ChartSheet[] | null | undefined, opts: ChartsAuthoritativeOpts = {}) => {
     setData((prev) => {
       if (!Array.isArray(newData)) return newData
       if (opts.chartsAuthoritative) return newData
@@ -46,7 +49,7 @@ function makeEditor(initialContent) {
   }
 
   // handleChartChange marks the update authoritative (wizard/ChartLayer op).
-  const handleChartChange = (nextData) => handleChange(nextData, { chartsAuthoritative: true })
+  const handleChartChange = (nextData: ChartSheet[] | null | undefined) => handleChange(nextData, { chartsAuthoritative: true })
 
   return {
     getData: () => data,
@@ -58,7 +61,7 @@ function makeEditor(initialContent) {
 }
 
 // Minimal normalizeSheets (only the fields the merge cares about: id + charts).
-function normalizeSheets(sheets) {
+function normalizeSheets(sheets: ChartSheet[] | null | undefined): ChartSheet[] {
   const arr = Array.isArray(sheets) && sheets.length ? sheets : [{ name: 'Sheet1', celldata: [], config: {} }]
   return arr.map((sh, i) => ({
     ...sh,
@@ -71,7 +74,7 @@ function normalizeSheets(sheets) {
 
 // A FortuneSheet-style onChange payload: it KEEPS the sheet id + celldata but
 // DROPS the app's custom `charts` field (this is the crux of the bug).
-function fsPayload(cells, id = 'sheet_1') {
+function fsPayload(cells: Record<string, string | number>, id = 'sheet_1'): ChartSheet[] {
   const celldata = Object.entries(cells).map(([k, v]) => {
     const [r, c] = k.split('_').map(Number)
     return { r, c, v: { v, m: String(v), ct: { fa: 'General', t: typeof v === 'number' ? 'n' : 'g' } } }
@@ -102,7 +105,7 @@ describe('WAVE-61 — inserted chart survives a subsequent cell edit', () => {
 
     // 4) …and it still renders: extractChartData yields the LIVE values,
     //    picking up the edited cell (reactivity intact).
-    const out = extractChartData(charts[0], ed.getData()[0])
+    const out = extractChartData(charts[0], ed.getData()![0])
     expect(out.empty).toBe(false)
     expect(out.series[0].values).toEqual([99, 40]) // reflects the edit
   })
@@ -125,7 +128,7 @@ describe('WAVE-61 — inserted chart survives a subsequent cell edit', () => {
     const saved = ed1.getLastSaved()
 
     // …open a fresh editor from that saved content.
-    const ed2 = makeEditor(saved)
+    const ed2 = makeEditor(saved!)
     expect(getCharts(ed2.getData())).toHaveLength(1)
     expect(getCharts(ed2.getData())[0].title).toBe('Reload me')
   })
@@ -136,12 +139,12 @@ describe('WAVE-61 — inserted chart survives a subsequent cell edit', () => {
     ], config: {} }])
     ed.handleChartChange(insertChart(ed.getData(), { id: 'c1', range: 'A1:A2', title: 't',
       options: { headerRow: false, headerCol: false } }))
-    const before = extractChartData(getCharts(ed.getData())[0], ed.getData()[0])
+    const before = extractChartData(getCharts(ed.getData())[0], ed.getData()![0])
     expect(before.series[0].values).toEqual([5, 0])
 
     // Edit the source cell A1: 5 → 77 via a normalised payload.
     ed.handleChange(fsPayload({ '0_0': 77 }))
-    const after = extractChartData(getCharts(ed.getData())[0], ed.getData()[0])
+    const after = extractChartData(getCharts(ed.getData())[0], ed.getData()![0])
     expect(after.series[0].values).toEqual([77, 0]) // chart survived AND re-reads
   })
 
@@ -150,7 +153,7 @@ describe('WAVE-61 — inserted chart survives a subsequent cell edit', () => {
     ed.handleChartChange(insertChart(ed.getData(), { id: 'c1', range: 'A1:B2' }))
     expect(getCharts(ed.getData())).toHaveLength(1)
     // Delete: authoritative payload with the chart removed.
-    ed.handleChartChange([{ ...ed.getData()[0], charts: [] }])
+    ed.handleChartChange([{ ...ed.getData()![0], charts: [] }])
     expect(getCharts(ed.getData())).toHaveLength(0)
     // A later normalised grid edit must NOT bring the deleted chart back.
     ed.handleChange(fsPayload({ '0_0': 'x' }))
@@ -166,9 +169,10 @@ describe('WAVE-61 — inserted chart survives a subsequent cell edit', () => {
 // layout / render escape), or an absurd size (DoS).
 describe('WAVE-55 chart_op ingress — merge fix keeps the fail-closed clamp', () => {
   // Faithful port of SheetsEditor.onRemote's chart-branch merge.
-  function ingestChartOp(prevData, detail) {
+  type ChartOpDetail = { action: string; chart?: ChartInput; chartId?: string }
+  function ingestChartOp(prevData: ChartSheet[] | null | undefined, detail: ChartOpDetail): ChartSheet[] {
     const safeChart = detail.chart ? makeChart(detail.chart) : null
-    if (detail.chart && (typeof detail.chart.id !== 'string' || !detail.chart.id)) return prevData
+    if (detail.chart && (typeof detail.chart.id !== 'string' || !detail.chart.id)) return prevData ?? []
     return (prevData || []).map((sheet, idx) => {
       if (idx !== 0) return sheet
       const charts = Array.isArray(sheet.charts) ? sheet.charts : []
