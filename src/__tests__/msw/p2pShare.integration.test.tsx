@@ -24,37 +24,62 @@
  * version of this test that means anything.
  */
 
+import type { FC } from 'react'
 import { describe, it, expect, afterEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import P2PShareModal from '../../apps/docs/components/P2PShareModal.jsx'
+import P2PShareModalUntyped from '../../apps/docs/components/P2PShareModal.jsx'
 import { hasInviteInLocation } from '../../apps/docs/useP2PCollab.js'
 import { Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
-import { YP2PCollabSession } from '../../lib/crdt/yP2PSession.js'
+import { YP2PCollabSession, type SessionFabric } from '../../lib/crdt/yP2PSession.js'
 import { YCollab } from '../../apps/docs/collabExtension.js'
-import { createYContext, Y, Y_FRAGMENT } from '../../lib/crdt/ydoc.js'
+import { createYContext, Y, Y_FRAGMENT, type YContext } from '../../lib/crdt/ydoc.js'
 import { generateInvite, parseInvite, CAP_RW, CAP_RO } from '../../lib/crdt/p2pRoom.js'
 
+// P2PShareModal.jsx lives on a sibling ts-migration lane (src/apps/docs) and is
+// intentionally left untouched here (still plain JS); its inferred prop type
+// makes every destructured prop required (no defaults for onRotate/roomId), so
+// this file's "no links yet" case (which real callers reach before onRotate/
+// roomId are known) is typed against the narrower slice this file exercises.
+const P2PShareModal = P2PShareModalUntyped as unknown as FC<{
+  open: boolean
+  onClose: () => void
+  links: { rwLink: string; roLink: string } | null
+  roomId?: string
+  onRotate?: () => void
+}>
+
 // ── In-process, content-blind transport (mirrors the real FabricClient API) ──
+// Not declared `implements SessionFabric`: it really does emit exactly the
+// 'state'/'message' shape the interface describes, but EventTarget's inherited
+// addEventListener is typed generically, so callers cast at the call site
+// instead — same as yP2PSession.ts's own __tests__ (yP2PSession.test.ts) do
+// for their FakeFabric, and the same as production casts the real FabricClient.
 class FakeBus {
+  nodes: Set<FakeFabric>
   constructor() { this.nodes = new Set() }
-  register(n) { this.nodes.add(n) }
-  unregister(n) { this.nodes.delete(n) }
-  broadcast(from, frame) { for (const n of this.nodes) if (n.peerId !== from && n.online) n.deliver(from, frame) }
-  unicast(from, to, frame) { for (const n of this.nodes) if (n.peerId === to && n.online) n.deliver(from, frame) }
+  register(n: FakeFabric) { this.nodes.add(n) }
+  unregister(n: FakeFabric) { this.nodes.delete(n) }
+  broadcast(from: string, frame: string) { for (const n of this.nodes) if (n.peerId !== from && n.online) n.deliver(from, frame) }
+  unicast(from: string, to: string, frame: string) { for (const n of this.nodes) if (n.peerId === to && n.online) n.deliver(from, frame) }
 }
 class FakeFabric extends EventTarget {
-  constructor(bus, peerId) { super(); this.bus = bus; this.peerId = peerId; this.online = false; this.sent = [] }
+  bus: FakeBus
+  peerId: string
+  online: boolean
+  sent: string[]
+  constructor(bus: FakeBus, peerId: string) { super(); this.bus = bus; this.peerId = peerId; this.online = false; this.sent = [] }
   async join() {
     this.online = true; this.bus.register(this)
     for (const n of this.bus.nodes) if (n !== this)
       this.dispatchEvent(new CustomEvent('state', { detail: { peerId: n.peerId, state: 'connected' } }))
   }
-  send(frame) { this.sent.push(frame); if (this.online) this.bus.broadcast(this.peerId, frame) }
-  sendTo(to, frame) { if (this.online) this.bus.unicast(this.peerId, to, frame) }
+  send(frame: string) { this.sent.push(frame); if (this.online) this.bus.broadcast(this.peerId, frame) }
+  sendTo(to: string, frame: string) { if (this.online) this.bus.unicast(this.peerId, to, frame) }
   leave() { this.online = false; this.bus.unregister(this) }
-  deliver(from, frame) { this.dispatchEvent(new CustomEvent('message', { detail: { from, data: frame } })) }
+  deliver(from: string, frame: string) { this.dispatchEvent(new CustomEvent('message', { detail: { from, data: frame } })) }
 }
+const asFabric = (f: FakeFabric): SessionFabric => f as unknown as SessionFabric
 const settle = () => new Promise((r) => setTimeout(r, 20))
 
 // Poll a predicate until it holds, instead of sleeping a fixed amount and hoping
@@ -62,7 +87,7 @@ const settle = () => new Promise((r) => setTimeout(r, 20))
 // latent flake: convergence here goes through SubtleCrypto (seal/open) which can
 // exceed 20ms when the full parallel suite saturates the CPU. Polling awaits the
 // REAL condition and is robust under load while staying fast in the common case.
-async function until(predicate, { timeoutMs = 2000, stepMs = 5 } = {}) {
+async function until(predicate: (opts?: { assert?: boolean }) => unknown, { timeoutMs = 2000, stepMs = 5 } = {}): Promise<void> {
   const start = Date.now()
   for (;;) {
     if (predicate()) return
@@ -130,10 +155,14 @@ describe('invite links parse to the correct capability + same room', () => {
   })
 })
 
+type Peer = { ydoc: InstanceType<typeof Y.Doc>; ctx: YContext; editor: Editor; fabric: FakeFabric }
+
 /** A peer: a Yjs doc, a real ProseMirror schema, and its own fabric endpoint. */
-function makePeer(bus, peerId) {
+function makePeer(bus: FakeBus, peerId: string): Peer {
   const ydoc = new Y.Doc()
-  const ctx = createYContext(null, ydoc)
+  // schema is unknown until the editor below is constructed; assigned onto ctx
+  // immediately after, before anything reads it — same as the runtime always did.
+  const ctx: YContext = createYContext(null as unknown as YContext['schema'], ydoc)
   const element = document.createElement('div')
   document.body.appendChild(element)
   const editor = new Editor({
@@ -158,10 +187,10 @@ describe('two sessions from the modal links converge; ro is rejected + sealed', 
     const vw = makePeer(bus, 'VIEW')
 
     const editor = await YP2PCollabSession.fromInvite({
-      inviteLink: rw.link, peerId: 'EDIT', fileId: 'd1', ctx: ed.ctx, fabric: ed.fabric,
+      inviteLink: rw.link, peerId: 'EDIT', fileId: 'd1', ctx: ed.ctx, fabric: asFabric(ed.fabric),
     })
     const viewer = await YP2PCollabSession.fromInvite({
-      inviteLink: ro.link, peerId: 'VIEW', fileId: 'd1', ctx: vw.ctx, fabric: vw.fabric,
+      inviteLink: ro.link, peerId: 'VIEW', fileId: 'd1', ctx: vw.ctx, fabric: asFabric(vw.fabric),
     })
     // Same room key ⇒ the two links meet in one room, which is the whole point
     // of the modal handing out a pair.
