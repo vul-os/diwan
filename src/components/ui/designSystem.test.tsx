@@ -15,6 +15,7 @@ import Avatar, { AvatarStack, hueFor } from './Avatar'
 import EmptyState from './EmptyState'
 import ErrorState from './ErrorState'
 import DocThumb from './DocThumb'
+import type { DocThumbType } from './DocThumb'
 import ToolbarButton from './ToolbarButton'
 
 describe('ToolbarButton (shared toolbar toggle primitive)', () => {
@@ -61,7 +62,9 @@ describe('SaveStatus', () => {
   })
 
   it('falls back to the saved state for an unknown status', () => {
-    render(<SaveStatus status="???" />)
+    // Deliberately an invalid status — guards the runtime fallback for a value
+    // that couldn't happen under the type system (e.g. from untyped JS callers).
+    render(<SaveStatus status={'???' as unknown as 'saved'} />)
     expect(screen.getByRole('status')).toHaveTextContent('Saved')
   })
 })
@@ -143,7 +146,7 @@ describe('ErrorState', () => {
 
 describe('DocThumb', () => {
   it('renders a decorative (aria-hidden) preview for each type', () => {
-    for (const type of ['doc', 'sheet', 'slide', 'pdf']) {
+    for (const type of ['doc', 'sheet', 'slide', 'pdf'] as DocThumbType[]) {
       const { container, unmount } = render(<DocThumb type={type} />)
       expect(container.querySelector('svg')).toBeInTheDocument()
       expect(container.querySelector('[aria-hidden="true"]')).toBeInTheDocument()

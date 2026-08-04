@@ -81,7 +81,7 @@ export default function Avatar({
 }
 
 export interface AvatarStackPerson {
-  id?: string
+  id?: string | number
   accountId?: string
   name?: string
   displayName?: string
