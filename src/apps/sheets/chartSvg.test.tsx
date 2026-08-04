@@ -9,9 +9,15 @@
 import { describe, it, expect } from 'vitest'
 import { render } from '@testing-library/react'
 import { ChartSvg } from './ChartSvg.jsx'
-import { makeChart } from './charts.js'
+import { makeChart, type ChartSheet } from './charts.js'
 
-function sheetWith(cells) {
+// The renderer never sets these; a hostile <script>/onerror label reaching a
+// LIVE DOM node would set them as a side effect. They are deliberately NOT
+// part of the real Window interface (only a successful exploit would add
+// them), so read them through a local cast rather than augmenting the global.
+const win = window as unknown as { __pwned?: unknown; __pwned2?: unknown }
+
+function sheetWith(cells: Record<string, string | number>): ChartSheet {
   return {
     name: 'S',
     celldata: Object.entries(cells).map(([k, v]) => {
@@ -33,7 +39,7 @@ describe('ChartSvg escaping', () => {
     // No live script/img element was created from the untrusted strings.
     expect(container.querySelector('script')).toBeNull()
     expect(container.querySelector('img')).toBeNull()
-    expect(window.__pwned).toBeUndefined()
+    expect(win.__pwned).toBeUndefined()
 
     // The title text is present but only as text content of an SVG <text>.
     const text = container.textContent || ''
@@ -117,15 +123,15 @@ describe('ChartSvg escaping', () => {
     expect(container.querySelector('svg')).toBeTruthy()
     expect(container.querySelector('foreignObject')).toBeNull()
     expect(container.querySelector('script')).toBeNull()
-    expect(window.__pwned).toBeUndefined()
+    expect(win.__pwned).toBeUndefined()
   })
 })
 
 // ── WAVE-64: stacked / 100% / donut / histogram / combo secondary axis ───────
 
 /** A 2-series categorical sheet: Cat | A | B. */
-function stackSheet(rows = [['a', 3, 7], ['b', 6, 2]]) {
-  const cells = { '0_0': 'Cat', '0_1': 'A', '0_2': 'B' }
+function stackSheet(rows: (string | number)[][] = [['a', 3, 7], ['b', 6, 2]]) {
+  const cells: Record<string, string | number> = { '0_0': 'Cat', '0_1': 'A', '0_2': 'B' }
   rows.forEach(([cat, a, b], i) => {
     cells[`${i + 1}_0`] = cat
     cells[`${i + 1}_1`] = a
@@ -215,7 +221,7 @@ describe('WAVE-64 chart types render', () => {
     expect(paths.length).toBeGreaterThan(0)
     // A donut slice is an annulus: two arcs, and it never starts at the centre
     // with a straight line to the rim (which is what a pie wedge does).
-    expect(paths.every((p) => (p.getAttribute('d').match(/A /g) || []).length === 2)).toBe(true)
+    expect(paths.every((p) => (p.getAttribute('d')?.match(/A /g) || []).length === 2)).toBe(true)
     expect(container.textContent).toContain('10')    // the total, in the hole
   })
 
@@ -231,7 +237,7 @@ describe('WAVE-64 chart types render', () => {
   })
 
   it('histogram: bins the first numeric column into adjacent bars with a frequency axis', () => {
-    const cells = { '0_0': 'V' }
+    const cells: Record<string, string | number> = { '0_0': 'V' }
     ;[1, 2, 2, 3, 8, 9, 9, 10].forEach((v, i) => { cells[`${i + 1}_0`] = v })
     const sheet = sheetWith(cells)
     const chart = makeChart({ type: 'histogram', range: 'A1:A9', options: { headerRow: true, headerCol: false, bins: 3 } })
@@ -302,7 +308,7 @@ describe('WAVE-64 chart types render', () => {
       expect(container.querySelector('svg')).toBeTruthy()
       expect(container.querySelector('script')).toBeNull()
       expect(container.innerHTML).not.toContain('NaN')   // no NaN geometry escaped
-      expect(window.__pwned2).toBeUndefined()
+      expect(win.__pwned2).toBeUndefined()
       unmount()
     }
   })
