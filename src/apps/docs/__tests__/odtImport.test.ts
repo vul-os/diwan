@@ -4,10 +4,17 @@
  */
 import { describe, it, expect } from 'vitest'
 import JSZip from 'jszip'
+import type { Editor, JSONContent } from '@tiptap/react'
 import { odtToHtml } from '../odtImport.js'
 import { buildOdtBlob } from '../odtExport.js'
 import { sanitizeDocHtml } from '../../../lib/sanitize.js'
 import { ImportError } from '../../../lib/importBounds.js'
+
+// buildOdtBlob only ever calls editor.getJSON() — a minimal stub covers it
+// without constructing a real TipTap Editor, same pattern used elsewhere for
+// narrow interface mocks (cast through a local type, not `any`).
+type MockEditor = { getJSON: () => JSONContent }
+const asEditor = (e: MockEditor): Editor => e as unknown as Editor
 
 const NS = [
   'xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"',
@@ -19,7 +26,7 @@ const NS = [
   'xmlns:xlink="http://www.w3.org/1999/xlink"',
 ].join(' ')
 
-async function makeOdt(bodyXml, { withPicture = false } = {}) {
+async function makeOdt(bodyXml: string, { withPicture = false } = {}): Promise<ArrayBuffer> {
   const content = `<?xml version="1.0" encoding="UTF-8"?>
 <office:document-content ${NS}>
   <office:automatic-styles>
@@ -112,7 +119,7 @@ describe('odtToHtml — security (via sanitizeDocHtml boundary)', () => {
 
 describe('exportToOdt — round-trip', () => {
   it('produces a valid ODT whose content re-imports (structure survives)', async () => {
-    const editor = {
+    const editor = asEditor({
       getJSON: () => ({
         type: 'doc',
         content: [
@@ -120,7 +127,7 @@ describe('exportToOdt — round-trip', () => {
           { type: 'paragraph', content: [{ type: 'text', text: 'Bold', marks: [{ type: 'bold' }] }, { type: 'text', text: ' plain' }] },
         ],
       }),
-    }
+    })
     const blob = await buildOdtBlob(editor)
     const ab = await blob.arrayBuffer()
     const html = await odtToHtml(ab, 'MyDoc.odt')
