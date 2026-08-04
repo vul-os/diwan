@@ -8,6 +8,7 @@ import {
   TEXTJOIN, IFS, SWITCH, XLOOKUP, XMATCH, LET, FILTER, SORT, UNIQUE,
   TEXTBEFORE, TEXTAFTER, TEXTSPLIT, SEQUENCE, SORTBY,
   flatten, toBool, looseEqual, isErr, ERR, installCustomFormulas, CUSTOM_FUNCTIONS,
+  type FormulaParserClass,
 } from './formulaFunctions.js'
 
 describe('helpers', () => {
@@ -243,8 +244,9 @@ describe('installCustomFormulas seam', () => {
 
   it('is idempotent and defers to built-ins', async () => {
     const FP = await import('@fortune-sheet/formula-parser')
-    expect(installCustomFormulas(FP.Parser)).toBe(true)
-    expect(installCustomFormulas(FP.Parser)).toBe(true) // second call = no-op
+    const ParserClass = FP.Parser as unknown as FormulaParserClass
+    expect(installCustomFormulas(ParserClass)).toBe(true)
+    expect(installCustomFormulas(ParserClass)).toBe(true) // second call = no-op
     const p = new FP.Parser()
     // Feed ranges the way FortuneSheet does (2-D arrays via callRangeValue).
     p.on('callRangeValue', (start, end, opts, done) => {
