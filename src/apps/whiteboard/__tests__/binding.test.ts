@@ -14,13 +14,38 @@ import * as Y from 'yjs'
 import { ExcalidrawYBinding } from '../binding.js'
 import { ELEMENTS_KEY, FILES_KEY } from '../../../lib/crdt/boardYdoc.js'
 
-function makeNode() {
-  let scene = []
-  const files = {}
+interface BoardElement {
+  id: string
+  version: number
+  versionNonce?: number
+  isDeleted?: boolean
+  index?: string
+  [k: string]: unknown
+}
+
+interface BoardFile {
+  id: string
+  mimeType: string
+  dataURL: string
+  created: number
+  [k: string]: unknown
+}
+
+interface TestNode {
+  doc: Y.Doc
+  binding: ExcalidrawYBinding
+  editorFiles: () => Record<string, BoardFile>
+  sceneIds: () => string[]
+  sceneEl: (id: string) => BoardElement | undefined
+}
+
+function makeNode(): TestNode {
+  let scene: BoardElement[] = []
+  const files: Record<string, BoardFile> = {}
   const api = {
-    updateScene(s) { if (s.elements) scene = [...s.elements] },
+    updateScene(s: { elements?: BoardElement[] }) { if (s.elements) scene = [...s.elements] },
     getSceneElementsIncludingDeleted() { return scene },
-    addFiles(fs) { for (const f of fs) files[f.id] = f },
+    addFiles(fs: BoardFile[]) { for (const f of fs) files[f.id] = f },
     getFiles() { return files },
   }
   const doc = new Y.Doc()
@@ -35,11 +60,11 @@ function makeNode() {
 }
 
 /** Full-mesh live relay: every non-relayed local update is applied to the others. */
-function link(...nodes) {
-  const handlers = []
+function link(...nodes: TestNode[]) {
+  const handlers: Array<[Y.Doc, (update: Uint8Array, origin: unknown) => void]> = []
   for (const n of nodes) {
     const others = nodes.filter((o) => o !== n)
-    const h = (update, origin) => {
+    const h = (update: Uint8Array, origin: unknown) => {
       if (origin === 'relay') return
       for (const o of others) Y.applyUpdate(o.doc, update, 'relay')
     }
@@ -49,18 +74,18 @@ function link(...nodes) {
   return () => handlers.forEach(([doc, h]) => doc.off('update', h))
 }
 
-function heal(...nodes) {
+function heal(...nodes: TestNode[]) {
   const updates = nodes.map((n) => Y.encodeStateAsUpdate(n.doc))
   for (const n of nodes) for (const u of updates) Y.applyUpdate(n.doc, u)
 }
 
-function docElements(doc) {
-  const out = {}
-  doc.getMap(ELEMENTS_KEY).forEach((v, k) => { out[k] = v })
+function docElements(doc: Y.Doc): Record<string, BoardElement> {
+  const out: Record<string, BoardElement> = {}
+  doc.getMap(ELEMENTS_KEY).forEach((v: unknown, k: string) => { out[k] = v as BoardElement })
   return out
 }
 
-function el(id, extra = {}) {
+function el(id: string, extra: Partial<BoardElement> = {}): BoardElement {
   return { id, version: 1, type: 'rectangle', ...extra }
 }
 
@@ -94,7 +119,7 @@ describe('ExcalidrawYBinding convergence', () => {
     heal(a, b)
     expect(docElements(a.doc)).toEqual(docElements(b.doc))
     expect(a.sceneEl('x')).toEqual(b.sceneEl('x'))
-    expect(['#ff0000', '#0000ff']).toContain(a.sceneEl('x').strokeColor)
+    expect(['#ff0000', '#0000ff']).toContain(a.sceneEl('x')!.strokeColor)
     a.binding.destroy(); b.binding.destroy()
   })
 
@@ -104,7 +129,7 @@ describe('ExcalidrawYBinding convergence', () => {
     a.binding.handleChange([el('t', { version: 1 })], {}, {})
     expect(b.sceneEl('t')?.isDeleted).toBeUndefined()
     a.binding.handleChange([el('t', { version: 2, isDeleted: true })], {}, {})
-    expect(b.doc.getMap(ELEMENTS_KEY).get('t')?.isDeleted).toBe(true)
+    expect((b.doc.getMap(ELEMENTS_KEY).get('t') as BoardElement | undefined)?.isDeleted).toBe(true)
     expect(b.sceneEl('t')?.isDeleted).toBe(true)
     expect(docElements(a.doc)).toEqual(docElements(b.doc))
     unlink(); a.binding.destroy(); b.binding.destroy()
