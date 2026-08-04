@@ -20,14 +20,17 @@
  */
 
 import { Loader2 } from 'lucide-react'
+import type { HTMLAttributes } from 'react'
 
-const spinnerSize = {
+type SpinnerSize = 'sm' | 'md' | 'lg'
+
+const spinnerSize: Record<SpinnerSize, number> = {
   sm: 14,
   md: 20,
   lg: 26,
 }
 
-export function Skeleton({ className = '', rounded = 'rounded-md', ...rest }) {
+export function Skeleton({ className = '', rounded = 'rounded-md', ...rest }: HTMLAttributes<HTMLDivElement> & { rounded?: string }) {
   return (
     <div
       aria-hidden
@@ -37,13 +40,21 @@ export function Skeleton({ className = '', rounded = 'rounded-md', ...rest }) {
   )
 }
 
-export default function LoadingState({
+interface LoadingStateProps {
+  label?: string
+  size?: SpinnerSize
+  inline?: boolean
+  showLabel?: boolean
+  className?: string
+}
+
+function LoadingStateBase({
   label = 'Loading…',
   size = 'md',
   inline = false,
   showLabel = true,
   className = '',
-}) {
+}: LoadingStateProps) {
   const px = spinnerSize[size] || spinnerSize.md
 
   if (inline) {
@@ -74,7 +85,7 @@ export default function LoadingState({
 }
 
 // A stack of skeleton lines — convenient for list/card placeholders.
-LoadingState.Lines = function LoadingLines({ count = 3, className = '' }) {
+function LoadingLines({ count = 3, className = '' }: { count?: number; className?: string }) {
   return (
     <div aria-hidden className={`flex flex-col gap-2.5 ${className}`}>
       {Array.from({ length: count }, (_, i) => (
@@ -87,3 +98,9 @@ LoadingState.Lines = function LoadingLines({ count = 3, className = '' }) {
     </div>
   )
 }
+
+// LoadingState.Lines — matches the original JS API surface (a static property
+// on the default-exported component, not a separate named export).
+const LoadingState = Object.assign(LoadingStateBase, { Lines: LoadingLines })
+
+export default LoadingState
