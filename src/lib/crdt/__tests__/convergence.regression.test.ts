@@ -23,16 +23,34 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest'
 import { GridSession } from '../grid.js'
-import { TreeSession } from '../tree.js'
+import { TreeSession, type TreeNodeSnapshot, type Slide } from '../tree.js'
+import type { FabricClient } from '../../collab/webrtc/fabric.js'
 
 // Minimal in-process fabric so sessions build without touching the network.
 class FakeFabric extends EventTarget {
+  sent: string[]
   constructor() { super(); this.sent = [] }
   async join() {}
-  send(f) { this.sent.push(f) }
+  send(f: string) { this.sent.push(f) }
   sendTo() {}
   leave() {}
 }
+
+// GridSession/TreeSession only ever call addEventListener/send/removeEventListener
+// on their transport (see grid.ts / tree.ts) — FakeFabric and the ad-hoc
+// EventTarget subclasses below satisfy that at runtime; the cast to the real
+// FabricClient type is the same kind of transport cast production itself makes.
+const asFabricClient = (f: EventTarget): FabricClient => f as unknown as FabricClient
+
+// `_crdt`/`_handleFabricMessage` are private implementation details of
+// TreeSession; several of these regression pins need to drive the CRDT and the
+// wire handler directly to reproduce a cold-join/reconnect exactly. Same
+// reach-past-privacy cast as yP2PSession.test.ts's `asBroadcaster`.
+type TreeInternals = {
+  _crdt: { snapshot(): TreeNodeSnapshot[] }
+  _handleFabricMessage(raw: unknown): void
+}
+const internals = (s: TreeSession): TreeInternals => s as unknown as TreeInternals
 
 // ---------------------------------------------------------------------------
 // BUG 4 — GridSession cold-join over the fabric applied a peer snapshot's cells
@@ -44,13 +62,13 @@ class FakeFabric extends EventTarget {
 describe('BUG4: grid cold-join seeds the clock (joiner edits win)', () => {
   beforeEach(() => { try { localStorage.clear(); sessionStorage.clear() } catch { /* jsdom */ } })
 
-  function highOpId(counter, replica) {
+  function highOpId(counter: number, replica: string): string {
     return '0'.repeat(20) + '_' + String(counter).padStart(10, '0') + '_' + replica
   }
 
   it('an edit to an existing cell after a snapshot merge is not dropped', () => {
     const fab = new FakeFabric()
-    const s = new GridSession({ sessionId: 'sheet1', replicaId: 'joiner', fabricClient: fab })
+    const s = new GridSession({ sessionId: 'sheet1', replicaId: 'joiner', fabricClient: asFabricClient(fab) })
     fab.dispatchEvent(new CustomEvent('message', {
       detail: { data: JSON.stringify({
         type: 'grid_snapshot', session: 'sheet1',
@@ -74,13 +92,13 @@ describe('BUG4: grid cold-join seeds the clock (joiner edits win)', () => {
 describe('BUG5: slides tree cold-join seeds the clock (joiner edits win)', () => {
   beforeEach(() => { try { localStorage.clear(); sessionStorage.clear() } catch { /* jsdom */ } })
 
-  function id(counter, replica) {
+  function id(counter: number, replica: string): string {
     return '0'.repeat(20) + '_' + String(counter).padStart(10, '0') + '_' + replica
   }
 
   it('editing an existing slide after a snapshot merge is not dropped', () => {
     const fab = new FakeFabric()
-    const s = new TreeSession({ sessionId: 'deck1', replicaId: 'joiner', fabricClient: fab })
+    const s = new TreeSession({ sessionId: 'deck1', replicaId: 'joiner', fabricClient: asFabricClient(fab) })
     const nodeId = id(10, 'peerA')
     fab.dispatchEvent(new CustomEvent('message', {
       detail: { data: JSON.stringify({
@@ -116,31 +134,31 @@ describe('BUG8: slides per-object LWW (concurrent object edits both survive)', (
   // test controls delivery timing. `flush()` cross-delivers all queued frames —
   // this models TRUE concurrency: both peers act BEFORE seeing each other's op,
   // exactly the case a whole-slide LWW clobbered. Seeded from a common base deck.
-  function concurrentPair(session, baseSlide) {
-    const seed = new TreeSession({ sessionId: session, replicaId: 'seed', fabricClient: new (class extends EventTarget { send() {} })() })
+  function concurrentPair(session: string, baseSlide: Slide) {
+    const seed = new TreeSession({ sessionId: session, replicaId: 'seed', fabricClient: asFabricClient(new (class extends EventTarget { send() {} })()) })
     const nid = seed.insertSlide('m', baseSlide)
-    const baseNodes = seed._crdt.snapshot()
+    const baseNodes = internals(seed)._crdt.snapshot()
 
-    const queues = new Map()
-    const mk = (replicaId) => {
-      const fab = new (class extends EventTarget { send(frame) { queues.get(replicaId).push(frame) } })()
-      const s = new TreeSession({ sessionId: session, replicaId, fabricClient: fab })
+    const queues = new Map<string, string[]>()
+    const mk = (replicaId: string): TreeSession => {
+      const fab = new (class extends EventTarget { send(frame: string) { queues.get(replicaId)!.push(frame) } })()
+      const s = new TreeSession({ sessionId: session, replicaId, fabricClient: asFabricClient(fab) })
       queues.set(replicaId, [])
-      s._handleFabricMessage(JSON.stringify({ type: 'tree_snapshot', session, nodes: baseNodes }))
+      internals(s)._handleFabricMessage(JSON.stringify({ type: 'tree_snapshot', session, nodes: baseNodes }))
       queues.set(replicaId, []) // discard any frames from the seed apply
       return s
     }
     const A = mk('A'), B = mk('B')
     const flush = () => {
-      const fa = queues.get('A').splice(0), fb = queues.get('B').splice(0)
-      for (const f of fa) B._handleFabricMessage(f)   // A's ops → B
-      for (const f of fb) A._handleFabricMessage(f)   // B's ops → A
+      const fa = queues.get('A')!.splice(0), fb = queues.get('B')!.splice(0)
+      for (const f of fa) internals(B)._handleFabricMessage(f)   // A's ops → B
+      for (const f of fb) internals(A)._handleFabricMessage(f)   // B's ops → A
     }
     return { A, B, nid, flush }
   }
 
-  function slideOf(s, nodeId) {
-    return s.orderedSlides().find((x) => x.nodeId === nodeId)?.data
+  function slideOf(s: TreeSession, nodeId: string): Slide {
+    return s.orderedSlides().find((x) => x.nodeId === nodeId)!.data
   }
 
   it('two peers moving DIFFERENT objects on one slide → union (no loss)', () => {
@@ -169,7 +187,7 @@ describe('BUG8: slides per-object LWW (concurrent object edits both survive)', (
     flush()
 
     for (const s of [A, B]) {
-      const objs = Object.fromEntries(slideOf(s, nid).objects.map((o) => [o.id, o]))
+      const objs = Object.fromEntries(slideOf(s, nid).objects!.map((o) => [o.id!, o])) as Record<string, { x?: number }>
       expect(objs.o1.x).toBe(0.8) // A's move to o1 survived on both
       expect(objs.o2.x).toBe(0.2) // B's move to o2 survived on both — NOT clobbered
     }
@@ -186,7 +204,7 @@ describe('BUG8: slides per-object LWW (concurrent object edits both survive)', (
 
     // Both replicas agree on the SAME winner (higher opId wins — deterministic).
     expect(slideOf(A, nid)).toEqual(slideOf(B, nid))
-    expect([0.3, 0.7]).toContain(slideOf(A, nid).objects[0].x)
+    expect([0.3, 0.7]).toContain(slideOf(A, nid).objects![0].x)
   })
 
   it('scalar props (background) keep their own LWW, independent of objects', () => {
@@ -200,7 +218,7 @@ describe('BUG8: slides per-object LWW (concurrent object edits both survive)', (
     for (const s of [A, B]) {
       const d = slideOf(s, nid)
       expect(d.background).toBe('#fff')      // A's scalar edit survived
-      expect(d.objects[0].x).toBe(0.5)       // B's object move survived (independent)
+      expect(d.objects![0].x).toBe(0.5)       // B's object move survived (independent)
     }
   })
 
@@ -221,7 +239,7 @@ describe('BUG8: slides per-object LWW (concurrent object edits both survive)', (
     flush()
 
     for (const s of [A, B]) {
-      const objs = slideOf(s, nid).objects
+      const objs = slideOf(s, nid).objects!
       expect(objs.map((o) => o.id)).toEqual(['o1']) // o2 deleted on both
       expect(objs[0].x).toBe(0.9)                   // A's move to o1 survived
     }
@@ -240,19 +258,19 @@ describe('BUG9: slides offline-reconnect converges per object (no lost edits)', 
 
   it('offline edits to different objects both survive a snapshot exchange', () => {
     // Shared starting deck (same node id + objects on both replicas).
-    const seed = new TreeSession({ sessionId: 'deckR', replicaId: 'seed', fabricClient: new FF() })
+    const seed = new TreeSession({ sessionId: 'deckR', replicaId: 'seed', fabricClient: asFabricClient(new FF()) })
     const nid = seed.insertSlide('m', {
       objects: [
         { id: 'o1', type: 'shape', x: 0.1, y: 0, w: 0.2, h: 0.2, z: 1 },
         { id: 'o2', type: 'shape', x: 0.5, y: 0, w: 0.2, h: 0.2, z: 2 },
       ],
     })
-    const baseNodes = seed._crdt.snapshot()
+    const baseNodes = internals(seed)._crdt.snapshot()
 
-    const A = new TreeSession({ sessionId: 'deckR', replicaId: 'A', fabricClient: new FF() })
-    const B = new TreeSession({ sessionId: 'deckR', replicaId: 'B', fabricClient: new FF() })
+    const A = new TreeSession({ sessionId: 'deckR', replicaId: 'A', fabricClient: asFabricClient(new FF()) })
+    const B = new TreeSession({ sessionId: 'deckR', replicaId: 'B', fabricClient: asFabricClient(new FF()) })
     for (const s of [A, B]) {
-      s._handleFabricMessage(JSON.stringify({ type: 'tree_snapshot', session: 'deckR', nodes: baseNodes }))
+      internals(s)._handleFabricMessage(JSON.stringify({ type: 'tree_snapshot', session: 'deckR', nodes: baseNodes }))
     }
 
     // OFFLINE: A moves o1, B moves o2 — neither sees the other yet.
@@ -270,13 +288,15 @@ describe('BUG9: slides offline-reconnect converges per object (no lost edits)', 
     })
 
     // RECONNECT: exchange snapshots (order-independent union merge).
-    const snapA = A._crdt.snapshot()
-    const snapB = B._crdt.snapshot()
-    B._handleFabricMessage(JSON.stringify({ type: 'tree_snapshot', session: 'deckR', nodes: snapA }))
-    A._handleFabricMessage(JSON.stringify({ type: 'tree_snapshot', session: 'deckR', nodes: snapB }))
+    const snapA = internals(A)._crdt.snapshot()
+    const snapB = internals(B)._crdt.snapshot()
+    internals(B)._handleFabricMessage(JSON.stringify({ type: 'tree_snapshot', session: 'deckR', nodes: snapA }))
+    internals(A)._handleFabricMessage(JSON.stringify({ type: 'tree_snapshot', session: 'deckR', nodes: snapB }))
 
     for (const s of [A, B]) {
-      const objs = Object.fromEntries(s.orderedSlides().find((x) => x.nodeId === nid).data.objects.map((o) => [o.id, o]))
+      const objs = Object.fromEntries(
+        (s.orderedSlides().find((x) => x.nodeId === nid)!.data.objects ?? []).map((o) => [o.id!, o]),
+      ) as Record<string, { x?: number, y?: number }>
       expect(objs.o1.x).toBe(0.9)   // A's offline move survived
       expect(objs.o2.y).toBe(0.7)   // B's offline move survived
     }
@@ -308,7 +328,7 @@ describe('BUG10: a malformed remote OpID counter cannot win an LWW compare', () 
 
   it('grid: a hostile grid_op with a non-numeric counter does not overwrite an existing cell', () => {
     const fab = new FakeFabric()
-    const s = new GridSession({ sessionId: 'sheetH', replicaId: 'victim', fabricClient: fab })
+    const s = new GridSession({ sessionId: 'sheetH', replicaId: 'victim', fabricClient: asFabricClient(fab) })
     s.setCell(0, 0, 'legit')
     expect(s.cells()).toEqual([{ r: 0, c: 0, v: 'legit' }])
 
@@ -323,7 +343,7 @@ describe('BUG10: a malformed remote OpID counter cannot win an LWW compare', () 
 
   it('grid: a hostile grid_op with a negative counter does not overwrite an existing cell', () => {
     const fab = new FakeFabric()
-    const s = new GridSession({ sessionId: 'sheetH2', replicaId: 'victim', fabricClient: fab })
+    const s = new GridSession({ sessionId: 'sheetH2', replicaId: 'victim', fabricClient: asFabricClient(fab) })
     s.setCell(0, 0, 'legit')
 
     fab.dispatchEvent(new CustomEvent('message', {
@@ -337,7 +357,7 @@ describe('BUG10: a malformed remote OpID counter cannot win an LWW compare', () 
 
   it('grid: a well-formed higher-counter op still legitimately wins (fix does not break LWW)', () => {
     const fab = new FakeFabric()
-    const s = new GridSession({ sessionId: 'sheetH3', replicaId: 'victim', fabricClient: fab })
+    const s = new GridSession({ sessionId: 'sheetH3', replicaId: 'victim', fabricClient: asFabricClient(fab) })
     s.setCell(0, 0, 'legit') // victim's own counter is small (this replica's first tick)
 
     fab.dispatchEvent(new CustomEvent('message', {
@@ -351,7 +371,7 @@ describe('BUG10: a malformed remote OpID counter cannot win an LWW compare', () 
 
   it('tree: a hostile MOVE with a non-numeric counter does not reorder a slide', () => {
     const fab = new FakeFabric()
-    const s = new TreeSession({ sessionId: 'deckH', replicaId: 'victim', fabricClient: fab })
+    const s = new TreeSession({ sessionId: 'deckH', replicaId: 'victim', fabricClient: asFabricClient(fab) })
     const first = s.insertSlide('a', { t: 'one' })
     const second = s.insertSlide('z', { t: 'two' })
     expect(s.orderedSlides().map((x) => x.nodeId)).toEqual([first, second])
@@ -368,7 +388,7 @@ describe('BUG10: a malformed remote OpID counter cannot win an LWW compare', () 
 
   it('tree: a well-formed higher-counter MOVE still legitimately reorders (fix does not break LWW)', () => {
     const fab = new FakeFabric()
-    const s = new TreeSession({ sessionId: 'deckH2', replicaId: 'victim', fabricClient: fab })
+    const s = new TreeSession({ sessionId: 'deckH2', replicaId: 'victim', fabricClient: asFabricClient(fab) })
     const first = s.insertSlide('a', { t: 'one' })
     const second = s.insertSlide('z', { t: 'two' })
 
@@ -400,14 +420,14 @@ describe('BUG7: slides tree cold-join after a reorder does not duplicate slides'
 
   it('a moved slide cold-joins as ONE slide with the peer node id', () => {
     const fabA = new FakeFabric()
-    const A = new TreeSession({ sessionId: 'deckX', replicaId: 'A', fabricClient: fabA })
+    const A = new TreeSession({ sessionId: 'deckX', replicaId: 'A', fabricClient: asFabricClient(fabA) })
     const nid = A.insertSlide('m', { title: 'S1' })
     A.moveSlide(nid, 'p') // ordId now advances past nid
-    const nodes = A._crdt.snapshot()
+    const nodes = internals(A)._crdt.snapshot()
     expect(A.orderedSlides()).toHaveLength(1)
 
     const fabB = new FakeFabric()
-    const B = new TreeSession({ sessionId: 'deckX', replicaId: 'B', fabricClient: fabB })
+    const B = new TreeSession({ sessionId: 'deckX', replicaId: 'B', fabricClient: asFabricClient(fabB) })
     fabB.dispatchEvent(new CustomEvent('message', {
       detail: { data: JSON.stringify({ type: 'tree_snapshot', session: 'deckX', nodes }) },
     }))
@@ -420,15 +440,15 @@ describe('BUG7: slides tree cold-join after a reorder does not duplicate slides'
 
   it('multi-slide reorder cold-joins to the same order and count', () => {
     const fabA = new FakeFabric()
-    const A = new TreeSession({ sessionId: 'deckY', replicaId: 'A', fabricClient: fabA })
+    const A = new TreeSession({ sessionId: 'deckY', replicaId: 'A', fabricClient: asFabricClient(fabA) })
     const n1 = A.insertSlide('b', { t: 'one' })
     A.insertSlide('n', { t: 'two' })
     const n3 = A.insertSlide('t', { t: 'three' })
     A.moveSlide(n3, 'a') // three to the front
-    const nodes = A._crdt.snapshot()
+    const nodes = internals(A)._crdt.snapshot()
 
     const fabB = new FakeFabric()
-    const B = new TreeSession({ sessionId: 'deckY', replicaId: 'B', fabricClient: fabB })
+    const B = new TreeSession({ sessionId: 'deckY', replicaId: 'B', fabricClient: asFabricClient(fabB) })
     fabB.dispatchEvent(new CustomEvent('message', {
       detail: { data: JSON.stringify({ type: 'tree_snapshot', session: 'deckY', nodes }) },
     }))
@@ -438,6 +458,6 @@ describe('BUG7: slides tree cold-join after a reorder does not duplicate slides'
     expect(B.orderedSlides().map((s) => s.data.t)).toEqual(['three', 'one', 'two'])
     // Joiner edit to the moved slide must still win (clock seeded past ordId).
     B.setSlide(n1, { t: 'EDITED' })
-    expect(B.orderedSlides().find((s) => s.nodeId === n1).data).toEqual({ t: 'EDITED' })
+    expect(B.orderedSlides().find((s) => s.nodeId === n1)!.data).toEqual({ t: 'EDITED' })
   })
 })
