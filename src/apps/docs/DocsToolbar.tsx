@@ -12,7 +12,7 @@
  * Every command routes through the existing TipTap/CRDT chain.
  */
 
-import { useRef, useState } from 'react'
+import { useRef, useState, type ChangeEvent, type KeyboardEvent, type ReactElement, type ReactNode } from 'react'
 import {
   Bold, Italic, Underline, Strikethrough, Code,
   List, ListOrdered, CheckSquare, Quote, AlignLeft,
@@ -24,6 +24,7 @@ import {
   ListTree, Printer, AlertCircle, Sigma, FileText, PanelTop,
   AtSign,
 } from 'lucide-react'
+import type { Editor } from '@tiptap/react'
 import { api } from '../../lib/api'
 import { Menu, ToolbarButton, UrlPopover } from '../../components/ui'
 import { exportToDocx, exportToPdf, exportToMarkdown, exportToHtml } from './docsExport'
@@ -35,7 +36,13 @@ import TableOfContents from './components/TableOfContents'
 // Constants
 // ---------------------------------------------------------------------------
 
-const HEADINGS = [
+interface HeadingOption {
+  label: string
+  value: number
+  style: string
+}
+
+const HEADINGS: HeadingOption[] = [
   { label: 'Normal',    value: 0, style: 'text-sm' },
   { label: 'Heading 1', value: 1, style: 'text-xl font-bold' },
   { label: 'Heading 2', value: 2, style: 'text-lg font-bold' },
@@ -45,7 +52,12 @@ const HEADINGS = [
   { label: 'Heading 6', value: 6, style: 'text-xs font-normal' },
 ]
 
-const FONT_FAMILIES = [
+interface FontFamilyOption {
+  label: string
+  value: string
+}
+
+const FONT_FAMILIES: FontFamilyOption[] = [
   { label: 'Default',        value: '' },
   { label: 'Arial',          value: 'Arial, sans-serif' },
   { label: 'Georgia',        value: 'Georgia, serif' },
@@ -56,9 +68,14 @@ const FONT_FAMILIES = [
   { label: 'Impact',         value: 'Impact, sans-serif' },
 ]
 
-const FONT_SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 72]
+const FONT_SIZES: number[] = [8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 32, 36, 48, 72]
 
-const LINE_SPACINGS = [
+interface LineSpacingOption {
+  label: string
+  value: string
+}
+
+const LINE_SPACINGS: LineSpacingOption[] = [
   { label: 'Single',  value: '1' },
   { label: '1.15',    value: '1.15' },
   { label: '1.5',     value: '1.5' },
@@ -80,7 +97,14 @@ function Sep() {
   return <span className="toolbar-divider" aria-hidden="true" />
 }
 
-function Dropdown({ trigger, children, align = 'left', wide = false }) {
+interface DropdownProps {
+  trigger: ReactElement
+  children?: ReactNode
+  align?: 'left' | 'right'
+  wide?: boolean
+}
+
+function Dropdown({ trigger, children, align = 'left', wide = false }: DropdownProps) {
   return (
     <Menu trigger={trigger} align={align} width={wide ? 'w-52' : 'w-40'}>
       {children}
@@ -90,10 +114,14 @@ function Dropdown({ trigger, children, align = 'left', wide = false }) {
 
 const MenuItem = Menu.Item
 
+interface EditorProp {
+  editor: Editor
+}
+
 // ---------------------------------------------------------------------------
 // HeadingSelector
 // ---------------------------------------------------------------------------
-function HeadingSelector({ editor }) {
+function HeadingSelector({ editor }: EditorProp) {
   const current = HEADINGS.find((h) =>
     h.value === 0 ? !editor.isActive('heading') : editor.isActive('heading', { level: h.value })
   ) || HEADINGS[0]
@@ -118,7 +146,9 @@ function HeadingSelector({ editor }) {
           active={current.value === value}
           onClick={() => {
             if (value === 0) editor.chain().focus().setParagraph().run()
-            else editor.chain().focus().toggleHeading({ level: value }).run()
+            // HEADINGS' entries are 0 ("Normal") through 6; value is never 0 here
+            // (that branch is handled above), so it's always a valid heading Level.
+            else editor.chain().focus().toggleHeading({ level: value as 1 | 2 | 3 | 4 | 5 | 6 }).run()
           }}
         >
           <span className={style}>{label}</span>
@@ -131,7 +161,7 @@ function HeadingSelector({ editor }) {
 // ---------------------------------------------------------------------------
 // FontFamilySelector
 // ---------------------------------------------------------------------------
-function FontFamilySelector({ editor }) {
+function FontFamilySelector({ editor }: EditorProp) {
   const currentFamily = editor.getAttributes('textStyle').fontFamily || ''
   const currentLabel = FONT_FAMILIES.find((f) => f.value === currentFamily)?.label || 'Font'
 
@@ -172,16 +202,16 @@ function FontFamilySelector({ editor }) {
 // ---------------------------------------------------------------------------
 // FontSizeSelector
 // ---------------------------------------------------------------------------
-function FontSizeSelector({ editor }) {
+function FontSizeSelector({ editor }: EditorProp) {
   const currentSize = editor.getAttributes('textStyle').fontSize || ''
   const numericSize = currentSize ? parseInt(currentSize) : ''
   const [customVal, setCustomVal] = useState('')
 
-  const applySize = (sz) => {
+  const applySize = (sz: number) => {
     editor.chain().focus().setMark('textStyle', { fontSize: `${sz}pt` }).run()
   }
 
-  const handleCustomKeyDown = (e) => {
+  const handleCustomKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       const n = parseInt(customVal)
       if (n && n > 0 && n <= 400) applySize(n)
@@ -237,7 +267,7 @@ function FontSizeSelector({ editor }) {
 // ---------------------------------------------------------------------------
 // LineSpacingSelector
 // ---------------------------------------------------------------------------
-function LineSpacingSelector({ editor }) {
+function LineSpacingSelector({ editor }: EditorProp) {
   return (
     <Dropdown
       trigger={
@@ -281,7 +311,17 @@ function LineSpacingSelector({ editor }) {
 // ---------------------------------------------------------------------------
 // OverflowMenu — 3-dot menu for secondary commands
 // ---------------------------------------------------------------------------
-function OverflowMenu({ editor, title, onInsertToc, onPageSetup, onHeaderFooter, spellcheck, onToggleSpellcheck }) {
+interface OverflowMenuProps {
+  editor: Editor
+  title: string
+  onInsertToc?: () => void
+  onPageSetup?: () => void
+  onHeaderFooter?: () => void
+  spellcheck?: boolean
+  onToggleSpellcheck?: () => void
+}
+
+function OverflowMenu({ editor, title, onInsertToc, onPageSetup, onHeaderFooter, spellcheck, onToggleSpellcheck }: OverflowMenuProps) {
   return (
     <Dropdown
       trigger={
@@ -303,7 +343,7 @@ function OverflowMenu({ editor, title, onInsertToc, onPageSetup, onHeaderFooter,
         <MenuItem
           key={level}
           active={editor.isActive('heading', { level })}
-          onClick={() => editor.chain().focus().toggleHeading({ level }).run()}
+          onClick={() => editor.chain().focus().toggleHeading({ level: level as 5 | 6 }).run()}
         >
           {level === 5 ? <Heading5 size={13} /> : <Heading6 size={13} />}
           Heading {level}
@@ -333,7 +373,15 @@ function OverflowMenu({ editor, title, onInsertToc, onPageSetup, onHeaderFooter,
           // P5: insert the LIVE table-of-contents node (auto-refreshes from
           // headings). Falls back to the static popover if the node isn't
           // registered (shouldn't happen in Docs).
-          if (editor.commands.insertTableOfContents) {
+          //
+          // tableOfContents.ts's Commands<> augmentation is a GLOBAL ambient
+          // merge, so TS statically sees insertTableOfContents as always
+          // defined — but that says nothing about whether THIS editor
+          // instance actually loaded the extension. Reading through an
+          // unknown-typed view of `commands` keeps this a genuine runtime
+          // presence check instead of a static (and misleading) `if (fn)`.
+          const commands = editor.commands as unknown as Record<string, unknown>
+          if (typeof commands.insertTableOfContents === 'function') {
             editor.chain().focus().insertTableOfContents().run()
           } else {
             onInsertToc?.()
@@ -346,7 +394,10 @@ function OverflowMenu({ editor, title, onInsertToc, onPageSetup, onHeaderFooter,
         onClick={() => {
           // WAVE-45: real footnote — inserts a numbered inline ref and a
           // matching entry in the auto-numbered footnotes section at doc end.
-          if (editor.commands.insertFootnote) {
+          // See the insertTableOfContents comment above for why this reads
+          // through an unknown-typed view rather than `if (editor.commands.X)`.
+          const commands = editor.commands as unknown as Record<string, unknown>
+          if (typeof commands.insertFootnote === 'function') {
             editor.chain().focus().insertFootnote().run()
           } else {
             // Fallback for editors without the extension (should not happen).
@@ -396,13 +447,13 @@ function OverflowMenu({ editor, title, onInsertToc, onPageSetup, onHeaderFooter,
 // (for cell text) the CRDT sync. Structural ops mutate ProseMirror nodes and are
 // transported by the collab layer as a whole-document reconcile, not a text diff.
 // ---------------------------------------------------------------------------
-function TableSubMenu({ editor }) {
+function TableSubMenu({ editor }: EditorProp) {
   // TipTap can tell us whether merge / split is currently possible so we can
   // disable the affordances that would no-op (a11y: don't offer dead actions).
   const canMerge = editor.can().mergeCells?.() ?? false
   const canSplit = editor.can().splitCell?.() ?? false
 
-  const Group = ({ label }) => (
+  const Group = ({ label }: { label: string }) => (
     <p className="px-3 py-1 text-2xs font-semibold text-ink-faint tracking-eyebrow uppercase">{label}</p>
   )
 
@@ -448,17 +499,22 @@ function TableSubMenu({ editor }) {
 // ---------------------------------------------------------------------------
 // InsertTableMenu — N×M picker
 // ---------------------------------------------------------------------------
-function InsertTableMenu({ editor }) {
-  const [hover, setHover] = useState(null) // { row, col }
+interface TableCellPos {
+  row: number
+  col: number
+}
+
+function InsertTableMenu({ editor }: EditorProp) {
+  const [hover, setHover] = useState<TableCellPos | null>(null)
   const COLS = 8
   const ROWS = 8
-  const cells = []
+  const cells: { r: number; c: number }[] = []
   for (let r = 1; r <= ROWS; r++) {
     for (let c = 1; c <= COLS; c++) {
       cells.push({ r, c })
     }
   }
-  const hilite = (r, c) => hover && r <= hover.row && c <= hover.col
+  const hilite = (r: number, c: number) => !!hover && r <= hover.row && c <= hover.col
   return (
     <Dropdown
       trigger={
@@ -502,16 +558,30 @@ function InsertTableMenu({ editor }) {
 // ---------------------------------------------------------------------------
 // DocsToolbar (main export)
 // ---------------------------------------------------------------------------
+export interface DocsToolbarProps {
+  editor: Editor | null | undefined
+  title: string
+  pageSetup?: unknown
+  headerFooter?: unknown
+  onInsertEquation?: () => void
+  onPageSetup?: () => void
+  onHeaderFooter?: () => void
+  spellcheck?: boolean
+  onToggleSpellcheck?: () => void
+}
+
 export default function DocsToolbar({
   editor, title, pageSetup, headerFooter,
   onInsertEquation, onPageSetup, onHeaderFooter,
   spellcheck, onToggleSpellcheck,
-}) {
-  const imgInput = useRef(null)
+}: DocsToolbarProps) {
+  const imgInput = useRef<HTMLInputElement>(null)
   const [showToc, setShowToc] = useState(false)
   const [linkOpen, setLinkOpen] = useState(false)
   const [imgUrlOpen, setImgUrlOpen] = useState(false)
   const [imgErr, setImgErr] = useState('')
+
+  if (!editor) return null
 
   // WAVE-57: insert a picked/dropped file as a bounded raster base64 data: URI.
   // Only raster mime types within MAX_INLINE_IMAGE_BYTES embed (SVG is refused —
@@ -519,33 +589,35 @@ export default function DocsToolbar({
   // anyway; refusing here keeps the two layers consistent). We prefer a server
   // upload when available (smaller doc payload) but never fall back to an
   // unchecked readAsDataURL — the embed must go through fileToDataUri's gate.
-  const insertImageFile = async (file) => {
+  const insertImageFile = async (file: File) => {
     setImgErr('')
     if (!isEmbeddableImage(file)) {
-      try { await fileToDataUri(file) } catch (err) { setImgErr(err.message) }
+      try { await fileToDataUri(file) } catch (err) { setImgErr((err as Error)?.message || '') }
       return
     }
     try {
-      const { url } = await api.uploadImage(file)
+      // api.uploadImage's response shape isn't validated server-side-contract
+      // typed (see lib/api.ts — it returns Promise<unknown> deliberately); narrow
+      // just the one field this reads rather than trusting the whole response.
+      const uploaded = await api.uploadImage(file) as { url?: unknown }
+      const url = typeof uploaded?.url === 'string' ? uploaded.url : ''
       editor.chain().focus().setImage({ src: url }).run()
     } catch {
       try {
         const dataUri = await fileToDataUri(file)
         editor.chain().focus().setImage({ src: dataUri }).run()
       } catch (err) {
-        setImgErr(err.message)
+        setImgErr((err as Error)?.message || '')
       }
     }
   }
 
-  const handleImageUpload = async (e) => {
+  const handleImageUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     await insertImageFile(file)
     e.target.value = ''
   }
-
-  if (!editor) return null
 
   return (
     <div
@@ -912,9 +984,9 @@ export default function DocsToolbar({
 // Shown while an image node is selected. Every control routes through
 // updateAttributes('image', …) so the change flows through the same TipTap/CRDT
 // chain as any other edit (the image stays one atomic node — see docsImage.js).
-function ImageSubMenu({ editor }) {
+function ImageSubMenu({ editor }: EditorProp) {
   const attrs = editor.getAttributes('image')
-  const setAttr = (patch) => editor.chain().focus().updateAttributes('image', patch).run()
+  const setAttr = (patch: Record<string, unknown>) => editor.chain().focus().updateAttributes('image', patch).run()
   const align = attrs.align || 'left'
   return (
     <div className="flex items-center gap-1 px-3 py-1.5 border-t border-line bg-bg-elev2 text-xs animate-slide-in-left">
