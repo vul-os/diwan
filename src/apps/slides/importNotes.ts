@@ -21,8 +21,14 @@
  * markup, never eval'd; the banner/dialog render them as escaped text.
  */
 
+export type SlideImportNoteKind =
+  | 'tables' | 'charts' | 'diagrams' | 'groups' | 'vectorImages' | 'animations' | 'transitions'
+
+/** The clamped/persisted record of what an import could not bring in. */
+export type SlideImportNotes = Partial<Record<SlideImportNoteKind, number>> & { filename?: string }
+
 // The feature kinds we detect-and-report as lost/approximated on import.
-const KIND_LABELS = Object.freeze({
+const KIND_LABELS: Record<SlideImportNoteKind, string> = Object.freeze({
   tables: 'table',
   charts: 'chart',
   diagrams: 'SmartArt diagram',
@@ -32,9 +38,9 @@ const KIND_LABELS = Object.freeze({
   transitions: 'slide transition',
 })
 
-const KINDS = Object.keys(KIND_LABELS)
+const KINDS = Object.keys(KIND_LABELS) as SlideImportNoteKind[]
 
-const clampInt = (v, max = 100000) => {
+const clampInt = (v: unknown, max = 100000): number => {
   const n = Math.floor(Number(v))
   return Number.isFinite(n) && n > 0 ? Math.min(n, max) : 0
 }
@@ -44,28 +50,29 @@ const clampInt = (v, max = 100000) => {
  * lost, so a clean import leaves NO overlay on the deck (and a clean export
  * keeps its zero-friction path).
  */
-export function makeSlideImportNotes(partial) {
+export function makeSlideImportNotes(partial: unknown): SlideImportNotes | null {
   if (!partial || typeof partial !== 'object') return null
-  const notes = {}
-  let any = false
+  const p = partial as Record<string, unknown>
+  const notes: SlideImportNotes = {}
+  let anyLost = false
   for (const k of KINDS) {
-    const n = clampInt(partial[k])
-    if (n > 0) { notes[k] = n; any = true }
+    const n = clampInt(p[k])
+    if (n > 0) { notes[k] = n; anyLost = true }
   }
-  if (!any) return null
-  if (typeof partial.filename === 'string' && partial.filename) {
-    notes.filename = partial.filename.slice(0, 160)
+  if (!anyLost) return null
+  if (typeof p.filename === 'string' && p.filename) {
+    notes.filename = p.filename.slice(0, 160)
   }
   return notes
 }
 
 /** True when the notes describe something the user actually lost. */
-export function hasSlideImportLoss(notes) {
-  return !!notes && KINDS.some((k) => clampInt(notes[k]) > 0)
+export function hasSlideImportLoss(notes: unknown): boolean {
+  return !!notes && KINDS.some((k) => clampInt((notes as Record<string, unknown>)[k]) > 0)
 }
 
 /** Read + clamp the notes off a deck (null when there is nothing to report). */
-export function getSlideImportNotes(deck) {
+export function getSlideImportNotes(deck: { importNotes?: unknown } | null | undefined): SlideImportNotes | null {
   return makeSlideImportNotes(deck?.importNotes)
 }
 
@@ -73,11 +80,11 @@ export function getSlideImportNotes(deck) {
  * slideImportLossItems — the itemised, plain-English list (for a banner / the
  * export dialog). Returns [] when nothing was lost.
  */
-export function slideImportLossItems(notes) {
+export function slideImportLossItems(notes: unknown): string[] {
   const clean = makeSlideImportNotes(notes)
   if (!clean) return []
-  return KINDS.filter((k) => clean[k] > 0).map((k) => {
-    const n = clean[k]
+  return KINDS.filter((k) => (clean[k] ?? 0) > 0).map((k) => {
+    const n = clean[k] ?? 0
     const label = KIND_LABELS[k]
     const plural = n === 1 ? label : `${label}s`
     return `${n} ${plural}`
@@ -88,7 +95,7 @@ export function slideImportLossItems(notes) {
  * slideImportLossSummary — the one-line version for a toast/banner headline.
  * Returns '' when nothing was lost.
  */
-export function slideImportLossSummary(notes) {
+export function slideImportLossSummary(notes: unknown): string {
   const items = slideImportLossItems(notes)
   if (!items.length) return ''
   return `${items.join(', ')} could not be imported — an export from here will not contain them.`
