@@ -11,26 +11,28 @@
  *   'system' mode it reads prefers-color-scheme and follows OS changes live.
  */
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, type Dispatch, type SetStateAction } from 'react'
 
 const STORE_KEY = 'diwan.theme'
 // Back-compat: honour a previously-persisted key from the old brand.
 const LEGACY_KEY = 'vulos.theme'
 
-function osPrefersDark() {
+function osPrefersDark(): boolean {
   try { return window.matchMedia('(prefers-color-scheme: dark)').matches } catch { return false }
 }
 
-export function resolveTheme(theme) {
+/** The persisted theme setting is 'light' | 'dark' | 'system' in practice, but
+ *  this also tolerates a stray legacy value read back from localStorage. */
+export function resolveTheme(theme: string): 'light' | 'dark' {
   if (theme === 'light' || theme === 'dark') return theme
   return osPrefersDark() ? 'dark' : 'light'
 }
 
-function applyTheme(theme) {
+function applyTheme(theme: string): void {
   document.documentElement.setAttribute('data-theme', resolveTheme(theme))
 }
 
-export function useTheme() {
+export function useTheme(): { theme: string, setTheme: Dispatch<SetStateAction<string>>, cycle: () => void } {
   const [theme, setTheme] = useState(() => {
     try { return localStorage.getItem(STORE_KEY) || localStorage.getItem(LEGACY_KEY) || 'light' } catch { return 'light' }
   })
@@ -40,7 +42,7 @@ export function useTheme() {
     try { localStorage.setItem(STORE_KEY, theme) } catch {}
     // In 'system' mode, follow live OS theme changes.
     if (theme !== 'system') return
-    let mq
+    let mq: MediaQueryList
     try { mq = window.matchMedia('(prefers-color-scheme: dark)') } catch { return }
     const onChange = () => applyTheme('system')
     mq.addEventListener?.('change', onChange)
@@ -61,8 +63,8 @@ export function useTheme() {
  * theming (Excalidraw, chart overlays, …) subscribe here so they flip in lock-
  * step with the shared tokens instead of guessing from the raw preference.
  */
-export function useResolvedTheme() {
-  const read = () =>
+export function useResolvedTheme(): 'light' | 'dark' {
+  const read = (): 'light' | 'dark' =>
     (typeof document !== 'undefined' &&
       document.documentElement.getAttribute('data-theme')) === 'dark'
       ? 'dark'
