@@ -11,7 +11,7 @@
 import { useEffect, useState } from 'react'
 import Modal from '../../../components/ui/Modal'
 import { Button } from '../../../components/ui'
-import { normalizeHeaderFooter } from '../headerFooter.js'
+import { normalizeHeaderFooter, type HeaderFooterBand, type HeaderFooterConfig } from '../headerFooter.js'
 
 const FIELDS = [
   { token: '{{page}}', label: 'Page #' },
@@ -20,14 +20,20 @@ const FIELDS = [
   { token: '{{date}}', label: 'Date' },
 ]
 
-function BandEditor({ label, band, onChange }) {
-  const set = (cell, v) => onChange({ ...band, [cell]: v })
-  const insertField = (cell, token) => onChange({ ...band, [cell]: `${band[cell] || ''}${token}` })
+interface BandEditorProps {
+  label: string
+  band: HeaderFooterBand
+  onChange: (band: HeaderFooterBand) => void
+}
+
+function BandEditor({ label, band, onChange }: BandEditorProps) {
+  const set = (cell: keyof HeaderFooterBand, v: string) => onChange({ ...band, [cell]: v })
+  const insertField = (cell: keyof HeaderFooterBand, token: string) => onChange({ ...band, [cell]: `${band[cell] || ''}${token}` })
   return (
     <fieldset className="space-y-1.5">
       <legend className="text-2xs font-semibold text-ink-faint tracking-eyebrow uppercase">{label}</legend>
       <div className="grid grid-cols-3 gap-2">
-        {['left', 'center', 'right'].map((cell) => (
+        {(['left', 'center', 'right'] as const).map((cell) => (
           <div key={cell} className="space-y-1">
             <input
               type="text"
@@ -57,15 +63,22 @@ function BandEditor({ label, band, onChange }) {
   )
 }
 
-export default function HeaderFooterDialog({ open, value, onApply, onClose }) {
-  const [cfg, setCfg] = useState(normalizeHeaderFooter(value))
+export interface HeaderFooterDialogProps {
+  open: boolean
+  value: unknown
+  onApply?: (cfg: HeaderFooterConfig) => void
+  onClose?: () => void
+}
+
+export default function HeaderFooterDialog({ open, value, onApply, onClose }: HeaderFooterDialogProps) {
+  const [cfg, setCfg] = useState<HeaderFooterConfig>(normalizeHeaderFooter(value))
 
   useEffect(() => { if (open) setCfg(normalizeHeaderFooter(value)) }, [open, value])
 
   const apply = () => {
     // Enable automatically if any band has content.
-    const any = (b) => b.left || b.center || b.right
-    const enabled = cfg.enabled || any(cfg.header) || any(cfg.footer)
+    const hasContent = (b: HeaderFooterBand) => b.left || b.center || b.right
+    const enabled = cfg.enabled || hasContent(cfg.header) || hasContent(cfg.footer)
     onApply?.(normalizeHeaderFooter({ ...cfg, enabled }))
     onClose?.()
   }
