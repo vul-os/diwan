@@ -11,13 +11,20 @@
 
 import { useMemo } from 'react'
 import { List } from 'lucide-react'
+import type { Editor } from '@tiptap/react'
 
-function slugify(text) {
+export interface TocHeading {
+  level: number
+  text: string
+  slug: string
+}
+
+function slugify(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 }
 
-export function extractHeadings(editor) {
-  const headings = []
+export function extractHeadings(editor: Editor | null | undefined): TocHeading[] {
+  const headings: TocHeading[] = []
   if (!editor) return headings
   editor.state.doc.descendants((node) => {
     if (node.type.name === 'heading') {
@@ -28,7 +35,7 @@ export function extractHeadings(editor) {
   return headings
 }
 
-export function buildTocHtml(headings) {
+export function buildTocHtml(headings: TocHeading[]): string {
   if (headings.length === 0) return '<p><em>No headings found.</em></p>'
   const items = headings.map((h) => {
     const indent = (h.level - 1) * 16
@@ -44,7 +51,12 @@ export function buildTocHtml(headings) {
   </div>`
 }
 
-export default function TableOfContents({ editor, onClose }) {
+export interface TableOfContentsProps {
+  editor: Editor | null | undefined
+  onClose?: () => void
+}
+
+export default function TableOfContents({ editor, onClose }: TableOfContentsProps) {
   const headings = useMemo(() => extractHeadings(editor), [editor])
 
   const handleInsert = () => {
