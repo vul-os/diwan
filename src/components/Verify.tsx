@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
+import type { ChangeEvent, DragEvent, FormEvent } from 'react'
 import {
   AlertCircle,
   CheckCircle,
@@ -31,10 +32,40 @@ import { Button, Card, Input } from './ui'
  */
 
 // ─────────────────────────────────────────────────────────
+// Local shapes — `/api/sign/verify` isn't typed by lib/api (a raw `fetch` call
+// is used directly here); these document just what this page reads.
+// ─────────────────────────────────────────────────────────
+
+interface VerifySigner {
+  signer_id: string
+  name?: string
+  email?: string
+  identity?: string
+  signed_at?: string
+  token_ok: boolean
+  token_error?: string
+}
+
+interface VerifyResult {
+  ok: boolean
+  title?: string
+  envelope_id?: string
+  hash_match?: boolean
+  final_doc_hash?: string
+  hash_error?: string
+  chain_ok?: boolean
+  total_audit_events?: number
+  chain_error?: string
+  sealed_at?: string
+  signers?: VerifySigner[]
+  error?: string
+}
+
+// ─────────────────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────────────────
 
-function Pill({ ok, label }) {
+function Pill({ ok, label }: { ok?: boolean; label: string }) {
   return (
     <span
       className={[
@@ -48,7 +79,7 @@ function Pill({ ok, label }) {
   )
 }
 
-function HashDisplay({ hash, label }) {
+function HashDisplay({ hash, label }: { hash?: string; label: string }) {
   if (!hash) return null
   return (
     <div className="flex items-start gap-2 mt-1.5">
@@ -61,7 +92,7 @@ function HashDisplay({ hash, label }) {
   )
 }
 
-function SignerRow({ signer }) {
+function SignerRow({ signer }: { signer: VerifySigner }) {
   const [open, setOpen] = useState(false)
   return (
     <div className="bg-paper border border-line rounded-md overflow-hidden">
@@ -122,20 +153,20 @@ function SignerRow({ signer }) {
 
 export default function Verify() {
   const [dragging, setDragging] = useState(false)
-  const [file, setFile] = useState(null)
+  const [file, setFile] = useState<File | null>(null)
   const [envelopeId, setEnvelopeId] = useState('')
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
-  const [result, setResult] = useState(null)
-  const inputRef = useRef(null)
+  const [error, setError] = useState<string | null>(null)
+  const [result, setResult] = useState<VerifyResult | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   // ── drag-and-drop ──
-  const onDragOver = useCallback((e) => {
+  const onDragOver = useCallback((e: DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     setDragging(true)
   }, [])
   const onDragLeave = useCallback(() => setDragging(false), [])
-  const onDrop = useCallback((e) => {
+  const onDrop = useCallback((e: DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     setDragging(false)
     const dropped = e.dataTransfer.files[0]
@@ -146,8 +177,8 @@ export default function Verify() {
     }
   }, [])
 
-  function onFileInput(e) {
-    const chosen = e.target.files[0]
+  function onFileInput(e: ChangeEvent<HTMLInputElement>) {
+    const chosen = e.target.files?.[0]
     if (chosen) {
       setFile(chosen)
       setResult(null)
@@ -156,14 +187,14 @@ export default function Verify() {
   }
 
   // ── submit ──
-  async function handleVerify(e) {
+  async function handleVerify(e: FormEvent) {
     e.preventDefault()
     setError(null)
     setResult(null)
     setLoading(true)
 
     try {
-      let res
+      let res: Response
       if (file) {
         const form = new FormData()
         form.append('pdf', file)
@@ -180,14 +211,14 @@ export default function Verify() {
         return
       }
 
-      const data = await res.json()
+      const data = (await res.json()) as VerifyResult
       if (res.ok || res.status === 422) {
         setResult(data)
       } else {
         setError(data.error || 'Verification request failed.')
       }
     } catch (err) {
-      setError('Network error: ' + err.message)
+      setError('Network error: ' + (err instanceof Error ? err.message : String(err)))
     } finally {
       setLoading(false)
     }
