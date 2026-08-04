@@ -51,10 +51,13 @@
  */
 export const WASM_IMPORT_MODULE = './kotva_sync_bg.js'
 
-let modulePromise = null
+/** The upstream module namespace loadSync() resolves to — see kotva_sync.d.ts. */
+export type KotvaSyncNamespace = typeof import('@vul-os/kotva-sync')
+
+let modulePromise: Promise<KotvaSyncNamespace> | null = null
 
 /** True under Node and Vitest; false in a real browser. */
-function isNode() {
+function isNode(): boolean {
   return typeof process !== 'undefined' && !!process.versions && !!process.versions.node
 }
 
@@ -85,7 +88,7 @@ function isNode() {
  *   disk through Node's own resolver — `createRequire` handles the bare package
  *   specifier, which a `new URL(…, import.meta.url)` expression cannot.
  */
-async function wasmBytes() {
+async function wasmBytes(): Promise<ArrayBuffer | Buffer> {
   // Diwan's library build (vite.config.lib.js) also emits a CommonJS artifact,
   // in which the bundler replaces `import.meta` with `{}` — there is no module
   // URL to resolve against and no way to invent one. Say so plainly instead of
@@ -112,16 +115,24 @@ async function wasmBytes() {
   return res.arrayBuffer()
 }
 
-async function instantiate() {
+async function instantiate(): Promise<KotvaSyncNamespace> {
   const glue = await import('@vul-os/kotva-sync/kotva_sync_bg.js')
   const bytes = await wasmBytes()
   const { instance } = await WebAssembly.instantiate(
     bytes instanceof ArrayBuffer ? bytes : new Uint8Array(bytes),
-    { [WASM_IMPORT_MODULE]: glue },
+    // The rest of this namespace (every host function the compiled .wasm
+    // imports besides __wbg_set_wasm) is intentionally untyped — see
+    // src/types/kotva-sync-glue.d.ts.
+    { [WASM_IMPORT_MODULE]: glue as unknown as WebAssembly.ModuleImports },
   )
   glue.__wbg_set_wasm(instance.exports)
-  instance.exports.__wbindgen_start()
-  return glue
+  // wasm-bindgen's start function — always present on this glue's compiled
+  // core, just not modelled in WebAssembly.Exports' general union type.
+  ;(instance.exports.__wbindgen_start as () => void)()
+  // The glue module IS the upstream public namespace once wired to the
+  // instantiated wasm (see the module doc above) — kotva_sync.js does nothing
+  // more than this same wiring before re-exporting it.
+  return glue as unknown as KotvaSyncNamespace
 }
 
 /**
@@ -130,10 +141,10 @@ async function instantiate() {
  * Concurrent callers share one in-flight promise; a failed load is NOT cached,
  * so a transient fetch error can be retried rather than poisoning the process.
  *
- * @returns {Promise<object>} the upstream module namespace (`SyncEngine`,
- *   `HlcClock`, `encode_op`, …). See `@vul-os/kotva-sync/kotva_sync.d.ts`.
+ * @returns the upstream module namespace (`SyncEngine`, `HlcClock`,
+ *   `encode_op`, …). See `@vul-os/kotva-sync/kotva_sync.d.ts`.
  */
-export function loadSync() {
+export function loadSync(): Promise<KotvaSyncNamespace> {
   if (!modulePromise) {
     modulePromise = instantiate().catch((err) => {
       modulePromise = null
@@ -144,6 +155,6 @@ export function loadSync() {
 }
 
 /** True once `loadSync()` has resolved at least once (test/diagnostic use). */
-export function isLoaded() {
+export function isLoaded(): boolean {
   return modulePromise !== null
 }
