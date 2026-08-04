@@ -1,9 +1,9 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
+import { useEffect, useState, useCallback, useRef, useMemo, type MouseEvent as ReactMouseEvent } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useEditor, EditorContent, Extension, Mark } from '@tiptap/react'
-import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { useEditor, EditorContent, Extension, Mark, type Editor } from '@tiptap/react'
+import { Plugin, PluginKey, type Transaction } from '@tiptap/pm/state'
 import { Decoration, DecorationSet } from '@tiptap/pm/view'
-import { DOMParser as PMDOMParser } from '@tiptap/pm/model'
+import { DOMParser as PMDOMParser, type Schema } from '@tiptap/pm/model'
 import { ySyncPluginKey } from 'y-prosemirror'
 import StarterKit from '@tiptap/starter-kit'
 import { DocImage, fileToDataUri, isEmbeddableImage } from './docsImage.js'
@@ -51,14 +51,14 @@ import { ArrowLeft, Save, Loader2, AlertCircle, History, Users, MessageSquare, A
 import FindReplace from './components/FindReplace'
 import WordCountModal from './components/WordCountModal'
 import DocumentOutline from './components/DocumentOutline'
-import { useFilesStore, getSaveState, onSaveStateChange } from '../../store/filesStore'
+import { useFilesStore, getSaveState, onSaveStateChange, type DiwanFile, type SaveState } from '../../store/filesStore'
 import { api } from '../../lib/api'
 import { sanitizeDocHtml } from '../../lib/sanitize'
-import { readDraft, clearDraft } from '../../lib/draftStore'
+import { readDraft, clearDraft, type Draft } from '../../lib/draftStore'
 import DocsToolbar from './DocsToolbar'
 import HistoryPanel from '../../components/HistoryPanel'
 import CommentsPanel from '../../components/CommentsPanel'
-import SuggestionPanel from '../../components/SuggestionPanel'
+import SuggestionPanel, { type Suggestion as PanelSuggestion } from '../../components/SuggestionPanel'
 import ActivityFeed from '../../components/ActivityFeed'
 import { useP2PCollab } from './useP2PCollab.js'
 import { docsCollabEnabled, DOCS_COLLAB_OFF_NOTICE, updateLogEnabled } from '../../lib/flags.js'
@@ -72,14 +72,14 @@ import { UpdateLogSync } from '../../lib/collab/updateLog.js'
 import P2PShareModal from './components/P2PShareModal.jsx'
 import AccountShareModal from '../../components/AccountShareModal.jsx'
 import { useAuthStore } from '../../store/authStore'
-import { getSuggestionStore } from '../../lib/crdt/suggestions.js'
-import { useLiveCursors } from '../../lib/collab/webrtc/useLiveCursors.js'
-import { usePresence } from '../../lib/collab/webrtc/presence.js'
+import { getSuggestionStore, type Suggestion, type SuggestionKind } from '../../lib/crdt/suggestions.js'
+import { useLiveCursors, type LocalIdentity, type FabricLike } from '../../lib/collab/webrtc/useLiveCursors.js'
+import { usePresence, type PresenceFabric } from '../../lib/collab/webrtc/presence.js'
 import { DocsCursorLayer } from '../../components/RemoteCursors.jsx'
 import PresenceBar from '../../components/PresenceBar.jsx'
 import { Button, IconButton, Tooltip, Topbar, LoadingState, SaveStatus, AvatarStack, useToast } from '../../components/ui'
 import { Skeleton } from '../../components/ui/LoadingState'
-import { getCommentStore } from '../../lib/crdt/comments'
+import { getCommentStore, type Comment, type CommentAnchor } from '../../lib/crdt/comments'
 import {
   createCommentDecorationsExtension,
   COMMENT_PLUGIN_KEY,
@@ -96,14 +96,24 @@ import {
 } from './footnotes.js'
 import { MathInline, MathBlock } from './equation.js'
 import { TableOfContentsNode } from './tableOfContents.js'
-import { SmartChip, isSafeChipHref } from './smartChips.js'
+import { SmartChip, isSafeChipHref, type ChipPersonSource } from './smartChips.js'
 import SmartChipMenu from './components/SmartChipMenu.jsx'
-import EquationEditor from './components/EquationEditor.jsx'
+import EquationEditor, { type EquationEditorSubmitArgs } from './components/EquationEditor.jsx'
 import PageSetupDialog from './components/PageSetupDialog.jsx'
 import HeaderFooterDialog from './components/HeaderFooterDialog.jsx'
-import { normalizePageSetup, pageDimensions } from './pageSetup.js'
-import { normalizeHeaderFooter, bandsForPage } from './headerFooter.js'
+import { normalizePageSetup, pageDimensions, type PageSetup } from './pageSetup.js'
+import { normalizeHeaderFooter, bandsForPage, type HeaderFooterConfig } from './headerFooter.js'
 import { measurePageBreaks, createDebouncedMeasure } from './pagination.js'
+
+/**
+ * The Y context this component builds via `createYContext(null, ydoc)` and
+ * mutates IN PLACE once the ProseMirror editor mounts (`yctx.schema =
+ * editor.schema`) — the same DocsYContext shape useP2PCollab.ts documents
+ * (this is the file that actually builds and hands it to that hook). ydoc.ts's
+ * own `YContext` requires a non-null `schema`, which is why this file needs
+ * its own, structurally-compatible type for the transitional state.
+ */
+type DocsYContext = { ydoc: InstanceType<typeof Y.Doc>; shadow: InstanceType<typeof Y.Doc>; schema: Schema | null }
 
 // Imported files may carry _html; use that as editor content.
 // WAVE-52: _html is user/peer-supplied markup (imported .html/.docx, restored
@@ -112,10 +122,11 @@ import { measurePageBreaks, createDebouncedMeasure } from './pagination.js'
 // this is the wave-14 allow-list boundary applied to the Docs import path, and
 // it keeps imported tables safe (colspan/rowspan/scope survive; <td onclick>/
 // <td style="…javascript:…"> are stripped). See lib/sanitize.js.
-function resolveContent(content) {
+function resolveContent(content: unknown): string | Record<string, unknown> {
   if (!content) return { type: 'doc', content: [{ type: 'paragraph' }] }
-  if (content._html) return sanitizeDocHtml(content._html)  // TipTap accepts HTML string
-  return content
+  const c = content as Record<string, unknown>
+  if (c._html) return sanitizeDocHtml(c._html as string)  // TipTap accepts HTML string
+  return c
 }
 
 const RETRY_DELAY_MS = 4000
@@ -142,8 +153,11 @@ const AUTOSAVE_DELAY_MS = 2000
  * peer's change (rather than by the local user). y-prosemirror stamps those
  * transactions with isChangeOrigin.
  */
-function isRemoteTransaction(tr) {
-  try { return !!tr?.getMeta(ySyncPluginKey)?.isChangeOrigin } catch { return false }
+function isRemoteTransaction(tr: Transaction | null | undefined): boolean {
+  try {
+    const change = tr?.getMeta(ySyncPluginKey) as { isChangeOrigin?: boolean } | undefined
+    return !!change?.isChangeOrigin
+  } catch { return false }
 }
 
 /**
@@ -156,7 +170,7 @@ function isRemoteTransaction(tr) {
  * document — they are stripped so the seed is exactly the ProseMirror document
  * (and so the deterministic seed hash is stable).
  */
-export function contentToPMJSON(content, schema) {
+export function contentToPMJSON(content: unknown, schema: Schema): Record<string, unknown> {
   const resolved = resolveContent(content)
   if (typeof resolved === 'string') {
     // Imported HTML. Parse it against the real schema so anything the schema
@@ -171,7 +185,7 @@ export function contentToPMJSON(content, schema) {
 }
 
 // Derive a stable peerId for this browser session (persists across reloads).
-function getOrCreatePeerId() {
+function getOrCreatePeerId(): string {
   let id = sessionStorage.getItem('vulos_peer_id')
   if (!id) {
     id = crypto.randomUUID()
@@ -187,9 +201,18 @@ function getOrCreatePeerId() {
 // meta key whenever suggestions change.
 // ---------------------------------------------------------------------------
 
-const SUGGESTION_PLUGIN_KEY = new PluginKey('suggestions')
+interface SuggestionPluginState {
+  suggestions: Suggestion[]
+  decorations: DecorationSet
+}
 
-function makeSuggestionDecoration(from, to, kind) {
+interface SuggestionPluginMeta {
+  suggestions: Suggestion[]
+}
+
+const SUGGESTION_PLUGIN_KEY = new PluginKey<SuggestionPluginState>('suggestions')
+
+function makeSuggestionDecoration(from: number, to: number, kind: SuggestionKind): Decoration {
   // TipTap/ProseMirror positions are 1-indexed and include node boundaries.
   // Character offset `from` in plain text ≈ doc position `from + 1`.
   const docFrom = from + 1
@@ -207,12 +230,12 @@ function makeSuggestionDecoration(from, to, kind) {
 }
 
 function buildSuggestionPlugin() {
-  return new Plugin({
+  return new Plugin<SuggestionPluginState>({
     key: SUGGESTION_PLUGIN_KEY,
     state: {
-      init() { return { suggestions: [], decorations: DecorationSet.empty } },
-      apply(tr, old, _oldState, newState) {
-        const meta = tr.getMeta(SUGGESTION_PLUGIN_KEY)
+      init(): SuggestionPluginState { return { suggestions: [], decorations: DecorationSet.empty } },
+      apply(tr, old, _oldState, newState): SuggestionPluginState {
+        const meta = tr.getMeta(SUGGESTION_PLUGIN_KEY) as SuggestionPluginMeta | undefined
         if (meta) {
           const pending = (meta.suggestions || []).filter((s) => s.state === 'pending')
           const decos = pending.flatMap((s) => {
@@ -249,7 +272,7 @@ function buildSuggestionPlugin() {
     },
     props: {
       decorations(state) {
-        return this.getState(state).decorations
+        return this.getState(state)?.decorations
       },
     },
   })
@@ -273,11 +296,11 @@ const FindHighlightExtension = Extension.create({
   name: 'findHighlight',
   addProseMirrorPlugins() {
     return [
-      new Plugin({
+      new Plugin<DecorationSet>({
         state: {
           init: () => DecorationSet.empty,
           apply(tr, old) {
-            const meta = tr.getMeta(FIND_HIGHLIGHT_META_KEY)
+            const meta = tr.getMeta(FIND_HIGHLIGHT_META_KEY) as DecorationSet | undefined
             if (meta !== undefined) return meta
             return old.map(tr.mapping, tr.doc)
           },
@@ -290,6 +313,15 @@ const FindHighlightExtension = Extension.create({
   },
 })
 
+// A comment/chip API response shape isn't server-contract typed — narrow just
+// the fields this component reads rather than trusting the whole response.
+interface RawCollaborator {
+  account_id?: unknown
+  accountId?: unknown
+  id?: unknown
+  display_name?: unknown
+}
+
 export default function DocsEditor() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -300,43 +332,43 @@ export default function DocsEditor() {
   // labelled unavailable. Read once per mount — it is a build-time constant.
   const collabEnabled = useMemo(() => docsCollabEnabled(), [])
   const { files, saveFileWithDraft, markDirty } = useFilesStore()
-  const [file, setFile] = useState(files.find((f) => f.id === id))
+  const [file, setFile] = useState<DiwanFile | undefined>(files.find((f) => f.id === id))
   const [title, setTitle] = useState(file?.name || 'Untitled')
-  const [pendingContent, setPendingContent] = useState(null)
-  const [saveStatus, setSaveStatus] = useState(getSaveState(id))
-  const [draft, setDraft] = useState(null)           // pending draft to offer restore
+  const [pendingContent, setPendingContent] = useState<string | Record<string, unknown> | null>(null)
+  const [saveStatus, setSaveStatus] = useState<SaveState>(getSaveState(id || ''))
+  const [draft, setDraft] = useState<Draft | null>(null)           // pending draft to offer restore
   const [retryCount, setRetryCount] = useState(0)
   const [showHistory, setShowHistory] = useState(false)
   const [showComments, setShowComments] = useState(false)
   // WAVE-45: comment-anchor highlighting + click-to-jump.
-  const [comments, setComments] = useState([])          // the live comment list (for decorations)
-  const [activeCommentId, setActiveCommentId] = useState(null) // clicked/focused comment
+  const [comments, setComments] = useState<Comment[]>([])          // the live comment list (for decorations)
+  const [activeCommentId, setActiveCommentId] = useState<string | null>(null) // clicked/focused comment
   // SMART CHIPS: the people source for the @-menu is this document's own
   // collaborators (NOT the whole directory), so the menu can never enumerate
   // accounts the user can't already see on this doc.
-  const [chipPeople, setChipPeople] = useState([])
+  const [chipPeople, setChipPeople] = useState<ChipPersonSource[]>([])
   // onActivate is called from inside the ProseMirror plugin (created once); use
   // a ref so the plugin always sees the latest handler.
-  const activateCommentRef = useRef(null)
+  const activateCommentRef = useRef<((commentId: string) => void) | null>(null)
   const [showActivity, setShowActivity] = useState(false)
   const [showOutline, setShowOutline] = useState(false)
-  const scrollRef = useRef(null)  // canvas scroll container, for outline tracking
+  const scrollRef = useRef<HTMLDivElement>(null)  // canvas scroll container, for outline tracking
   // Find/Replace
-  const [findMode, setFindMode] = useState(null) // null | 'find' | 'replace'
+  const [findMode, setFindMode] = useState<'find' | 'replace' | null>(null)
   // Word count modal
   const [showWordCount, setShowWordCount] = useState(false)
   // Page count (measured — P1 pagination)
   const [pageCount, setPageCount] = useState(1)
   // P1: measured page-break y-offsets (px, relative to content top). View-only.
-  const [pageBreaks, setPageBreaks] = useState([])
+  const [pageBreaks, setPageBreaks] = useState<number[]>([])
   // P3: page setup (size / orientation / margins). Document metadata.
-  const [pageSetup, setPageSetup] = useState(normalizePageSetup(null))
+  const [pageSetup, setPageSetup] = useState<PageSetup>(normalizePageSetup(null))
   const [showPageSetup, setShowPageSetup] = useState(false)
   // P2: headers & footers. Document metadata.
-  const [headerFooter, setHeaderFooter] = useState(normalizeHeaderFooter(null))
+  const [headerFooter, setHeaderFooter] = useState<HeaderFooterConfig>(normalizeHeaderFooter(null))
   const [showHeaderFooter, setShowHeaderFooter] = useState(false)
   // P4: equation editor dialog state.
-  const [equationEditor, setEquationEditor] = useState(null) // null | { latex, display, editing }
+  const [equationEditor, setEquationEditor] = useState<{ latex: string; display: boolean; editing: boolean } | null>(null)
   // P5: native spellcheck toggle (browser dictionary). Persisted per-browser.
   const [spellcheck, setSpellcheck] = useState(() => {
     try { return localStorage.getItem('docs_spellcheck') !== 'off' } catch { return true }
@@ -344,11 +376,11 @@ export default function DocsEditor() {
   // OFFICE-27: suggestion / track-changes mode
   const [suggestionMode, setSuggestionMode] = useState(false)
   const [showSuggestions, setShowSuggestions] = useState(false)
-  const [suggestions, setSuggestions] = useState([])
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const suggestionModeRef = useRef(false)
   const prevTextForSugRef = useRef('')   // plain text before the suggestion-mode edit
-  const saveTimer = useRef(null)
-  const retryTimer = useRef(null)
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const titleRef = useRef(title)
   titleRef.current = title
 
@@ -368,11 +400,18 @@ export default function DocsEditor() {
     () => (collabEnabled && id ? new Y.Doc() : null),
     [collabEnabled, id],
   )
-  const yctx = useMemo(() => (ydoc ? createYContext(null, ydoc) : null), [ydoc])
+  const yctx = useMemo<DocsYContext | null>(
+    // createYContext's own signature requires a non-null Schema; it is only
+    // stored (not dereferenced) at construction time, and attached for real
+    // once the ProseMirror editor mounts (`yctx.schema = editor.schema` below)
+    // — see DocsYContext and useP2PCollab.ts's matching ctxReady/waitForCtx.
+    () => (ydoc ? createYContext(null as unknown as Schema, ydoc) : null),
+    [ydoc],
+  )
   // Seed content (the document's authoritative PM JSON). Null until the file has
   // loaded — the sessions must not join before it is known, or they would seed an
   // EMPTY document over a real one.
-  const [seedJSON, setSeedJSON] = useState(null)
+  const [seedJSON, setSeedJSON] = useState<Record<string, unknown> | null>(null)
 
   // ── WAVE-25: secure local/P2P collab (invite-link, E2E, ro-enforced) ───────
   const [showP2PShare, setShowP2PShare] = useState(false)
@@ -380,7 +419,7 @@ export default function DocsEditor() {
   // Share entry point; it offers the complementary P2P E2E link path alongside.
   const [showAccountShare, setShowAccountShare] = useState(false)
   const myAccountId = useAuthStore((s) => s.accountId)
-  const p2p = useP2PCollab({ fileId: id, ctx: yctx, enabled: collabEnabled })
+  const p2p = useP2PCollab({ fileId: id || '', ctx: yctx, enabled: collabEnabled })
 
   // Honesty guard: an invite link was opened but live co-editing is disabled for
   // this build. The link can never connect them — say so instead of leaving them
@@ -440,7 +479,7 @@ export default function DocsEditor() {
         Y.applyUpdate(yctx.ydoc, update, SEED_ORIGIN)
       }
     } catch (err) {
-      console.warn('[collab] local seed failed (editor stays usable):', err?.message)
+      console.warn('[collab] local seed failed (editor stays usable):', (err as Error)?.message)
     }
     setHydrated(true)
   }, [collabEnabled, yctx, seedJSON, hydrated])
@@ -474,7 +513,7 @@ export default function DocsEditor() {
 
   // Subscribe to save state changes for this file
   useEffect(() => {
-    const unsub = onSaveStateChange(id, (state) => setSaveStatus({ ...state }))
+    const unsub = onSaveStateChange(id || '', (state) => setSaveStatus({ ...state }))
     return unsub
   }, [id])
 
@@ -616,8 +655,8 @@ export default function DocsEditor() {
           const to = pre + deleted.length
 
           const peerId = sessionStorage.getItem('vulos_peer_id') || 'local'
-          const store = getSuggestionStore(id)
-          let sg
+          const store = getSuggestionStore(id || '')
+          let sg: Suggestion | undefined
           if (inserted.length > 0) {
             sg = store.addInsert(from, to, inserted, peerId)
           } else if (deleted.length > 0) {
@@ -625,7 +664,7 @@ export default function DocsEditor() {
           }
           if (sg) {
             // Persist to backend (fire-and-forget; store already has it)
-            api.createSuggestion(id, sg.kind, sg.author_id, sg.from, sg.to, sg.text || '').catch(() => {})
+            api.createSuggestion(id || '', sg.kind, sg.author_id, sg.from, sg.to, sg.text || '').catch(() => {})
             setSuggestions(store.list())
             setShowSuggestions(true)
           }
@@ -633,7 +672,7 @@ export default function DocsEditor() {
         return
       }
 
-      markDirty(id)
+      markDirty(id || '')
       clearTimeout(saveTimer.current)
       clearTimeout(retryTimer.current)
       setRetryCount(0)
@@ -659,10 +698,11 @@ export default function DocsEditor() {
   // P2/P3: hydrate page-setup + header/footer from the file's stored content.
   // They ride the doc content object as sibling keys (see doSave) so they persist
   // with the same authoritative save/load as the doc JSON — NOT over the text CRDT.
-  const loadDocMeta = useCallback((content) => {
+  const loadDocMeta = useCallback((content: unknown) => {
     if (content && typeof content === 'object') {
-      if (content.pageSetup) setPageSetup(normalizePageSetup(content.pageSetup))
-      if (content.headerFooter) setHeaderFooter(normalizeHeaderFooter(content.headerFooter))
+      const c = content as { pageSetup?: unknown; headerFooter?: unknown }
+      if (c.pageSetup) setPageSetup(normalizePageSetup(c.pageSetup))
+      if (c.headerFooter) setHeaderFooter(normalizeHeaderFooter(c.headerFooter))
     }
   }, [])
 
@@ -670,10 +710,11 @@ export default function DocsEditor() {
   useEffect(() => {
     if (!file && id) {
       api.getFile(id).then((f) => {
-        setFile(f)
-        setTitle(f.name)
-        loadDocMeta(f.content)
-        setPendingContent(resolveContent(f.content))
+        const loaded = f as DiwanFile
+        setFile(loaded)
+        setTitle(loaded.name)
+        loadDocMeta(loaded.content)
+        setPendingContent(resolveContent(loaded.content))
       }).catch(() => navigate('/docs'))
     } else if (file) {
       loadDocMeta(file.content)
@@ -717,7 +758,7 @@ export default function DocsEditor() {
     try {
       setSeedJSON(contentToPMJSON(file.content, editor.schema))
     } catch (err) {
-      console.warn('[y-collab] could not read the document content for seeding:', err?.message)
+      console.warn('[y-collab] could not read the document content for seeding:', (err as Error)?.message)
       setSeedJSON({ type: 'doc', content: [{ type: 'paragraph' }] })
     }
   }, [collabEnabled, editor, id, file, seedJSON, yctx])
@@ -732,7 +773,7 @@ export default function DocsEditor() {
   }, [editor, spellcheck])
 
   // Keep a ref to the editor instance for use inside effects/handlers.
-  const editorRef = useRef(null)
+  const editorRef = useRef<Editor | null>(null)
   useEffect(() => {
     editorRef.current = editor
   }, [editor])
@@ -762,7 +803,7 @@ export default function DocsEditor() {
     api.listSuggestions(id)
       .then((items) => {
         const store = getSuggestionStore(id)
-        store.loadFromServer(items || [])
+        store.loadFromServer((items as Suggestion[] | null | undefined) || [])
         setSuggestions(store.list())
       })
       .catch(() => {}) // backend may not be running — fail silently
@@ -780,34 +821,40 @@ export default function DocsEditor() {
   }
 
   // Accept: apply the change to the document and mark accepted.
-  const handleAcceptSuggestion = async (sg) => {
+  // `sg`'s type mirrors SuggestionPanel's own (looser) Suggestion contract —
+  // it's the one this component's onAccept prop is actually bound against —
+  // rather than lib/crdt/suggestions.ts's stricter one; in practice every
+  // object that reaches here came from getSuggestionStore().list() and always
+  // has from/to/text set, but the fallbacks below are honest about what the
+  // prop contract itself guarantees.
+  const handleAcceptSuggestion = async (sg: PanelSuggestion) => {
     if (!editor) return
     applyingRemoteRef.current = true
     try {
       if (sg.kind === 'insert') {
         // Insert the suggested text at the proposed offset (from == to for pure insert).
-        editor.chain().focus().insertContentAt(sg.from + 1, sg.text).run()
+        editor.chain().focus().insertContentAt((sg.from ?? 0) + 1, sg.text || '').run()
       } else {
         // Delete the proposed range.
-        editor.chain().focus().deleteRange({ from: sg.from + 1, to: sg.to + 1 }).run()
+        editor.chain().focus().deleteRange({ from: (sg.from ?? 0) + 1, to: (sg.to ?? 0) + 1 }).run()
       }
       doSave()
     } finally {
       applyingRemoteRef.current = false
     }
     // Update store and backend.
-    const store = getSuggestionStore(id)
+    const store = getSuggestionStore(id || '')
     store.accept(sg.id, 'reviewer')
     setSuggestions(store.list())
-    api.updateSuggestion(id, sg.id, 'accepted', 'reviewer').catch(() => {})
+    api.updateSuggestion(id || '', sg.id, 'accepted', 'reviewer').catch(() => {})
   }
 
   // Reject: discard the suggestion (document unchanged).
-  const handleRejectSuggestion = async (sg) => {
-    const store = getSuggestionStore(id)
+  const handleRejectSuggestion = async (sg: PanelSuggestion) => {
+    const store = getSuggestionStore(id || '')
     store.reject(sg.id, 'reviewer')
     setSuggestions(store.list())
-    api.updateSuggestion(id, sg.id, 'rejected', 'reviewer').catch(() => {})
+    api.updateSuggestion(id || '', sg.id, 'rejected', 'reviewer').catch(() => {})
   }
 
   // Update ProseMirror decorations whenever the suggestions list changes.
@@ -838,7 +885,7 @@ export default function DocsEditor() {
     api.listComments(id)
       .then((items) => {
         const store = getCommentStore(id)
-        store.loadFromServer(items || [])
+        store.loadFromServer((items as Comment[] | null | undefined) || [])
         setComments(store.list())
       })
       .catch(() => {}) // backend may be offline — highlights simply stay empty
@@ -865,7 +912,7 @@ export default function DocsEditor() {
   // Best-effort: after edits move highlights, persist the new [from,to] back
   // into the store so anchors survive reloads (and mark collapsed ones
   // orphaned). Debounced via the same save cadence.
-  const remapTimer = useRef(null)
+  const remapTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   useEffect(() => {
     if (!editor) return
     const onUpdate = () => {
@@ -874,7 +921,7 @@ export default function DocsEditor() {
         try {
           const pluginState = COMMENT_PLUGIN_KEY.getState(editor.state)
           if (!pluginState) return
-          const store = getCommentStore(id)
+          const store = getCommentStore(id || '')
           const mapped = readMappedRanges(pluginState.decorations, store.list())
           if (mapped.size > 0) store.remapAnchors(mapped)
         } catch { /* non-fatal */ }
@@ -888,7 +935,7 @@ export default function DocsEditor() {
   }, [editor, id])
 
   // Scroll to + flash a comment's anchor in the body (panel → doc jump).
-  const jumpToComment = useCallback((commentId) => {
+  const jumpToComment = useCallback((commentId: string) => {
     if (!editor) return
     setActiveCommentId(commentId)
     try {
@@ -918,7 +965,7 @@ export default function DocsEditor() {
   }, [editor])
 
   // Doc → panel jump: clicking a highlight opens the panel + focuses the comment.
-  activateCommentRef.current = (commentId) => {
+  activateCommentRef.current = (commentId: string) => {
     setActiveCommentId(commentId)
     setShowComments(true)
   }
@@ -930,9 +977,13 @@ export default function DocsEditor() {
     if (!id) return
     api.listFileCollaborators(id)
       .then((res) => {
-        const raw = Array.isArray(res) ? res : (Array.isArray(res?.collaborators) ? res.collaborators : [])
+        const r = res as RawCollaborator[] | { collaborators?: RawCollaborator[] } | null | undefined
+        const raw: RawCollaborator[] = Array.isArray(r) ? r : (Array.isArray(r?.collaborators) ? r.collaborators : [])
         const list = raw
-          .map((c) => ({ id: c.account_id || c.accountId || c.id, name: c.display_name || c.account_id || c.accountId || c.id }))
+          .map((c) => ({
+            id: String(c.account_id || c.accountId || c.id || ''),
+            name: String(c.display_name || c.account_id || c.accountId || c.id || ''),
+          }))
           .filter((p) => p.id)
         setChipPeople(list)
       })
@@ -943,8 +994,9 @@ export default function DocsEditor() {
   // data-chip-href (docs/…, sheets/…, slides/…, pdf/…). Delegated click: validate
   // the href against the same allow-list (defence-in-depth — parse already
   // dropped anything else) before routing. A chip can never navigate off-app.
-  const handleCanvasClick = useCallback((e) => {
-    const el = e.target?.closest?.('[data-smart-chip][data-chip-href]')
+  const handleCanvasClick = useCallback((e: ReactMouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement | null
+    const el = target?.closest?.('[data-smart-chip][data-chip-href]')
     if (!el) return
     const href = el.getAttribute('data-chip-href') || ''
     if (!isSafeChipHref(href)) return
@@ -954,15 +1006,15 @@ export default function DocsEditor() {
 
   // ── OFFICE-25: Live cursors ───────────────────────────────────────────────
   // Derive a stable local identity from sessionStorage (mirrors CRDT peerId approach).
-  const localCursorIdentity = useRef(null)
+  const localCursorIdentity = useRef<LocalIdentity | null>(null)
   if (!localCursorIdentity.current) {
     try {
       const stored = localStorage.getItem('presence_identity')
       const parsed = stored ? JSON.parse(stored) : null
-      localCursorIdentity.current = parsed && parsed.accountId ? parsed : {
+      localCursorIdentity.current = (parsed && parsed.accountId ? parsed : {
         accountId: `guest:${sessionStorage.getItem('vulos_peer_id') || 'local'}`,
         displayName: 'Me',
-      }
+      }) as LocalIdentity
     } catch { localCursorIdentity.current = { accountId: 'local', displayName: 'Me' } }
   }
   // The peering fabric carries live cursors + the presence roster. The DOCUMENT
@@ -972,27 +1024,27 @@ export default function DocsEditor() {
   // standalone server yields an honest empty roster rather than a false "Live".
   const localPeerId = useMemo(() => getOrCreatePeerId(), [])
   const { fabric: fabricForCursors, peers: collabPeers } = useCollabFabric({
-    sessionId: id,
+    sessionId: id || '',
     peerId: localPeerId,
     enabled: collabEnabled,
   })
 
   const { remoteCursors, broadcastDocCursor } = useLiveCursors({
-    fabric: fabricForCursors,
+    fabric: fabricForCursors as unknown as FabricLike | null | undefined,
     localIdentity: localCursorIdentity.current,
     color: localCursorIdentity.current
-      ? (() => { let h=0; for(const c of localCursorIdentity.current.accountId){h=(h<<5)-h+c.charCodeAt(0);h|=0} return `hsl(${Math.abs(h)%360},65%,50%)` })()
+      ? (() => { let h=0; for(const c of localCursorIdentity.current!.accountId){h=(h<<5)-h+c.charCodeAt(0);h|=0} return `hsl(${Math.abs(h)%360},65%,50%)` })()
       : '#6366f1',
   })
   // Presence roster (avatar bar + typing/active indicators). Reuses the SAME
   // fabric + local identity as the cursor layer, so Docs now shows who is in the
   // room — parity with Sheets/Slides — not just who is actively typing.
   const { roster } = usePresence({
-    fabric: fabricForCursors,
+    fabric: fabricForCursors as unknown as PresenceFabric | null | undefined,
     localIdentity: localCursorIdentity.current,
   })
   // Stable ref so the useEditor onSelectionUpdate closure can call the latest version.
-  const broadcastDocCursorRef = useRef(null)
+  const broadcastDocCursorRef = useRef<((from: number, to: number) => void) | null>(null)
   broadcastDocCursorRef.current = broadcastDocCursor
 
   // ── Presence (peer-to-peer) ───────────────────────────────────────────────
@@ -1002,14 +1054,14 @@ export default function DocsEditor() {
   // peers connected over WebRTC.
   const mergedRemoteCursors = remoteCursors || new Map()
   const mergedRoster = useMemo(() => {
-    const byId = new Map()
+    const byId = new Map<string, (typeof roster)[number]>()
     for (const r of roster || []) if (r?.accountId) byId.set(r.accountId, r)
     return [...byId.values()]
   }, [roster])
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
   useEffect(() => {
-    const onKey = (e) => {
+    const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey
       if (!mod) return
       if (e.key === 'f' || e.key === 'F') {
@@ -1073,8 +1125,8 @@ export default function DocsEditor() {
       // `.ProseMirror` editor, so measuring it saw a single page-tall block and
       // never paginated (pageCount stuck at 1 for any multi-page doc). The real
       // blocks live one level deeper.
-      const contentEl = scrollRef.current?.querySelector('.tiptap .ProseMirror')
-        || scrollRef.current?.querySelector('.ProseMirror')
+      const contentEl = scrollRef.current?.querySelector<HTMLElement>('.tiptap .ProseMirror')
+        || scrollRef.current?.querySelector<HTMLElement>('.ProseMirror')
       if (!contentEl) return
       const { breaks, pageCount: pc } = measurePageBreaks(contentEl, contentHeightPxRef.current)
       setPageBreaks(breaks)
@@ -1096,8 +1148,8 @@ export default function DocsEditor() {
 
   // Re-measure when the page geometry changes (size/orientation/margins).
   useEffect(() => {
-    const contentEl = scrollRef.current?.querySelector('.tiptap .ProseMirror')
-      || scrollRef.current?.querySelector('.ProseMirror')
+    const contentEl = scrollRef.current?.querySelector<HTMLElement>('.tiptap .ProseMirror')
+      || scrollRef.current?.querySelector<HTMLElement>('.ProseMirror')
     if (!contentEl) return
     const { breaks, pageCount: pc } = measurePageBreaks(contentEl, contentHeightPx)
     setPageBreaks(breaks)
@@ -1144,17 +1196,17 @@ export default function DocsEditor() {
   }
 
   // ── P3: page setup ────────────────────────────────────────────────────────
-  const applyPageSetup = useCallback((next) => {
+  const applyPageSetup = useCallback((next: PageSetup) => {
     setPageSetup(normalizePageSetup(next))
-    markDirty(id)
+    markDirty(id || '')
     clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => doSave(), 800)
   }, [id, markDirty, doSave])
 
   // ── P2: headers & footers ─────────────────────────────────────────────────
-  const applyHeaderFooter = useCallback((next) => {
+  const applyHeaderFooter = useCallback((next: HeaderFooterConfig) => {
     setHeaderFooter(normalizeHeaderFooter(next))
-    markDirty(id)
+    markDirty(id || '')
     clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => doSave(), 800)
   }, [id, markDirty, doSave])
@@ -1173,7 +1225,7 @@ export default function DocsEditor() {
     }
   }, [editor])
 
-  const submitEquation = useCallback(({ latex, display }) => {
+  const submitEquation = useCallback(({ latex, display }: EquationEditorSubmitArgs) => {
     if (!editor) return
     const editing = equationEditor?.editing
     if (editing) {
@@ -1195,9 +1247,9 @@ export default function DocsEditor() {
     setEquationEditor(null)
   }, [editor, equationEditor])
 
-  const handleTitleChange = (newTitle) => {
+  const handleTitleChange = (newTitle: string) => {
     setTitle(newTitle)
-    markDirty(id)
+    markDirty(id || '')
     clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => doSave(), 1500)
   }
@@ -1207,16 +1259,16 @@ export default function DocsEditor() {
     editor.commands.setContent(resolveContent(draft.content), false)
     if (draft.name) setTitle(draft.name)
     setDraft(null)
-    markDirty(id)
+    markDirty(id || '')
   }
 
   const handleDiscardDraft = () => {
-    clearDraft(id)
+    clearDraft(id || '')
     setDraft(null)
   }
 
-  const wordCount = editor?.storage.characterCount?.words() ?? 0
-  const charCount = editor?.storage.characterCount?.characters() ?? 0
+  const wordCount = (editor?.storage.characterCount?.words() as number | undefined) ?? 0
+  const charCount = (editor?.storage.characterCount?.characters() as number | undefined) ?? 0
 
   // P1/P3: concrete page geometry for the paper card + break overlay.
   const geo = pageDimensions(pageSetup)
@@ -1304,7 +1356,15 @@ export default function DocsEditor() {
           <>
             {saveStatus.status && (
               <SaveStatus
-                status={saveStatus.status}
+                // filesStore's SaveStatus vocabulary ('idle'|'dirty'|'saving'|'saved'|
+                // 'error') and the shared UI SaveStatus component's SaveStatusKind
+                // ('saved'|'saving'|'dirty'|'error'|'offline', not exported) don't
+                // quite line up — 'idle' isn't a SaveStatusKind. That already fell
+                // through unchecked before this file was typed: the component's own
+                // `MAP[status] || MAP.saved` renders 'idle' as "Saved" today, and
+                // this cast preserves that exact (pre-existing) fallback rather than
+                // changing it.
+                status={saveStatus.status as 'saved' | 'saving' | 'dirty' | 'error' | 'offline'}
                 text={saveStatusText}
                 title={saveStatus.error || undefined}
               />
@@ -1517,7 +1577,7 @@ export default function DocsEditor() {
               paddingRight: `${geo.marginRightPx}px`,
               paddingTop: `${geo.marginTopPx}px`,
               paddingBottom: `${geo.marginBottomPx}px`,
-              '--page-pad-x': `${geo.marginLeftPx}px`,
+              ['--page-pad-x' as string]: `${geo.marginLeftPx}px`,
             }}
           >
             {/* P2: first-page header/footer bands (rendered inside the margins).
@@ -1541,7 +1601,7 @@ export default function DocsEditor() {
                 <div
                   key={`${y}-${i}`}
                   className="doc-page-break"
-                  style={{ top: `${y}px`, '--page-gap': '40px', '--page-pad-x': `${geo.marginLeftPx}px` }}
+                  style={{ top: `${y}px`, ['--page-gap' as string]: '40px', ['--page-pad-x' as string]: `${geo.marginLeftPx}px` }}
                 >
                   <span className="doc-page-num">page {i + 2}</span>
                 </div>
@@ -1560,13 +1620,14 @@ export default function DocsEditor() {
         {/* History panel (OFFICE-08) */}
         {showHistory && (
           <HistoryPanel
-            fileId={id}
+            fileId={id || ''}
             onClose={() => setShowHistory(false)}
             onRestore={(updated) => {
-              if (editor && updated?.content) {
-                editor.commands.setContent(resolveContent(updated.content), false)
+              const u = updated as { content?: unknown; name?: string } | null | undefined
+              if (editor && u?.content) {
+                editor.commands.setContent(resolveContent(u.content), false)
               }
-              if (updated?.name) setTitle(updated.name)
+              if (u?.name) setTitle(u.name)
             }}
           />
         )}
@@ -1574,13 +1635,14 @@ export default function DocsEditor() {
         {/* Activity feed + named snapshots (OFFICE-28) */}
         {showActivity && (
           <ActivityFeed
-            fileId={id}
+            fileId={id || ''}
             onClose={() => setShowActivity(false)}
             onRestore={(updated) => {
-              if (editor && updated?.content) {
-                editor.commands.setContent(resolveContent(updated.content), false)
+              const u = updated as { content?: unknown; name?: string } | null | undefined
+              if (editor && u?.content) {
+                editor.commands.setContent(resolveContent(u.content), false)
               }
-              if (updated?.name) setTitle(updated.name)
+              if (u?.name) setTitle(u.name)
             }}
           />
         )}
@@ -1588,12 +1650,12 @@ export default function DocsEditor() {
         {/* Comments panel (OFFICE-26) */}
         {showComments && (
           <CommentsPanel
-            fileId={id}
+            fileId={id || ''}
             activeCommentId={activeCommentId}
             onJump={jumpToComment}
             onChange={refreshCommentHighlights}
             anchorCtx={editor?.state?.selection
-              ? {
+              ? ({
                   type: 'text_range',
                   from: editor.state.selection.from,
                   to: editor.state.selection.to,
@@ -1602,7 +1664,7 @@ export default function DocsEditor() {
                     editor.state.selection.to,
                     ' '
                   ).slice(0, 80),
-                }
+                } as unknown as CommentAnchor)
               : null
             }
             onClose={() => setShowComments(false)}
@@ -1652,7 +1714,7 @@ export default function DocsEditor() {
         open={showAccountShare}
         onClose={() => setShowAccountShare(false)}
         file={{ id, name: title }}
-        me={myAccountId}
+        me={myAccountId as string | undefined}
         // Honest copy inside the share dialog: sharing still works (people get
         // access), but their edits will NOT stream in live. Told up front, in the
         // exact place a user would otherwise assume co-editing.
@@ -1667,7 +1729,7 @@ export default function DocsEditor() {
           // is reachable — surfaced in the modal itself (its `unavailable`
           // prop below), not by this catch.
           try { if (!p2p.links) await p2p.startShare() } catch (err) {
-            console.warn('[p2p] share unavailable:', err?.message)
+            console.warn('[p2p] share unavailable:', (err as Error)?.message)
           }
         }}
       />
@@ -1680,7 +1742,7 @@ export default function DocsEditor() {
           open={showP2PShare}
           onClose={() => setShowP2PShare(false)}
           links={p2p.links}
-          roomId={p2p.roomId}
+          roomId={p2p.roomId ?? undefined}
           onRotate={() => p2p.rotate()}
           unavailable={p2p.peeringUnavailable}
         />
