@@ -13,7 +13,7 @@
  */
 
 import { useEffect } from 'react'
-import { useEditor, EditorContent } from '@tiptap/react'
+import { useEditor, EditorContent, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
 import TextAlign from '@tiptap/extension-text-align'
@@ -23,8 +23,16 @@ import Color from '@tiptap/extension-color'
 import Highlight from '@tiptap/extension-highlight'
 import { FontSize, FontFamily } from '../../lib/tiptap/fontStyle.js'
 import { sanitizeSlideHtml } from '../../lib/sanitize'
+import type { TextSlideObject } from './slideObjects'
 
-export default function ObjectTextEditor({ obj, onCommit, onClose, onEditorReady }) {
+interface ObjectTextEditorProps {
+  obj: TextSlideObject
+  onCommit?: (html: string) => void
+  onClose?: () => void
+  onEditorReady?: (editor: Editor | null) => void
+}
+
+export default function ObjectTextEditor({ obj, onCommit, onClose, onEditorReady }: ObjectTextEditorProps) {
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ heading: { levels: [1, 2, 3] } }),
@@ -44,7 +52,7 @@ export default function ObjectTextEditor({ obj, onCommit, onClose, onEditorReady
   }, [editor]) // eslint-disable-line
 
   useEffect(() => {
-    const onKey = (e) => {
+    const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { commit(); onClose?.() }
     }
     window.addEventListener('keydown', onKey)
