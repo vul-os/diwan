@@ -9,30 +9,37 @@
  */
 
 import { useMemo, useRef } from 'react'
+import type { ReactNode } from 'react'
 import { X, Type, AlignLeft, FileText } from 'lucide-react'
 import { useDialogA11y } from '../../../components/ui'
+import type { Editor } from '@tiptap/react'
 
 // Estimate pages from word count (250 words/page, Google Docs default)
 const WORDS_PER_PAGE = 250
 
-function countWords(text) {
+function countWords(text: string): number {
   if (!text) return 0
   return text.trim().split(/\s+/).filter(Boolean).length
 }
 
-function countChars(text, includeSpaces = true) {
+function countChars(text: string, includeSpaces = true): number {
   if (!text) return 0
   return includeSpaces ? text.length : text.replace(/\s/g, '').length
 }
 
-function getSelectionText(editor) {
+function getSelectionText(editor: Editor | null | undefined): string {
   if (!editor) return ''
   const { from, to } = editor.state.selection
   if (from === to) return ''
   return editor.state.doc.textBetween(from, to, ' ')
 }
 
-export default function WordCountModal({ editor, onClose }) {
+export interface WordCountModalProps {
+  editor: Editor | null | undefined
+  onClose: () => void
+}
+
+export default function WordCountModal({ editor, onClose }: WordCountModalProps) {
   const dialogRef = useRef(null)
   // Trap focus, close on Esc, restore focus to the trigger on close.
   useDialogA11y(dialogRef, onClose)
@@ -114,7 +121,13 @@ export default function WordCountModal({ editor, onClose }) {
   )
 }
 
-function StatRow({ icon, label, value }) {
+interface StatRowProps {
+  icon?: ReactNode
+  label: string
+  value: string
+}
+
+function StatRow({ icon, label, value }: StatRowProps) {
   return (
     <div className="flex items-center justify-between">
       <div className="flex items-center gap-2 text-xs text-ink-muted">
