@@ -11,7 +11,7 @@ const ROOT = path.resolve(__dirname, '..', '..')
 const BRAND_LOGO = path.join(ROOT, 'brand', 'logo.svg')
 const PUBLIC_LOGO = path.join(ROOT, 'public', 'logo.svg')
 const PUBLIC_FAVICON = path.join(ROOT, 'public', 'favicon.svg')
-const SIDEBAR = path.join(ROOT, 'src', 'components', 'ui', 'Sidebar.jsx')
+const SIDEBAR = path.join(ROOT, 'src', 'components', 'ui', 'Sidebar.tsx')
 const GENERATOR = path.join(ROOT, 'scripts', 'gen-logo-assets.mjs')
 
 function readOrThrow(p: string, label: string): string {
@@ -68,7 +68,7 @@ describe('brand mark stays consistent between brand/logo.svg and its 64-viewBox 
     const targets = [
       { label: 'public/logo.svg', src: readOrThrow(PUBLIC_LOGO, 'public/logo.svg') },
       { label: 'public/favicon.svg', src: readOrThrow(PUBLIC_FAVICON, 'public/favicon.svg') },
-      { label: 'src/components/ui/Sidebar.jsx', src: readOrThrow(SIDEBAR, 'Sidebar.jsx') },
+      { label: 'src/components/ui/Sidebar.tsx', src: readOrThrow(SIDEBAR, 'Sidebar.tsx') },
     ]
     expect(targets.length).toBeGreaterThan(0) // coverage-count: refuse to pass with nothing checked
     for (const { label, src } of targets) {
