@@ -18,16 +18,16 @@
  *     Shows a small avatar badge on the slide thumbnail for each peer
  *     viewing that slide (handled inline in SlidesEditor via
  *     a thin hook result; this component is the label strip).
- *
- * JSX only — no .tsx.
  */
 
 import { useEffect, useRef, useState } from 'react'
+import type { Editor as TiptapEditor } from '@tiptap/react'
+import type { CursorPayload } from '../lib/collab/webrtc/useLiveCursors.js'
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 /** Parse "row,col" string back to numbers. */
-function parseCell(str) {
+function parseCell(str: string | number | undefined): { row: number; col: number } | null {
   if (typeof str !== 'string') return null
   const [r, c] = str.split(',').map(Number)
   if (isNaN(r) || isNaN(c)) return null
@@ -35,7 +35,7 @@ function parseCell(str) {
 }
 
 /** Initials (up to 2 chars) from display name. */
-function initials(name) {
+function initials(name?: string): string {
   if (!name) return '?'
   const parts = name.trim().split(/\s+/)
   return parts.length >= 2
@@ -43,16 +43,28 @@ function initials(name) {
     : name.slice(0, 2).toUpperCase()
 }
 
+interface DocCursorEntry {
+  peer: CursorPayload
+  top: number
+  left: number
+  selRects: { top: number; left: number; width: number; height: number }[]
+  safeFrom: number
+  safeTo: number
+}
+
 // ─── DocsCursorLayer ─────────────────────────────────────────────────────────
+
+interface DocsCursorLayerProps {
+  editor: TiptapEditor | null
+  remoteCursors: Map<string, CursorPayload> | null | undefined
+}
 
 /**
  * Renders remote carets and selection highlights in a TipTap editor.
- *
- * @param {{ editor: object|null, remoteCursors: Map }} props
  */
-export function DocsCursorLayer({ editor, remoteCursors }) {
-  const [cursors, setCursors] = useState([])
-  const containerRef = useRef(null)
+export function DocsCursorLayer({ editor, remoteCursors }: DocsCursorLayerProps) {
+  const [cursors, setCursors] = useState<DocCursorEntry[]>([])
+  const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!editor || !remoteCursors || remoteCursors.size === 0) {
@@ -67,7 +79,7 @@ export function DocsCursorLayer({ editor, remoteCursors }) {
       const parentRect = dom.closest('.tiptap-cursor-host')?.getBoundingClientRect()
         ?? dom.getBoundingClientRect()
 
-      const results = []
+      const results: DocCursorEntry[] = []
       for (const peer of remoteCursors.values()) {
         if (peer.type !== 'doc') continue
         const from = typeof peer.from === 'number' ? peer.from : null
@@ -84,7 +96,7 @@ export function DocsCursorLayer({ editor, remoteCursors }) {
           const left = caretPos.left - parentRect.left
 
           // Selection highlight: only when from ≠ to
-          let selRects = []
+          let selRects: { top: number; left: number; width: number; height: number }[] = []
           if (safeFrom !== safeTo) {
             try {
               const range = document.createRange()
@@ -195,9 +207,13 @@ export function DocsCursorLayer({ editor, remoteCursors }) {
  * that queries the Fortune Sheet DOM for the bounding rect of a cell.
  * When it returns null (cells not yet rendered) we skip that peer.
  *
- * @param {{ remoteCursors: Map, getCellRect: Function }} props
  */
-export function SheetsCursorLayer({ remoteCursors, getCellRect }) {
+interface SheetsCursorLayerProps {
+  remoteCursors: Map<string, CursorPayload> | null | undefined
+  getCellRect?: (row: number, col: number) => { top: number; left: number; width: number; height: number } | null
+}
+
+export function SheetsCursorLayer({ remoteCursors, getCellRect }: SheetsCursorLayerProps) {
   if (!remoteCursors || remoteCursors.size === 0) return null
 
   const peers = [...remoteCursors.values()].filter((p) => p.type === 'sheet')
@@ -270,7 +286,7 @@ export function SheetsCursorLayer({ remoteCursors, getCellRect }) {
  * @param {string} slideId
  * @returns {Array}
  */
-export function getSlideViewers(remoteCursors, slideId) {
+export function getSlideViewers(remoteCursors: Map<string, CursorPayload> | null | undefined, slideId: string | null | undefined): CursorPayload[] {
   if (!remoteCursors || !slideId) return []
   return [...remoteCursors.values()].filter(
     (p) => p.type === 'slide' && p.slideId === slideId,
