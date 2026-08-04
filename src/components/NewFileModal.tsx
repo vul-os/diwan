@@ -1,12 +1,35 @@
 import { useState } from 'react'
+import type { FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { FileText, Table2, Presentation, PenTool, Loader2, Check } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { useFilesStore } from '../store/filesStore'
 import { Button, Input, Modal, DocThumb } from './ui'
 import { templatesFor } from '../lib/templates'
 
+type NewFileType = 'doc' | 'sheet' | 'slide' | 'whiteboard'
+
+interface FileTypeDef {
+  type: NewFileType
+  label: string
+  desc: string
+  icon: LucideIcon
+  iconCn: string
+  bgCn: string
+  borderActive: string
+  bgActive: string
+}
+
+/** Minimal shape of the record api.createFile resolves to — the store itself
+ *  (src/store/filesStore.js) isn't converted yet, so this documents just what
+ *  this component reads off the result. */
+interface CreatedFile {
+  id: string
+  [key: string]: unknown
+}
+
 // ─── Template definitions ─────────────────────────────────────────────────────
-const TYPES = [
+const TYPES: FileTypeDef[] = [
   {
     type: 'doc',
     label: 'Document',
@@ -49,7 +72,7 @@ const TYPES = [
   },
 ]
 
-const ROUTE = { doc: 'docs', sheet: 'sheets', slide: 'slides', whiteboard: 'whiteboards' }
+const ROUTE: Record<NewFileType, string> = { doc: 'docs', sheet: 'sheets', slide: 'slides', whiteboard: 'whiteboards' }
 
 /**
  * NewFileModal — Modal primitive + type picker + (for Docs/Sheets) a built-in
@@ -61,8 +84,15 @@ const ROUTE = { doc: 'docs', sheet: 'sheets', slide: 'slides', whiteboard: 'whit
  *   lockType      if provided, skip the type picker
  *   parentId      folder id to file the new document into ('' = root)
  */
-export default function NewFileModal({ onClose, defaultType, lockType, parentId = '' }) {
-  const [selectedType, setSelectedType] = useState(lockType || defaultType || 'doc')
+interface NewFileModalProps {
+  onClose: () => void
+  defaultType?: NewFileType
+  lockType?: NewFileType
+  parentId?: string
+}
+
+export default function NewFileModal({ onClose, defaultType, lockType, parentId = '' }: NewFileModalProps) {
+  const [selectedType, setSelectedType] = useState<NewFileType>(lockType || defaultType || 'doc')
   const [name, setName] = useState('')
   const [creating, setCreating] = useState(false)
   const [templateId, setTemplateId] = useState('blank')
@@ -73,12 +103,12 @@ export default function NewFileModal({ onClose, defaultType, lockType, parentId 
   const templates = templatesFor(selectedType) // null for slides (own gallery)
   const activeTemplate = templates?.find(t => t.id === templateId) || null
 
-  const handleType = (type) => {
+  const handleType = (type: NewFileType) => {
     setSelectedType(type)
     setTemplateId('blank') // reset template when the type changes
   }
 
-  const handleCreate = async (e) => {
+  const handleCreate = async (e: FormEvent) => {
     e.preventDefault()
     if (!name.trim() || creating) return
     setCreating(true)
@@ -86,7 +116,7 @@ export default function NewFileModal({ onClose, defaultType, lockType, parentId 
       const file = await createFile(name.trim(), selectedType, {
         content: activeTemplate ? activeTemplate.content : undefined,
         parentId,
-      })
+      }) as CreatedFile
       onClose()
       navigate(`/${ROUTE[selectedType]}/${file.id}`)
     } finally {
