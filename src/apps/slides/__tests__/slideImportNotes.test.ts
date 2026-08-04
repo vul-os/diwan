@@ -90,14 +90,14 @@ describe('pptxToSlides — import honesty', () => {
 
     const notes = getSlideImportNotes(deck)
     expect(notes).toBeTruthy()
-    expect(notes.tables).toBe(1)
-    expect(notes.charts).toBe(1)
-    expect(notes.diagrams).toBe(1)
-    expect(notes.groups).toBe(1)
-    expect(notes.vectorImages).toBe(1)  // the .emf could not embed
-    expect(notes.transitions).toBe(1)
-    expect(notes.animations).toBe(1)
-    expect(notes.filename).toBe('lossy.pptx')
+    expect(notes!.tables).toBe(1)
+    expect(notes!.charts).toBe(1)
+    expect(notes!.diagrams).toBe(1)
+    expect(notes!.groups).toBe(1)
+    expect(notes!.vectorImages).toBe(1)  // the .emf could not embed
+    expect(notes!.transitions).toBe(1)
+    expect(notes!.animations).toBe(1)
+    expect(notes!.filename).toBe('lossy.pptx')
 
     const items = slideImportLossItems(notes)
     expect(items).toContain('1 table')
