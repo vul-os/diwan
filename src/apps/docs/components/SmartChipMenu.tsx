@@ -14,7 +14,29 @@
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react'
+import type { Editor } from '@tiptap/react'
 import { detectChipTrigger, buildChipSuggestions } from '../smartChips.js'
+
+// smartChips.js (the SmartChip node's home) is not yet converted to TypeScript,
+// so its addCommands() isn't visible to TipTap's Commands interface yet. This
+// augmentation documents the command this component calls; move it into
+// smartChips.ts when that file is converted.
+declare module '@tiptap/core' {
+  interface Commands<ReturnType> {
+    smartChip: {
+      insertSmartChip: (attrs?: { chipType?: string; label?: string; refId?: string; refHref?: string }) => ReturnType
+    }
+  }
+}
+
+// Mirror the shapes buildChipSuggestions' JSDoc declares for sources.people /
+// sources.files exactly, so passing these props through never needs a cast.
+type ChipSources = Parameters<typeof buildChipSuggestions>[1]
+export type ChipPerson = NonNullable<ChipSources>['people'][number]
+export type ChipFile = NonNullable<ChipSources>['files'][number]
+
+type ChipTrigger = ReturnType<typeof detectChipTrigger>
+type ChipSuggestion = ReturnType<typeof buildChipSuggestions>[number]
 
 // One-time chip + menu styles (mirrors the FindReplace self-injection pattern).
 if (typeof document !== 'undefined') {
@@ -43,13 +65,19 @@ if (typeof document !== 'undefined') {
   }
 }
 
-export default function SmartChipMenu({ editor, people = [], files = [] }) {
-  const [trigger, setTrigger] = useState(null) // { from, to, query }
-  const [items, setItems] = useState([])
+export interface SmartChipMenuProps {
+  editor: Editor | null | undefined
+  people?: ChipPerson[]
+  files?: ChipFile[]
+}
+
+export default function SmartChipMenu({ editor, people = [], files = [] }: SmartChipMenuProps) {
+  const [trigger, setTrigger] = useState<ChipTrigger>(null)
+  const [items, setItems] = useState<ChipSuggestion[]>([])
   const [active, setActive] = useState(0)
   const [pos, setPos] = useState({ left: 0, top: 0 })
-  const triggerRef = useRef(null)
-  const itemsRef = useRef([])
+  const triggerRef = useRef<ChipTrigger>(null)
+  const itemsRef = useRef<ChipSuggestion[]>([])
   const activeRef = useRef(0)
   triggerRef.current = trigger
   itemsRef.current = items
@@ -62,7 +90,7 @@ export default function SmartChipMenu({ editor, people = [], files = [] }) {
   }, [])
 
   const select = useCallback(
-    (item) => {
+    (item: ChipSuggestion) => {
       const t = triggerRef.current
       if (!editor || !t || !item) return
       editor
@@ -117,7 +145,7 @@ export default function SmartChipMenu({ editor, people = [], files = [] }) {
   // editor sees the key (the caret stays in the editor while the menu is open).
   useEffect(() => {
     if (!trigger) return
-    const onKey = (e) => {
+    const onKey = (e: KeyboardEvent) => {
       const list = itemsRef.current
       if (!list.length) {
         if (e.key === 'Escape') { e.preventDefault(); close() }
