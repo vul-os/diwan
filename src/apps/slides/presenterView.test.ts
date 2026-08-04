@@ -52,7 +52,7 @@ describe('buildPresenterHTML — script-context injection', () => {
     // JSON parser (the \uXXXX escapes decode back to the original characters).
     const m = html.match(/var SLIDES = (\[.*?\]);/s)
     expect(m).toBeTruthy()
-    const slides = JSON.parse(m[1])
+    const slides = JSON.parse(m![1]) as { title: string; notes: string }[]
     expect(slides[0].title).toBe('Hello')
     expect(slides[0].notes).toBe('note')
   })
