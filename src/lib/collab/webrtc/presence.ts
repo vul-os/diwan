@@ -1,5 +1,5 @@
 /**
- * presence.js — Diwan Presence layer (OFFICE-24).
+ * presence.ts — Diwan Presence layer (OFFICE-24).
  *
  * Broadcasts {accountId, displayName, color, online} over a dedicated
  * "presence" channel on the OFFICE-20 FabricClient (separate from CRDT ops).
@@ -26,8 +26,88 @@ export const STATUS_AWAY   = 'away'
 export const STATUS_DND    = 'dnd'
 export const STATUS_IN_CALL = 'in-a-call'  // set by OFFICE-63 calling layer
 
+export type PresenceStatus =
+  | typeof STATUS_ONLINE
+  | typeof STATUS_AWAY
+  | typeof STATUS_DND
+  | typeof STATUS_IN_CALL
+
+/** Caller-supplied local identity (Vulos account/vumail), or omitted for a guest. */
+export interface LocalIdentityInput {
+  accountId?: string
+  displayName?: string
+  isGuest?: boolean
+}
+
+/** The persisted/generated shape read back from localStorage or freshly minted. */
+interface StoredIdentity {
+  accountId: string
+  displayName: string
+  isGuest: boolean
+}
+
+/** This client's own presence record. */
+interface LocalPresence {
+  accountId: string
+  displayName: string
+  color: string
+  online: boolean
+  status: PresenceStatus
+  statusText: string
+  isGuest: boolean
+  ts: number
+}
+
+/** A remote peer's presence record, as kept in the roster. */
+export interface RosterPeer {
+  accountId: string
+  displayName: string
+  color: string
+  online: boolean
+  status: PresenceStatus
+  statusText: string
+  isGuest: boolean
+  ts: number
+  peerId: string
+}
+
+/** The local record with `isSelf: true`, as returned by `fullRoster`. */
+export type FullRosterPeer = (LocalPresence & { isSelf: true }) | RosterPeer
+
+/** Wire shape of a presence frame's payload (untrusted — parsed from a peer message). */
+interface PresenceFramePayload {
+  type?: 'join' | 'leave'
+  accountId?: string
+  displayName?: string
+  color?: string
+  status?: PresenceStatus
+  statusText?: string
+  isGuest?: boolean
+}
+
+/** Structural subset of FabricClient's event surface this module depends on. */
+export interface PresenceFabric {
+  addEventListener(
+    type: 'message',
+    listener: (ev: CustomEvent<{ from: string, data: string | ArrayBuffer | Uint8Array }>) => void,
+  ): void
+  addEventListener(
+    type: 'state',
+    listener: (ev: CustomEvent<{ peerId: string, state: string }>) => void,
+  ): void
+  removeEventListener(
+    type: 'message',
+    listener: (ev: CustomEvent<{ from: string, data: string | ArrayBuffer | Uint8Array }>) => void,
+  ): void
+  removeEventListener(
+    type: 'state',
+    listener: (ev: CustomEvent<{ peerId: string, state: string }>) => void,
+  ): void
+  send(data: string): void
+}
+
 /** Deterministic color from a string (stable across sessions). */
-function colorFromString(str) {
+function colorFromString(str: string): string {
   let hash = 0
   for (let i = 0; i < str.length; i++) {
     hash = (hash << 5) - hash + str.charCodeAt(i)
@@ -40,21 +120,23 @@ function colorFromString(str) {
 const GUEST_ADJECTIVES = ['Swift', 'Bright', 'Calm', 'Bold', 'Kind']
 const GUEST_ANIMALS = ['Lemur', 'Falcon', 'Otter', 'Fox', 'Lynx']
 
-function randomGuestName() {
+function randomGuestName(): string {
   const adj = GUEST_ADJECTIVES[Math.floor(Math.random() * GUEST_ADJECTIVES.length)]
   const ani = GUEST_ANIMALS[Math.floor(Math.random() * GUEST_ANIMALS.length)]
   return `${adj} ${ani}`
 }
 
-function loadOrCreateLocalIdentity() {
+function loadOrCreateLocalIdentity(): StoredIdentity {
   try {
     const stored = localStorage.getItem('presence_identity')
     if (stored) {
-      const parsed = JSON.parse(stored)
-      if (parsed.accountId && parsed.displayName) return parsed
+      const parsed = JSON.parse(stored) as Partial<StoredIdentity>
+      if (parsed.accountId && parsed.displayName) {
+        return { accountId: parsed.accountId, displayName: parsed.displayName, isGuest: parsed.isGuest ?? true }
+      }
     }
   } catch { /* ignore */ }
-  const identity = {
+  const identity: StoredIdentity = {
     accountId: `guest:${crypto.randomUUID()}`,
     displayName: randomGuestName(),
     isGuest: true,
@@ -64,17 +146,27 @@ function loadOrCreateLocalIdentity() {
 }
 
 export class PresenceManager extends EventTarget {
+  private _fabric: PresenceFabric
+  private _local: LocalPresence
+  private _roster: Map<string, RosterPeer>
+  private _heartbeatTimer: ReturnType<typeof setInterval> | null
+  private _gcTimer: ReturnType<typeof setInterval> | null
+  private _stopped: boolean
+  private _onFabricMessage: (ev: CustomEvent<{ from: string, data: string | ArrayBuffer | Uint8Array }>) => void
+  private _onFabricState: (ev: CustomEvent<{ peerId: string, state: string }>) => void
+
   /**
-   * @param {object} opts
-   * @param {import('./fabric.js').FabricClient} opts.fabric
-   * @param {{ accountId?: string, displayName?: string, isGuest?: boolean }} [opts.localIdentity]
-   *   Pass the Vulos account identity if authenticated; omit for guest.
+   * @param opts.fabric  a live FabricClient (webrtc/fabric.ts)
+   * @param opts.localIdentity  pass the Vulos account identity if
+   *   authenticated; omit for guest.
    */
-  constructor({ fabric, localIdentity = null }) {
+  constructor({ fabric, localIdentity = null }: { fabric: PresenceFabric, localIdentity?: LocalIdentityInput | null }) {
     super()
     this._fabric = fabric
 
-    const baseIdentity = localIdentity || loadOrCreateLocalIdentity()
+    const baseIdentity = (localIdentity?.accountId && localIdentity?.displayName)
+      ? { accountId: localIdentity.accountId, displayName: localIdentity.displayName, isGuest: localIdentity.isGuest ?? false }
+      : loadOrCreateLocalIdentity()
     this._local = {
       accountId: baseIdentity.accountId,
       displayName: baseIdentity.displayName,
@@ -86,7 +178,6 @@ export class PresenceManager extends EventTarget {
       ts: Date.now(),
     }
 
-    /** @type {Map<string, { accountId, displayName, color, online, ts }>} */
     this._roster = new Map()
     this._heartbeatTimer = null
     this._gcTimer = null
@@ -104,7 +195,7 @@ export class PresenceManager extends EventTarget {
   // ─── Public API ─────────────────────────────────────────────────────────────
 
   /** Start presence: broadcast join + begin heartbeat. */
-  join() {
+  join(): void {
     this._broadcast()
     this._heartbeatTimer = setInterval(() => this._broadcast(), HEARTBEAT_MS)
     this._gcTimer = setInterval(() => this._gc(), HEARTBEAT_MS)
@@ -112,58 +203,59 @@ export class PresenceManager extends EventTarget {
 
   /**
    * OFFICE-62: Update local status and broadcast immediately.
-   * @param {string} status  - one of STATUS_ONLINE | STATUS_AWAY | STATUS_DND | STATUS_IN_CALL
-   * @param {string} [text]  - optional free-text custom status
+   * @param status  one of STATUS_ONLINE | STATUS_AWAY | STATUS_DND | STATUS_IN_CALL
+   * @param text    optional free-text custom status
    */
-  setStatus(status, text = '') {
+  setStatus(status: PresenceStatus, text = ''): void {
     this._local.status = status || STATUS_ONLINE
     this._local.statusText = text || ''
     this._broadcast()
   }
 
   /** Stop presence: broadcast leave, clear timers. */
-  leave() {
+  leave(): void {
     this._stopped = true
-    clearInterval(this._heartbeatTimer)
-    clearInterval(this._gcTimer)
+    if (this._heartbeatTimer !== null) clearInterval(this._heartbeatTimer)
+    if (this._gcTimer !== null) clearInterval(this._gcTimer)
     this._broadcastLeave()
     this._fabric.removeEventListener('message', this._onFabricMessage)
     this._fabric.removeEventListener('state', this._onFabricState)
   }
 
   /** Current roster snapshot (excludes self). Array of peer identity objects. */
-  get roster() {
+  get roster(): RosterPeer[] {
     return [...this._roster.values()]
   }
 
   /** Full roster including the local user. */
-  get fullRoster() {
+  get fullRoster(): FullRosterPeer[] {
     return [{ ...this._local, isSelf: true }, ...this.roster]
   }
 
   // ─── Internal ───────────────────────────────────────────────────────────────
 
-  _broadcast() {
+  private _broadcast(): void {
     if (this._stopped) return
     this._local.ts = Date.now()
     this._sendPresenceFrame({ ...this._local, type: 'join' })
   }
 
-  _broadcastLeave() {
+  private _broadcastLeave(): void {
     this._sendPresenceFrame({ ...this._local, type: 'leave' })
   }
 
-  _sendPresenceFrame(payload) {
+  private _sendPresenceFrame(payload: LocalPresence & { type: 'join' | 'leave' }): void {
     const frame = JSON.stringify({ channel: PRESENCE_CHANNEL, payload })
     this._fabric.send(frame)
   }
 
-  _handleMessage({ detail: { from, data } }) {
-    let text
+  private _handleMessage(ev: CustomEvent<{ from: string, data: string | ArrayBuffer | Uint8Array }>): void {
+    const { from, data } = ev.detail
+    let text: string
     try {
       text = typeof data === 'string' ? data : new TextDecoder().decode(data)
     } catch { return }
-    let frame
+    let frame: { channel?: string, payload?: PresenceFramePayload }
     try { frame = JSON.parse(text) } catch { return }
     if (frame.channel !== PRESENCE_CHANNEL) return
     const p = frame.payload
@@ -187,15 +279,16 @@ export class PresenceManager extends EventTarget {
     this._emitRoster()
   }
 
-  _handleState({ detail: { state } }) {
+  private _handleState(ev: CustomEvent<{ peerId: string, state: string }>): void {
     // Re-announce ourselves whenever a new peer connects.
+    const { state } = ev.detail
     if (state === 'connected' || state === 'relay') {
       this._broadcast()
     }
   }
 
   /** Remove peers that haven't sent a heartbeat within TIMEOUT_MS. */
-  _gc() {
+  private _gc(): void {
     const now = Date.now()
     let changed = false
     for (const [id, peer] of this._roster) {
@@ -207,7 +300,7 @@ export class PresenceManager extends EventTarget {
     if (changed) this._emitRoster()
   }
 
-  _emitRoster() {
+  private _emitRoster(): void {
     this.dispatchEvent(new CustomEvent('roster', { detail: this.fullRoster }))
   }
 }
@@ -219,18 +312,15 @@ import { useEffect, useRef, useState } from 'react'
 /**
  * usePresence — React hook that manages a PresenceManager lifecycle.
  *
- * @param {object} opts
- * @param {import('./fabric.js').FabricClient | null} opts.fabric
- * @param {{ accountId?: string, displayName?: string } | null} [opts.localIdentity]
- * @returns {{ roster: Array, manager: PresenceManager | null }}
- *
  * Returns the full roster (including self with isSelf=true) while the fabric
  * is live; returns [] when fabric is null (editor opened without collab).
  * OFFICE-62: also returns manager so callers can call manager.setStatus(status, text).
  */
-export function usePresence({ fabric, localIdentity = null }) {
-  const [roster, setRoster] = useState([])
-  const pmRef = useRef(null)
+export function usePresence(
+  { fabric, localIdentity = null }: { fabric: PresenceFabric | null | undefined, localIdentity?: LocalIdentityInput | null },
+): { roster: FullRosterPeer[], manager: PresenceManager | null } {
+  const [roster, setRoster] = useState<FullRosterPeer[]>([])
+  const pmRef = useRef<PresenceManager | null>(null)
 
   useEffect(() => {
     if (!fabric) {
@@ -241,7 +331,7 @@ export function usePresence({ fabric, localIdentity = null }) {
     const pm = new PresenceManager({ fabric, localIdentity })
     pmRef.current = pm
 
-    const onRoster = ({ detail }) => setRoster(detail)
+    const onRoster = (ev: Event) => setRoster((ev as CustomEvent<FullRosterPeer[]>).detail)
     pm.addEventListener('roster', onRoster)
     pm.join()
 
