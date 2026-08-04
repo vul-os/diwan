@@ -12,6 +12,20 @@
 
 import { useState } from 'react'
 import { GripVertical, Plus, Trash2 } from 'lucide-react'
+import type { SlideLike } from './slideObjects'
+import type { SlideAnimation, AnimationType, AnimationEffect } from './slideAnimations'
+
+/** The slide shape this panel reads/writes: the generic slide plus the two
+ * fields it owns (transition + per-element animations). */
+export interface TransitionSlide extends SlideLike {
+  transition?: string
+  animations?: SlideAnimation[]
+}
+
+interface TransitionPanelProps {
+  slide: TransitionSlide
+  onChange: (slide: TransitionSlide) => void
+}
 
 export const SLIDE_TRANSITIONS = [
   { id: 'none',    label: 'None' },
@@ -22,19 +36,19 @@ export const SLIDE_TRANSITIONS = [
   { id: 'zoom',    label: 'Zoom' },
 ]
 
-const ANIMATION_TYPES = ['entrance', 'exit', 'emphasis']
-const ANIMATION_EFFECTS = ['fade-in', 'fly-in', 'bounce', 'zoom-in', 'spin', 'custom']
+const ANIMATION_TYPES: AnimationType[] = ['entrance', 'exit', 'emphasis']
+const ANIMATION_EFFECTS: AnimationEffect[] = ['fade-in', 'fly-in', 'bounce', 'zoom-in', 'spin', 'custom']
 
-export default function TransitionPanel({ slide, onChange }) {
+export default function TransitionPanel({ slide, onChange }: TransitionPanelProps) {
   const transition = slide.transition || 'none'
   const animations = slide.animations || []
-  const [dragIdx, setDragIdx] = useState(null)
-  const [overIdx, setOverIdx] = useState(null)
+  const [dragIdx, setDragIdx] = useState<number | null>(null)
+  const [overIdx, setOverIdx] = useState<number | null>(null)
 
-  const setTransition = (t) => onChange({ ...slide, transition: t })
+  const setTransition = (t: string) => onChange({ ...slide, transition: t })
 
   const addAnimation = () => {
-    const anim = {
+    const anim: SlideAnimation = {
       id: crypto.randomUUID(),
       label: 'New animation',
       type: 'entrance',
@@ -44,17 +58,17 @@ export default function TransitionPanel({ slide, onChange }) {
     onChange({ ...slide, animations: [...animations, anim] })
   }
 
-  const removeAnimation = (id) => {
+  const removeAnimation = (id: string | undefined) => {
     onChange({
       ...slide,
       animations: animations.filter((a) => a.id !== id).map((a, i) => ({ ...a, order: i })),
     })
   }
 
-  const updateAnimation = (id, key, value) => {
+  const updateAnimation = (id: string | undefined, key: 'label' | 'type' | 'effect', value: string) => {
     onChange({
       ...slide,
-      animations: animations.map((a) => a.id === id ? { ...a, [key]: value } : a),
+      animations: animations.map((a) => a.id === id ? ({ ...a, [key]: value } as SlideAnimation) : a),
     })
   }
 
