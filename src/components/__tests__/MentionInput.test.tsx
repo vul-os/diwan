@@ -49,7 +49,7 @@ describe('renderMentions (escaped, no injection)', () => {
     // The mention becomes a <span>, surrounding text stays plain.
     const chip = container.querySelector('span')
     expect(chip).not.toBeNull()
-    expect(chip.textContent).toBe('@Alice')
+    expect(chip!.textContent).toBe('@Alice')
     expect(container.textContent).toBe('hi @Alice!')
   })
 

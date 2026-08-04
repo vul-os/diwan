@@ -1,4 +1,12 @@
 import { useState, useRef, useCallback, useLayoutEffect } from 'react'
+import type { ChangeEvent, KeyboardEvent, ReactNode, RefObject, TextareaHTMLAttributes } from 'react'
+
+export interface MentionCollaborator {
+  account_id: string
+  display_name?: string
+  name?: string
+  [key: string]: unknown
+}
 
 // MentionInput — a plain <textarea> augmented with @-mention autocomplete over
 // a supplied list of collaborators. It is a controlled component: the parent
@@ -16,7 +24,7 @@ const TRAILING_MENTION = /(^|\s)@([\w.\-]*)$/
 
 // buildMentionRegex escapes a display label so it can be matched literally in
 // the body when resolving which account ids were actually typed.
-function escapeRegExp(s) {
+function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
@@ -25,10 +33,10 @@ function escapeRegExp(s) {
  * Matches "@<label>" against each collaborator's display label (longest first
  * so "@Anna Lee" wins over "@Anna"). Returns a de-duplicated array of ids.
  */
-export function getMentions(text, collaborators) {
+export function getMentions(text: string, collaborators?: MentionCollaborator[] | null): string[] {
   if (!text || !collaborators?.length) return []
   const sorted = [...collaborators].sort((a, b) => labelOf(b).length - labelOf(a).length)
-  const found = new Set()
+  const found = new Set<string>()
   for (const c of sorted) {
     const label = labelOf(c)
     if (!label) continue
@@ -38,7 +46,7 @@ export function getMentions(text, collaborators) {
   return [...found]
 }
 
-function labelOf(c) {
+function labelOf(c: MentionCollaborator): string {
   return c.display_name || c.name || c.account_id || ''
 }
 
@@ -47,7 +55,7 @@ function labelOf(c) {
  * an array of React nodes. All text is emitted as plain React text nodes (never
  * dangerouslySetInnerHTML), so nothing in the body can inject markup or script.
  */
-export function renderMentions(body, collaborators) {
+export function renderMentions(body: string, collaborators?: MentionCollaborator[] | null): ReactNode {
   if (!body) return body
   const labels = (collaborators || [])
     .map(labelOf)
@@ -56,9 +64,9 @@ export function renderMentions(body, collaborators) {
   if (labels.length === 0) return body
 
   const pattern = new RegExp(`@(${labels.map(escapeRegExp).join('|')})(?=\\s|$|[^\\w.\\-])`, 'g')
-  const out = []
+  const out: ReactNode[] = []
   let last = 0
-  let m
+  let m: RegExpExecArray | null
   let key = 0
   while ((m = pattern.exec(body)) !== null) {
     if (m.index > last) out.push(body.slice(last, m.index))
@@ -73,6 +81,23 @@ export function renderMentions(body, collaborators) {
   return out
 }
 
+interface MentionMenuState {
+  query: string
+  index: number
+}
+
+interface MentionInputProps extends Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, 'onChange' | 'value'> {
+  value: string
+  onChange: (value: string) => void
+  collaborators?: MentionCollaborator[]
+  onEnter?: () => void
+  className?: string
+  wrapperClassName?: string
+  rows?: number
+  placeholder?: string
+  textareaRef?: RefObject<HTMLTextAreaElement>
+}
+
 export default function MentionInput({
   value,
   onChange,
@@ -84,28 +109,28 @@ export default function MentionInput({
   placeholder = 'Add a comment…',
   textareaRef: externalRef,
   ...rest
-}) {
-  const innerRef = useRef(null)
+}: MentionInputProps) {
+  const innerRef = useRef<HTMLTextAreaElement>(null)
   const ref = externalRef || innerRef
-  const [menu, setMenu] = useState(null) // { query, index } | null
+  const [menu, setMenu] = useState<MentionMenuState | null>(null)
 
   const suggestions = menu
     ? collaborators.filter((c) => labelOf(c).toLowerCase().includes(menu.query.toLowerCase())).slice(0, 6)
     : []
 
-  const updateMenu = useCallback((text, caret) => {
+  const updateMenu = useCallback((text: string, caret: number) => {
     const upto = text.slice(0, caret)
     const match = TRAILING_MENTION.exec(upto)
     if (match) setMenu({ query: match[2], index: 0 })
     else setMenu(null)
   }, [])
 
-  const handleChange = (e) => {
+  const handleChange = (e: ChangeEvent<HTMLTextAreaElement>) => {
     onChange(e.target.value)
     updateMenu(e.target.value, e.target.selectionStart)
   }
 
-  const insert = (c) => {
+  const insert = (c: MentionCollaborator) => {
     const el = ref.current
     if (!el) return
     const caret = el.selectionStart
@@ -129,10 +154,10 @@ export default function MentionInput({
     })
   }
 
-  const handleKeyDown = (e) => {
+  const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (menu && suggestions.length > 0) {
-      if (e.key === 'ArrowDown') { e.preventDefault(); setMenu((m) => ({ ...m, index: (m.index + 1) % suggestions.length })); return }
-      if (e.key === 'ArrowUp') { e.preventDefault(); setMenu((m) => ({ ...m, index: (m.index - 1 + suggestions.length) % suggestions.length })); return }
+      if (e.key === 'ArrowDown') { e.preventDefault(); setMenu((m) => (m ? { ...m, index: (m.index + 1) % suggestions.length } : m)); return }
+      if (e.key === 'ArrowUp') { e.preventDefault(); setMenu((m) => (m ? { ...m, index: (m.index - 1 + suggestions.length) % suggestions.length } : m)); return }
       if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); insert(suggestions[menu.index]); return }
       if (e.key === 'Escape') { e.preventDefault(); setMenu(null); return }
     }
@@ -141,7 +166,7 @@ export default function MentionInput({
 
   // Keep the highlighted index in range if the suggestion list shrinks.
   useLayoutEffect(() => {
-    if (menu && menu.index >= suggestions.length) setMenu((m) => ({ ...m, index: 0 }))
+    if (menu && menu.index >= suggestions.length) setMenu((m) => (m ? { ...m, index: 0 } : m))
   }, [suggestions.length]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
