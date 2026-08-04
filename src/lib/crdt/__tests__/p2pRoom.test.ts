@@ -3,6 +3,7 @@ import {
   generateInvite, parseInvite, deriveRoomKeys,
   sealFrame, openFrame, bytesToB64url, b64urlToBytes,
   CAP_RW, CAP_RO,
+  type RoomKeys,
 } from '../p2pRoom.js'
 
 // ---------------------------------------------------------------------------
@@ -63,7 +64,7 @@ describe('invite generate/parse round-trip', () => {
 // ---------------------------------------------------------------------------
 
 describe('room frame AEAD', () => {
-  async function roomFrom(roomKey) {
+  async function roomFrom(roomKey: Uint8Array): Promise<RoomKeys> {
     const k = await deriveRoomKeys(roomKey)
     return { encKey: k.encKey, macKeyRw: k.macKeyRw, roomId: k.roomId }
   }
@@ -150,7 +151,7 @@ describe('RW authority (ro cannot forge authoritative frames)', () => {
     // ro peer can only produce a NON-authoritative op frame (it decrypts fine).
     const frame = await sealFrame(ro, { type: 'op', op: { v: 1 } })
     const { msg, authoritative } = await openFrame(rw, frame)
-    expect(msg.type).toBe('op')          // rw can read it
+    expect((msg as { type: string }).type).toBe('op')          // rw can read it
     expect(authoritative).toBe(false)    // but it is NOT authoritative → rejected
   })
 })
