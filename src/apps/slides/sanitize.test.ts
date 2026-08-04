@@ -15,7 +15,7 @@ const PURIFY_CONFIG = {
                 'onchange', 'onsubmit', 'onkeydown', 'onkeyup', 'onkeypress'],
 }
 
-const sanitize = (html) => DOMPurify.sanitize(html ?? '', PURIFY_CONFIG)
+const sanitize = (html: string | null | undefined) => DOMPurify.sanitize(html ?? '', PURIFY_CONFIG)
 
 describe('slide content sanitization', () => {
   it('strips <script> tags entirely', () => {
