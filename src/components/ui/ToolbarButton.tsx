@@ -15,10 +15,19 @@
  */
 
 import { forwardRef } from 'react'
+import type { ButtonHTMLAttributes, ReactNode, Ref } from 'react'
+
+interface ToolbarButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  active?: boolean
+  disabled?: boolean
+  title?: string
+  className?: string
+  children?: ReactNode
+}
 
 const ToolbarButton = forwardRef(function ToolbarButton(
-  { active = false, disabled = false, title, className = '', children, ...rest },
-  ref,
+  { active = false, disabled = false, title, className = '', children, ...rest }: ToolbarButtonProps,
+  ref: Ref<HTMLButtonElement>,
 ) {
   return (
     <button
