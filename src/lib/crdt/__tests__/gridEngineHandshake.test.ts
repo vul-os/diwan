@@ -22,7 +22,9 @@ import {
   GridEngineGuard, ENGINE_LOCAL_LWW, ENGINE_KOTVA_SYNC, HELLO_TYPE,
   classifyOp, classifySnapshot,
   SHAPE_LOCAL_LWW, SHAPE_KOTVA_SYNC, SHAPE_UNKNOWN, SHAPE_NONE,
+  type EngineMismatch,
 } from '../gridEngine.js'
+import type { FabricClient } from '../../collab/webrtc/fabric.js'
 
 // ---------------------------------------------------------------------------
 // A shared in-process fabric: every session attached to one bus receives every
@@ -31,19 +33,23 @@ import {
 // filters by `msg.session`.
 // ---------------------------------------------------------------------------
 class Bus {
+  clients: Set<FakeFabric>
   constructor() { this.clients = new Set() }
-  attach(c) { this.clients.add(c) }
+  attach(c: FakeFabric) { this.clients.add(c) }
 }
 
 class FakeFabric extends EventTarget {
-  constructor(bus, name) {
+  bus: Bus
+  name: string
+  sent: string[]
+  constructor(bus: Bus, name: string) {
     super()
     this.bus = bus
     this.name = name
     this.sent = []
     bus.attach(this)
   }
-  send(frame) {
+  send(frame: string) {
     this.sent.push(frame)
     for (const peer of this.bus.clients) {
       if (peer === this) continue
@@ -56,10 +62,29 @@ class FakeFabric extends EventTarget {
   leave() {}
 }
 
+// FakeFabric only exercises the addEventListener/send surface GridSession and
+// SubstrateGridSession actually call on their transport (see grid.ts /
+// substrateGrid.ts) — the cast to the real FabricClient type is the same kind
+// production itself does for its own transport casts elsewhere in this suite.
+const asFabricClient = (f: FakeFabric): FabricClient => f as unknown as FabricClient
+
+/** A wire frame this fabric emitted/received, decoded loosely for assertions. */
+type WireFrame = { type: string, engine?: string, [key: string]: unknown }
+
 /** Frames of a given wire type this fabric emitted. */
-function framesOfType(fabric, type) {
-  return fabric.sent.map((f) => JSON.parse(f)).filter((m) => m.type === type)
+function framesOfType(fabric: FakeFabric, type: string): WireFrame[] {
+  return fabric.sent.map((f) => JSON.parse(f) as WireFrame).filter((m) => m.type === type)
 }
+
+// `_ingestGridOp`/`_ingestWire` are private implementation details of
+// GridSession/SubstrateGridSession; the first test in this file needs to drive
+// them directly to demonstrate the pre-fix behaviour against the CRDT
+// internals. Same reach-past-privacy cast as yP2PSession.test.ts's
+// `asBroadcaster`.
+type LegacyIngestable = { _ingestGridOp(op: unknown): boolean }
+const asLegacyIngestable = (s: GridSession): LegacyIngestable => s as unknown as LegacyIngestable
+type SubstrateIngestable = { _ingestWire(op: unknown): boolean }
+const asSubstrateIngestable = (s: SubstrateGridSession): SubstrateIngestable => s as unknown as SubstrateIngestable
 
 beforeEach(() => {
   localStorage.clear()
@@ -104,7 +129,7 @@ describe('op-shape classification', () => {
 
 describe('GridEngineGuard', () => {
   it('latches closed once and calls back exactly once', () => {
-    const seen = []
+    const seen: EngineMismatch[] = []
     const guard = new GridEngineGuard(ENGINE_LOCAL_LWW, (i) => seen.push(i))
     expect(guard.ok).toBe(true)
     expect(guard.observeAdvertisement(ENGINE_KOTVA_SYNC)).toBe(true)
@@ -125,7 +150,7 @@ describe('GridEngineGuard', () => {
   it('a peer that advertises NOTHING is foreign, not trusted', () => {
     const guard = new GridEngineGuard(ENGINE_LOCAL_LWW, () => {})
     expect(guard.observeAdvertisement(undefined)).toBe(true)
-    expect(guard.mismatch.remote).toBe('unadvertised')
+    expect(guard.mismatch!.remote).toBe('unadvertised')
   })
 })
 
@@ -135,8 +160,8 @@ describe('GridEngineGuard', () => {
 describe('two peers on the SAME engine still converge (no false positive)', () => {
   it('grid.js ↔ grid.js', () => {
     const bus = new Bus()
-    const a = new GridSession({ sessionId: 'f1', replicaId: 'A', fabricClient: new FakeFabric(bus, 'A') })
-    const b = new GridSession({ sessionId: 'f1', replicaId: 'B', fabricClient: new FakeFabric(bus, 'B') })
+    const a = new GridSession({ sessionId: 'f1', replicaId: 'A', fabricClient: asFabricClient(new FakeFabric(bus, 'A')) })
+    const b = new GridSession({ sessionId: 'f1', replicaId: 'B', fabricClient: asFabricClient(new FakeFabric(bus, 'B')) })
 
     a.setCell(0, 0, 'alpha')
     b.setCell(1, 1, 'beta')
@@ -151,9 +176,9 @@ describe('two peers on the SAME engine still converge (no false positive)', () =
   it('and both advertise, and the reply does not ping-pong forever', () => {
     const bus = new Bus()
     const fa = new FakeFabric(bus, 'A')
-    const a = new GridSession({ sessionId: 'f2', replicaId: 'A', fabricClient: fa })
+    const a = new GridSession({ sessionId: 'f2', replicaId: 'A', fabricClient: asFabricClient(fa) })
     const fb = new FakeFabric(bus, 'B')
-    const b = new GridSession({ sessionId: 'f2', replicaId: 'B', fabricClient: fb })
+    const b = new GridSession({ sessionId: 'f2', replicaId: 'B', fabricClient: asFabricClient(fb) })
 
     // A: its own opening hello, then one reply to B's hello, then one reply to
     // B's snapshot request if it makes one. Bounded, not a storm.
@@ -183,19 +208,19 @@ describe('a MIXED room: grid.js meets substrateGrid.js', () => {
     const sub = new SubstrateGridSession({ sessionId: 'raw', replicaId: 'S', fabricClient: null })
 
     sub.setCell(0, 0, 'from-substrate')
-    const substrateOp = JSON.parse(JSON.stringify(sub.logSnapshotData()[0]))
+    const substrateOp: unknown = JSON.parse(JSON.stringify(sub.logSnapshotData()[0]))
     legacy.setCell(0, 0, 'from-legacy')
     const legacyOp = { kind: 1, id: '1_1_L', key: { r: 0, c: 0 }, v: 'from-legacy' }
 
     // The substrate engine drops a legacy op on the floor: no throw, no event,
     // no state change. Two users, two documents, one silence.
-    expect(sub._ingestWire(legacyOp)).toBe(false)
+    expect(asSubstrateIngestable(sub)._ingestWire(legacyOp)).toBe(false)
     expect(sub.cells()).toEqual([{ r: 0, c: 0, v: 'from-substrate' }])
 
     // The legacy engine does worse: it reads `op.key.r` on an op that has no
     // `key`, and throws — from inside a fabric event listener, where it becomes
     // an uncaught console error per remote keystroke.
-    expect(() => legacy._ingestGridOp(substrateOp)).toThrow()
+    expect(() => asLegacyIngestable(legacy)._ingestGridOp(substrateOp)).toThrow()
 
     legacy.destroy(); sub.destroy()
   })
@@ -205,15 +230,15 @@ describe('a MIXED room: grid.js meets substrateGrid.js', () => {
     const fLegacy = new FakeFabric(bus, 'L')
     const fSub = new FakeFabric(bus, 'S')
 
-    const legacyEvents = []
-    const subEvents = []
+    const legacyEvents: EngineMismatch[] = []
+    const subEvents: EngineMismatch[] = []
 
-    const legacy = new GridSession({ sessionId: 'mix', replicaId: 'L', fabricClient: fLegacy })
-    legacy.addEventListener('engineMismatch', (e) => legacyEvents.push(e.detail))
+    const legacy = new GridSession({ sessionId: 'mix', replicaId: 'L', fabricClient: asFabricClient(fLegacy) })
+    legacy.addEventListener('engineMismatch', (e) => legacyEvents.push((e as CustomEvent).detail))
 
     // Constructing the second session sends its hello, which the first sees.
-    const sub = new SubstrateGridSession({ sessionId: 'mix', replicaId: 'S', fabricClient: fSub })
-    sub.addEventListener('engineMismatch', (e) => subEvents.push(e.detail))
+    const sub = new SubstrateGridSession({ sessionId: 'mix', replicaId: 'S', fabricClient: asFabricClient(fSub) })
+    sub.addEventListener('engineMismatch', (e) => subEvents.push((e as CustomEvent).detail))
 
     // Both latched. The legacy peer learned from the substrate peer's opening
     // hello; the substrate peer learned from the legacy peer's reply.
@@ -250,10 +275,10 @@ describe('a MIXED room: grid.js meets substrateGrid.js', () => {
   it('the substrate peer stops emitting localOp, so the update log stays single-engine', () => {
     const bus = new Bus()
     const sub = new SubstrateGridSession({
-      sessionId: 'log', replicaId: 'S', fabricClient: new FakeFabric(bus, 'S'),
+      sessionId: 'log', replicaId: 'S', fabricClient: asFabricClient(new FakeFabric(bus, 'S')),
     })
-    const localOps = []
-    sub.addEventListener('localOp', (e) => localOps.push(e.detail.op))
+    const localOps: unknown[] = []
+    sub.addEventListener('localOp', (e) => localOps.push((e as CustomEvent).detail.op))
 
     sub.setCell(0, 0, 'before')
     expect(localOps).toHaveLength(1)
@@ -269,8 +294,8 @@ describe('a MIXED room: grid.js meets substrateGrid.js', () => {
 
   it('the legacy peer does the same on its log path', () => {
     const legacy = new GridSession({ sessionId: 'log2', replicaId: 'L', fabricClient: null })
-    const localOps = []
-    legacy.addEventListener('localOp', (e) => localOps.push(e.detail.op))
+    const localOps: unknown[] = []
+    legacy.addEventListener('localOp', (e) => localOps.push((e as CustomEvent).detail.op))
 
     legacy.setCell(0, 0, 'before')
     expect(localOps).toHaveLength(1)
@@ -296,9 +321,9 @@ describe('a peer on a bundle that predates the handshake (sends no hello at all)
     // It will never send `grid_hello`, so layer 1 cannot see it.
     const bus = new Bus()
     const fSub = new FakeFabric(bus, 'S')
-    const sub = new SubstrateGridSession({ sessionId: 'old', replicaId: 'S', fabricClient: fSub })
-    const events = []
-    sub.addEventListener('engineMismatch', (e) => events.push(e.detail))
+    const sub = new SubstrateGridSession({ sessionId: 'old', replicaId: 'S', fabricClient: asFabricClient(fSub) })
+    const events: EngineMismatch[] = []
+    sub.addEventListener('engineMismatch', (e) => events.push((e as CustomEvent).detail))
 
     // A raw old-bundle frame: correct type, correct session, no hello ever sent.
     const oldPeer = new FakeFabric(bus, 'OLD')
@@ -316,7 +341,7 @@ describe('a peer on a bundle that predates the handshake (sends no hello at all)
 
   it('and the same holds for its cold-join snapshot', () => {
     const bus = new Bus()
-    const sub = new SubstrateGridSession({ sessionId: 'old2', replicaId: 'S', fabricClient: new FakeFabric(bus, 'S') })
+    const sub = new SubstrateGridSession({ sessionId: 'old2', replicaId: 'S', fabricClient: asFabricClient(new FakeFabric(bus, 'S')) })
     const oldPeer = new FakeFabric(bus, 'OLD')
     oldPeer.send(JSON.stringify({
       type: 'grid_snapshot', session: 'old2',
@@ -329,7 +354,7 @@ describe('a peer on a bundle that predates the handshake (sends no hello at all)
 
   it('the legacy engine catches a hello-less substrate peer symmetrically', () => {
     const bus = new Bus()
-    const legacy = new GridSession({ sessionId: 'old3', replicaId: 'L', fabricClient: new FakeFabric(bus, 'L') })
+    const legacy = new GridSession({ sessionId: 'old3', replicaId: 'L', fabricClient: asFabricClient(new FakeFabric(bus, 'L')) })
     const newPeer = new FakeFabric(bus, 'NEW')
     newPeer.send(JSON.stringify({
       type: 'grid_op', session: 'old3', op: { dsync: 1, b: 'AAECAwQ' },
