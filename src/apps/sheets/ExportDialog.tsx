@@ -1,5 +1,5 @@
 /**
- * src/apps/sheets/ExportDialog.jsx  (WAVE-64)
+ * src/apps/sheets/ExportDialog.tsx  (WAVE-64)
  *
  * The export confirmation for Sheets — the surface that makes export fidelity
  * HONEST.
@@ -22,19 +22,26 @@
 import { useRef, useEffect } from 'react'
 import { X, Download, AlertTriangle, Info, CheckCircle2 } from 'lucide-react'
 import { Button, IconButton, useDialogA11y } from '../../components/ui'
-import { exportFidelity } from './sheetsExport.js'
+import { exportFidelity, type ExportSheet } from './sheetsExport.js'
 
-const FORMAT_LABEL = {
+export interface ExportDialogProps {
+  data: ExportSheet[]
+  format: string
+  onCancel: () => void
+  onConfirm: (format: string) => void
+}
+
+const FORMAT_LABEL: Record<string, string> = {
   xlsx: 'Excel workbook (.xlsx)',
   ods: 'OpenDocument sheet (.ods)',
   csv: 'CSV (.csv)',
   'xlsx-server': 'Server Excel workbook (.xlsx)',
 }
 
-export default function ExportDialog({ data, format, onCancel, onConfirm }) {
+export default function ExportDialog({ data, format, onCancel, onConfirm }: ExportDialogProps) {
   const report = exportFidelity(data, format)
-  const dialogRef = useRef(null)
-  const confirmRef = useRef(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const confirmRef = useRef<HTMLButtonElement>(null)
   useDialogA11y(dialogRef, onCancel)
   useEffect(() => { confirmRef.current?.focus() }, [])
 
@@ -69,7 +76,7 @@ export default function ExportDialog({ data, format, onCancel, onConfirm }) {
           {/* Content the IMPORT could never bring in. It is not in this workbook,
               so nothing else here can see it — but the user is about to write a
               file back over an original that still HAS it. Say so first. */}
-          {hasMissing && (
+          {hasMissing && missing && (
             <div className="rounded-lg border border-line bg-warning-bg p-3 space-y-1.5" role="alert">
               <p className="flex items-center gap-1.5 font-semibold text-ink">
                 <AlertTriangle size={13} className="text-warning" aria-hidden />
