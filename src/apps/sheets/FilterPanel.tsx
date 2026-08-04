@@ -1,5 +1,5 @@
 /**
- * src/apps/sheets/FilterPanel.jsx
+ * src/apps/sheets/FilterPanel.tsx
  *
  * Filter views — named saved filters per sheet.
  * Each filter view is a list of per-column rules (text-contains, equals,
@@ -16,16 +16,50 @@ import { useState, useMemo, useCallback } from 'react'
 import { X, Plus, Trash2, Filter, CheckCircle, Pencil } from 'lucide-react'
 import { Button, IconButton } from '../../components/ui'
 
+export interface FPCellValue {
+  v?: string | number | boolean
+  m?: string | number
+  [key: string]: unknown
+}
+export interface FPCellEntry {
+  r: number
+  c: number
+  v?: FPCellValue | null
+}
+export interface FPSheet {
+  celldata?: FPCellEntry[]
+  [key: string]: unknown
+}
+
+export interface FilterRule {
+  colIndex: number
+  type: string
+  value: string
+  min: string
+  max: string
+}
+
+export interface FilterView {
+  name: string
+  rules: FilterRule[]
+}
+
+export interface FilterPanelProps {
+  data: FPSheet[]
+  onClose: () => void
+  onApply: (hiddenRows: number[]) => void
+}
+
 // ── Row/cell helpers ──────────────────────────────────────────────────────────
 
-function sheetToRows(sheet) {
+function sheetToRows(sheet: FPSheet | null | undefined): string[][] {
   const cells = sheet?.celldata || []
   let maxR = 0, maxC = 0
   for (const { r, c } of cells) {
     if (r > maxR) maxR = r
     if (c > maxC) maxC = c
   }
-  const grid = Array.from({ length: maxR + 1 }, () => new Array(maxC + 1).fill(''))
+  const grid: string[][] = Array.from({ length: maxR + 1 }, () => new Array(maxC + 1).fill(''))
   for (const { r, c, v } of cells) {
     if (!v) continue
     grid[r][c] = String(v.v !== undefined ? v.v : (v.m ?? ''))
@@ -33,7 +67,7 @@ function sheetToRows(sheet) {
   return grid
 }
 
-function matchesRule(value, rule) {
+function matchesRule(value: unknown, rule: FilterRule | null | undefined): boolean {
   if (!rule || !rule.type) return true
   const v = String(value ?? '').toLowerCase()
   const rv = String(rule.value ?? '').toLowerCase()
@@ -51,9 +85,9 @@ function matchesRule(value, rule) {
   }
 }
 
-function computeHiddenRows(rows, filterRules) {
+function computeHiddenRows(rows: string[][], filterRules: FilterRule[]): number[] {
   if (!rows || rows.length === 0) return []
-  const hidden = []
+  const hidden: number[] = []
   for (let ri = 1; ri < rows.length; ri++) {
     const row = rows[ri]
     let fail = false
@@ -77,15 +111,15 @@ const CONDITION_TYPES = [
   { value: 'number-range', label: 'Number between' },
 ]
 
-export default function FilterPanel({ data, onClose, onApply }) {
+export default function FilterPanel({ data, onClose, onApply }: FilterPanelProps) {
   const activeSheet  = data?.[0]
   const rows         = useMemo(() => sheetToRows(activeSheet), [activeSheet])
   const headers      = rows[0] || []
 
   // savedViews: [{ name, rules }]
-  const [savedViews,  setSavedViews]  = useState([])
-  const [activeView,  setActiveView]  = useState(null) // index into savedViews
-  const [editRules,   setEditRules]   = useState([])   // current editing rules
+  const [savedViews,  setSavedViews]  = useState<FilterView[]>([])
+  const [activeView,  setActiveView]  = useState<number | null>(null) // index into savedViews
+  const [editRules,   setEditRules]   = useState<FilterRule[]>([])   // current editing rules
   const [viewName,    setViewName]    = useState('')
   const [editing,     setEditing]     = useState(false)
 
@@ -96,7 +130,7 @@ export default function FilterPanel({ data, onClose, onApply }) {
     setActiveView(null)
   }
 
-  const editExisting = (idx) => {
+  const editExisting = (idx: number) => {
     setEditing(true)
     setViewName(savedViews[idx].name)
     setEditRules([...savedViews[idx].rules])
@@ -107,14 +141,14 @@ export default function FilterPanel({ data, onClose, onApply }) {
     setEditRules((r) => [...r, { colIndex: 0, type: 'contains', value: '', min: '', max: '' }])
   }
 
-  const removeRule = (i) => setEditRules((r) => r.filter((_, idx) => idx !== i))
+  const removeRule = (i: number) => setEditRules((r) => r.filter((_, idx) => idx !== i))
 
-  const updateRule = (i, key, val) => {
+  const updateRule = (i: number, key: keyof FilterRule, val: string | number) => {
     setEditRules((r) => r.map((rule, idx) => idx === i ? { ...rule, [key]: val } : rule))
   }
 
   const saveView = () => {
-    const view = { name: viewName || 'Filter view', rules: editRules }
+    const view: FilterView = { name: viewName || 'Filter view', rules: editRules }
     if (activeView !== null) {
       setSavedViews((v) => v.map((sv, i) => i === activeView ? view : sv))
     } else {
@@ -123,7 +157,7 @@ export default function FilterPanel({ data, onClose, onApply }) {
     setEditing(false)
   }
 
-  const applyView = useCallback((idx) => {
+  const applyView = useCallback((idx: number) => {
     const view = savedViews[idx]
     if (!view) return
     const hidden = computeHiddenRows(rows, view.rules)
@@ -133,7 +167,7 @@ export default function FilterPanel({ data, onClose, onApply }) {
 
   const clearFilter = () => { onApply([]); setActiveView(null) }
 
-  const deleteView = (idx) => {
+  const deleteView = (idx: number) => {
     setSavedViews((v) => v.filter((_, i) => i !== idx))
     if (activeView === idx) { onApply([]); setActiveView(null) }
   }
