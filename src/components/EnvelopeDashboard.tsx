@@ -4,7 +4,8 @@ import {
   RefreshCw, Bell, Trash2, ChevronDown, ChevronUp, Users,
   Download, ShieldCheck,
 } from 'lucide-react'
-import { api } from '../lib/api.js'
+import type { LucideIcon } from 'lucide-react'
+import { api } from '../lib/api'
 import { Button, Card, IconButton, Tooltip, LoadingState } from './ui'
 
 // OFFICE-45: Envelope Dashboard — per-envelope progress panel.
@@ -15,7 +16,35 @@ import { Button, Card, IconButton, Tooltip, LoadingState } from './ui'
 // (sage/honey/persimmon) for status; quiet horizontal progress bar; expandable
 // per-signer rows with serif name + email.
 
-const STATUS_META = {
+// ─── Local shapes — `api` returns `unknown` by design; these document just
+// what this panel reads. ────────────────────────────────────────────────────
+interface Signer {
+  id: string
+  name?: string
+  email?: string
+  order?: number
+  status: string
+}
+interface EnvelopeStatus {
+  signers: Signer[]
+}
+interface Envelope {
+  id: string
+  title: string
+  status: string
+  order_mode?: string
+}
+interface VerifyResult {
+  ok: boolean
+  hash_error?: string
+  chain_error?: string
+  signers?: unknown[]
+}
+interface RemindResponse {
+  reminded?: string[]
+}
+
+const STATUS_META: Record<string, { label: string; tone: string; icon: LucideIcon }> = {
   draft:     { label: 'Draft',     tone: 'neutral', icon: Clock },
   sent:      { label: 'Sent',      tone: 'info',    icon: Clock },
   completed: { label: 'Complete',  tone: 'success', icon: CheckCircle2 },
@@ -23,7 +52,7 @@ const STATUS_META = {
   voided:    { label: 'Voided',    tone: 'warning', icon: AlertCircle },
 }
 
-const TONE_CLASSES = {
+const TONE_CLASSES: Record<string, string> = {
   neutral: 'bg-bg-elev2 text-ink-muted',
   info:    'bg-info-bg text-info',
   success: 'bg-success-bg text-success',
@@ -31,7 +60,7 @@ const TONE_CLASSES = {
   warning: 'bg-warning-bg text-warning',
 }
 
-const SIGNER_STATUS_META = {
+const SIGNER_STATUS_META: Record<string, { label: string; dot: string }> = {
   pending:  { label: 'Pending',  dot: 'bg-line-strong' },
   sent:     { label: 'Sent',     dot: 'bg-info' },
   viewed:   { label: 'Viewed',   dot: 'bg-warning' },
@@ -39,7 +68,7 @@ const SIGNER_STATUS_META = {
   declined: { label: 'Declined', dot: 'bg-danger' },
 }
 
-function StatusBadge({ status }) {
+function StatusBadge({ status }: { status: string }) {
   const meta = STATUS_META[status] || STATUS_META.draft
   const Icon = meta.icon
   return (
@@ -55,7 +84,7 @@ function StatusBadge({ status }) {
   )
 }
 
-function ProgressBar({ value }) {
+function ProgressBar({ value }: { value: number }) {
   const pct = Math.max(0, Math.min(100, Math.round(value)))
   return (
     <div className="w-full h-1 rounded-pill bg-bg-elev2 overflow-hidden">
@@ -67,7 +96,7 @@ function ProgressBar({ value }) {
   )
 }
 
-function SignerRow({ signer }) {
+function SignerRow({ signer }: { signer: Signer }) {
   const meta = SIGNER_STATUS_META[signer.status] || SIGNER_STATUS_META.pending
   return (
     <div className="flex items-center gap-2 py-1.5">
@@ -90,23 +119,30 @@ function SignerRow({ signer }) {
   )
 }
 
-function EnvelopeRow({ envelope, onRemind, onCancel, onRefresh }) {
+interface EnvelopeRowProps {
+  envelope: Envelope
+  onRemind: (envelopeId: string) => void
+  onCancel: (envelopeId: string) => void
+  onRefresh: () => void
+}
+
+function EnvelopeRow({ envelope, onRemind, onCancel, onRefresh }: EnvelopeRowProps) {
   const [expanded, setExpanded] = useState(false)
-  const [status, setStatus] = useState(null)
+  const [status, setStatus] = useState<EnvelopeStatus | null>(null)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(null)
-  const [verifyResult, setVerifyResult] = useState(null)
+  const [error, setError] = useState<string | null>(null)
+  const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null)
   const [verifyLoading, setVerifyLoading] = useState(false)
-  const [verifyError, setVerifyError] = useState(null)
+  const [verifyError, setVerifyError] = useState<string | null>(null)
 
   const loadStatus = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const data = await api.envelopeStatus(envelope.id)
+      const data = await api.envelopeStatus(envelope.id) as EnvelopeStatus
       setStatus(data)
     } catch (e) {
-      setError(e.message || 'Failed to load status')
+      setError(e instanceof Error ? e.message : 'Failed to load status')
     } finally {
       setLoading(false)
     }
@@ -118,10 +154,10 @@ function EnvelopeRow({ envelope, onRemind, onCancel, onRefresh }) {
     setVerifyResult(null)
     if (!expanded) setExpanded(true)
     try {
-      const data = await api.verifyEnvelope(envelope.id)
+      const data = await api.verifyEnvelope(envelope.id) as VerifyResult
       setVerifyResult(data)
     } catch (e) {
-      setVerifyError(e.message || 'Verification failed')
+      setVerifyError(e instanceof Error ? e.message : 'Verification failed')
     } finally {
       setVerifyLoading(false)
     }
@@ -291,7 +327,7 @@ function EnvelopeRow({ envelope, onRemind, onCancel, onRefresh }) {
                       {verifyResult.chain_error && <div>Chain: {verifyResult.chain_error}</div>}
                     </div>
                   )}
-                  {verifyResult.ok && verifyResult.signers?.length > 0 && (
+                  {verifyResult.ok && verifyResult.signers && verifyResult.signers.length > 0 && (
                     <div className="mt-1 text-2xs opacity-80">
                       {verifyResult.signers.length} signer{verifyResult.signers.length !== 1 ? 's' : ''} verified
                     </div>
@@ -312,13 +348,18 @@ function EnvelopeRow({ envelope, onRemind, onCancel, onRefresh }) {
   )
 }
 
-export default function EnvelopeDashboard() {
-  const [envelopes, setEnvelopes] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [toast, setToast] = useState(null)
+interface Toast {
+  msg: string
+  type: 'info' | 'success' | 'error'
+}
 
-  const showToast = useCallback((msg, type = 'info') => {
+export default function EnvelopeDashboard() {
+  const [envelopes, setEnvelopes] = useState<Envelope[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [toast, setToast] = useState<Toast | null>(null)
+
+  const showToast = useCallback((msg: string, type: Toast['type'] = 'info') => {
     setToast({ msg, type })
     setTimeout(() => setToast(null), 3500)
   }, [])
@@ -327,10 +368,10 @@ export default function EnvelopeDashboard() {
     setLoading(true)
     setError(null)
     try {
-      const data = await api.listEnvelopes()
+      const data = await api.listEnvelopes() as Envelope[]
       setEnvelopes(Array.isArray(data) ? data : [])
     } catch (e) {
-      setError(e.message || 'Failed to load envelopes')
+      setError(e instanceof Error ? e.message : 'Failed to load envelopes')
     } finally {
       setLoading(false)
     }
@@ -338,24 +379,24 @@ export default function EnvelopeDashboard() {
 
   useEffect(() => { loadEnvelopes() }, [loadEnvelopes])
 
-  const handleRemind = useCallback(async (envelopeId) => {
+  const handleRemind = useCallback(async (envelopeId: string) => {
     try {
-      const res = await api.envelopeRemind(envelopeId)
+      const res = await api.envelopeRemind(envelopeId) as RemindResponse
       const reminded = res.reminded || []
       showToast(`Reminders sent to ${reminded.length} signer(s).`, 'success')
     } catch (e) {
-      showToast(e.message || 'Failed to send reminders', 'error')
+      showToast(e instanceof Error ? e.message : 'Failed to send reminders', 'error')
     }
   }, [showToast])
 
-  const handleCancel = useCallback(async (envelopeId) => {
+  const handleCancel = useCallback(async (envelopeId: string) => {
     if (!window.confirm('Cancel (void) this envelope? This cannot be undone.')) return
     try {
       await api.envelopeCancel(envelopeId)
       showToast('Envelope voided.', 'success')
       loadEnvelopes()
     } catch (e) {
-      showToast(e.message || 'Failed to cancel envelope', 'error')
+      showToast(e instanceof Error ? e.message : 'Failed to cancel envelope', 'error')
     }
   }, [showToast, loadEnvelopes])
 
