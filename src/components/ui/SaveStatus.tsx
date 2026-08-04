@@ -21,7 +21,9 @@
  * their own save state machine; this only renders it.
  */
 
-const MAP = {
+type SaveStatusKind = 'saved' | 'saving' | 'dirty' | 'error' | 'offline'
+
+const MAP: Record<SaveStatusKind, { dot: string; text: string; tone: string }> = {
   saving:  { dot: 'save-dot--saving',  text: 'Saving',   tone: 'text-ink-faint' },
   saved:   { dot: 'save-dot--saved',   text: 'Saved',    tone: 'text-ink-faint' },
   dirty:   { dot: '',                  text: 'Unsaved',  tone: 'text-ink-faint' },
@@ -29,7 +31,14 @@ const MAP = {
   offline: { dot: 'save-dot--offline', text: 'Offline',  tone: 'text-warning' },
 }
 
-export default function SaveStatus({ status = 'saved', text, title, className = '' }) {
+interface SaveStatusProps {
+  status?: SaveStatusKind
+  text?: string
+  title?: string
+  className?: string
+}
+
+export default function SaveStatus({ status = 'saved', text, title, className = '' }: SaveStatusProps) {
   const info = MAP[status] || MAP.saved
   return (
     <span
