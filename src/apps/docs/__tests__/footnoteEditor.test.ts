@@ -7,6 +7,9 @@
 
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { Editor } from '@tiptap/core'
+import type { Extensions } from '@tiptap/core'
+import type { Node as PMNode } from '@tiptap/pm/model'
+import type { Decoration } from '@tiptap/pm/view'
 import Document from '@tiptap/extension-document'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
@@ -31,8 +34,9 @@ import {
   decorationCommentId,
   commentIdAtSelection,
 } from '../commentDecorations.js'
+import type { CommentPluginState } from '../commentDecorations.js'
 
-function makeEditor(extra = []) {
+function makeEditor(extra: Extensions = []): Editor {
   return new Editor({
     extensions: [
       Document, Paragraph, Text,
@@ -43,7 +47,40 @@ function makeEditor(extra = []) {
   })
 }
 
-let editor
+// A returning lookup (rather than mutating an outer `let` from inside the
+// descendants callback) — TS can't flow-narrow a variable mutated inside a
+// nested function at the read site (same issue worked around elsewhere in
+// this suite's conversions, e.g. equations.test.ts's findNodeByType).
+function findFirstNodePos(doc: PMNode, typeName: string): { pos: number; size: number } | null {
+  let found: { pos: number; size: number } | null = null
+  doc.descendants((n, pos) => {
+    if (found) return false
+    if (n.type.name === typeName) { found = { pos, size: n.nodeSize } }
+    return true
+  })
+  return found
+}
+
+/** The comment-decorations plugin's live state — throws if the extension
+ *  somehow isn't active (it always is where this is called; this just
+ *  satisfies PluginKey.getState()'s possibly-undefined return type). */
+function commentPluginState(editor: Editor): CommentPluginState {
+  const state = COMMENT_PLUGIN_KEY.getState(editor.state)
+  if (!state) throw new Error('comment decorations plugin not active')
+  return state
+}
+
+// Decoration's `.type.attrs` is not part of its public .d.ts (its `spec`
+// getter is typed `any`) — a local cast helper, same as commentDecorations.ts's
+// own DecorationLike for the identical untyped surface.
+interface DecorationTypeAttrs {
+  type?: { attrs?: Record<string, unknown> }
+}
+function decorationClass(d: Decoration): unknown {
+  return (d as unknown as DecorationTypeAttrs).type?.attrs?.class
+}
+
+let editor: Editor | null = null
 afterEach(() => { editor?.destroy(); editor = null })
 
 describe('footnote insertion (live editor)', () => {
@@ -87,12 +124,9 @@ describe('footnote insertion (live editor)', () => {
     expect(scan.itemIds).toHaveLength(1)
 
     // Find the ref node and delete it.
-    let refPos = null
-    let refSize = 0
-    editor.state.doc.descendants((n, pos) => {
-      if (n.type.name === 'footnoteRef') { refPos = pos; refSize = n.nodeSize }
-    })
-    editor.commands.deleteRange({ from: refPos, to: refPos + refSize })
+    const ref = findFirstNodePos(editor.state.doc, 'footnoteRef')
+    if (!ref) throw new Error('footnoteRef not found')
+    editor.commands.deleteRange({ from: ref.pos, to: ref.pos + ref.size })
 
     scan = scanFootnotes(editor.state.doc)
     expect(scan.bodyRefIds).toHaveLength(0)
@@ -150,9 +184,10 @@ describe('footnote export numbering (WAVE-47)', () => {
     exportToHtml(editor, 'doc-with-footnotes')
 
     expect(saveAs).toHaveBeenCalled()
-    const blob = saveAs.mock.calls.at(-1)[0]
+    const data = vi.mocked(saveAs).mock.calls.at(-1)?.[0]
+    if (!(data instanceof Blob)) throw new Error('expected saveAs to be called with a Blob')
     // file-saver receives a Blob; pull its text back out. jsdom Blob supports .text().
-    return blob.text().then((html) => {
+    return data.text().then((html) => {
       expect(html).toContain('data-fn-num="1"')
       expect(html).toContain('data-fn-num="2"')
       const refNums = Array.from(html.matchAll(/<sup[^>]*data-fn-id[^>]*>(\d+)<\/sup>/g))
@@ -171,10 +206,11 @@ describe('comment decorations (live editor)', () => {
     tr.setMeta(COMMENT_META, { comments, activeId: null })
     editor.view.dispatch(tr)
 
-    const decos = COMMENT_PLUGIN_KEY.getState(editor.state).decorations.find()
+    const decos = commentPluginState(editor).decorations.find()
     const found = decos.find((d) => decorationCommentId(d) === 'c1')
     expect(found).toBeTruthy()
-    expect(found.type.attrs.class).toContain('comment-highlight')
+    if (!found) throw new Error('decoration not found')
+    expect(decorationClass(found)).toContain('comment-highlight')
   })
 
   it('maps the highlight through an edit so it follows its text', () => {
@@ -182,14 +218,16 @@ describe('comment decorations (live editor)', () => {
     const comments = [{ id: 'c1', state: 'open', anchor: { type: 'text_range', from: 7, to: 12 } }]
     editor.view.dispatch(editor.state.tr.setMeta(COMMENT_META, { comments, activeId: null }))
 
-    const before = COMMENT_PLUGIN_KEY.getState(editor.state).decorations
+    const before = commentPluginState(editor).decorations
       .find().find((d) => decorationCommentId(d) === 'c1')
+    if (!before) throw new Error('decoration not found (before)')
 
     // Insert 3 chars at the very start; the highlight should shift right by 3.
     editor.commands.insertContentAt(1, 'XXX')
 
-    const after = COMMENT_PLUGIN_KEY.getState(editor.state).decorations
+    const after = commentPluginState(editor).decorations
       .find().find((d) => decorationCommentId(d) === 'c1')
+    if (!after) throw new Error('decoration not found (after)')
 
     expect(after.from).toBe(before.from + 3)
     expect(after.to).toBe(before.to + 3)
