@@ -10,14 +10,24 @@
  */
 
 import { cloneElement, isValidElement, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
 const GAP = 6
 
-export default function Tooltip({ label, children, side = 'bottom', className = '' }) {
-  const wrapRef = useRef(null)
-  const bubbleRef = useRef(null)
-  const timer = useRef(null)
+type TooltipSide = 'top' | 'bottom' | 'left' | 'right'
+
+interface TooltipProps {
+  label?: ReactNode
+  children: ReactNode
+  side?: TooltipSide
+  className?: string
+}
+
+export default function Tooltip({ label, children, side = 'bottom', className = '' }: TooltipProps) {
+  const wrapRef = useRef<HTMLSpanElement>(null)
+  const bubbleRef = useRef<HTMLSpanElement>(null)
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const [open, setOpen] = useState(false)
   const [pos, setPos] = useState({ top: 0, left: 0 })
 
