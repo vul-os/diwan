@@ -1,5 +1,5 @@
 /**
- * useCollabFabric.test.jsx — WAVE-27 fabric lifecycle hook.
+ * useCollabFabric.test.tsx — WAVE-27 fabric lifecycle hook.
  *
  * Verifies the presence-roster-adjacent projection: peers joining/leaving flow
  * into the `peers` map, join success flips `joined`, and a join rejection
@@ -20,31 +20,45 @@ import { _resetPeeringProbeCache } from '../peeringAvailability.js'
 import { _resetReachableBaseCache } from '../reachableBase.js'
 
 // ── Mock the first-party WebRTC fabric with a controllable fake ───────────────
-let lastFabric = null
-let joinBehaviour = 'resolve' // 'resolve' | 'reject'
+
+// The fake's construction options — a loose subset of FabricClient's real
+// ConstructorParameters (fabric.ts), documented here only as far as these
+// tests read them back off `lastFabric.opts`.
+interface FakeFabricOpts {
+  sessionId?: string
+  peerId?: string
+  signalingUrl?: string
+  rendezvousBaseUrl?: string
+  rendezvousPrefix?: string
+  [key: string]: unknown
+}
+
+let lastFabric: FakeFabric | null = null
+let joinBehaviour: 'resolve' | 'reject' = 'resolve' // 'resolve' | 'reject'
 
 class FakeFabric extends EventTarget {
-  constructor(opts) {
+  opts: FakeFabricOpts
+  left = false
+  constructor(opts: FakeFabricOpts) {
     super()
     this.opts = opts
-    this.left = false
     lastFabric = this
   }
-  async join() {
+  async join(): Promise<void> {
     if (joinBehaviour === 'reject') throw new Error('no peering backend')
   }
   leave() { this.left = true }
   send() {}
   sendTo() {}
   // Test helper: simulate the fabric emitting a peer state change.
-  emitState(peerId, state) {
+  emitState(peerId: string, state: string) {
     this.dispatchEvent(new CustomEvent('state', { detail: { peerId, state } }))
   }
 }
 
 vi.mock('../webrtc/fabric.js', () => ({
   FabricClient: class {
-    constructor(opts) { return new FakeFabric(opts) }
+    constructor(opts: FakeFabricOpts) { return new FakeFabric(opts) }
   },
 }))
 
@@ -75,9 +89,9 @@ describe('useCollabFabric', () => {
     expect(result.current.configured).toBe(true)
     await waitFor(() => expect(result.current.joined).toBe(true))
     // Signaling URL derives from origin, mirroring Docs' collab session.
-    expect(lastFabric.opts.sessionId).toBe('file-1')
-    expect(lastFabric.opts.peerId).toBe('rep-1')
-    expect(lastFabric.opts.signalingUrl).toMatch(/\/api\/peering\/stream$/)
+    expect(lastFabric?.opts.sessionId).toBe('file-1')
+    expect(lastFabric?.opts.peerId).toBe('rep-1')
+    expect(lastFabric?.opts.signalingUrl).toMatch(/\/api\/peering\/stream$/)
   })
 
   it('projects peers joining and leaving into the peers map', async () => {
@@ -86,14 +100,14 @@ describe('useCollabFabric', () => {
     )
     await waitFor(() => expect(result.current.fabric).not.toBeNull())
 
-    act(() => { lastFabric.emitState('peerA', 'connected') })
+    act(() => { lastFabric?.emitState('peerA', 'connected') })
     await waitFor(() => expect(result.current.peers.peerA).toBe('connected'))
 
-    act(() => { lastFabric.emitState('peerB', 'relay') })
+    act(() => { lastFabric?.emitState('peerB', 'relay') })
     await waitFor(() => expect(result.current.peers.peerB).toBe('relay'))
 
     // Peer drops: state transitions to disconnected (out).
-    act(() => { lastFabric.emitState('peerA', 'disconnected') })
+    act(() => { lastFabric?.emitState('peerA', 'disconnected') })
     await waitFor(() => expect(result.current.peers.peerA).toBe('disconnected'))
     expect(result.current.peers.peerB).toBe('relay')
   })
@@ -136,7 +150,7 @@ describe('useCollabFabric', () => {
     // /api/peering/ice 404s (standalone: no host-box peering) but
     // /api/reachability reports a configured rendezvous_url — the deployment
     // pointed Diwan at a self-hosted relayd with no Vulos OS involved at all.
-    vi.stubGlobal('fetch', vi.fn(async (url) => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       if (String(url).includes('/api/reachability')) {
         return {
           ok: true,
@@ -158,11 +172,11 @@ describe('useCollabFabric', () => {
     // The fabric is pointed straight at the configured relayd's own origin —
     // relayd's rendezvous role serves CORS, so the browser calls it directly and
     // this server is not in the discovery path at all.
-    expect(lastFabric.opts.rendezvousBaseUrl).toBe('https://relay.example.org')
-    expect(lastFabric.opts.rendezvousPrefix).toBe('/rendezvous')
-    expect(lastFabric.opts.rendezvousBaseUrl).not.toBe(window.location.origin)
-    expect(lastFabric.opts.sessionId).toBe('file-rv')
-    expect(lastFabric.opts.peerId).toBe('rep-rv')
+    expect(lastFabric?.opts.rendezvousBaseUrl).toBe('https://relay.example.org')
+    expect(lastFabric?.opts.rendezvousPrefix).toBe('/rendezvous')
+    expect(lastFabric?.opts.rendezvousBaseUrl).not.toBe(window.location.origin)
+    expect(lastFabric?.opts.sessionId).toBe('file-rv')
+    expect(lastFabric?.opts.peerId).toBe('rep-rv')
   })
 
   it('does not create a fabric when disabled', async () => {
@@ -183,6 +197,6 @@ describe('useCollabFabric', () => {
     await waitFor(() => expect(result.current.fabric).not.toBeNull())
     const fab = lastFabric
     unmount()
-    expect(fab.left).toBe(true)
+    expect(fab?.left).toBe(true)
   })
 })

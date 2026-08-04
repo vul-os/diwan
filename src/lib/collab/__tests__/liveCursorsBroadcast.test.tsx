@@ -1,5 +1,5 @@
 /**
- * liveCursorsBroadcast.test.jsx — WAVE-27 cursor/selection broadcast + throttle.
+ * liveCursorsBroadcast.test.tsx — WAVE-27 cursor/selection broadcast + throttle.
  *
  * Sheets and Slides broadcast cell/slide selection through the first-party
  * `useLiveCursors` hook (the same one Docs uses). This exercises that hook with
@@ -13,21 +13,28 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useLiveCursors } from '../webrtc/useLiveCursors.js'
+import type { FabricLike, FabricMessageEvent, LocalIdentity } from '../webrtc/useLiveCursors.js'
 
+// FakeFabric is a DOM EventTarget — structurally the same shape as FabricLike,
+// but TS's class-implements check doesn't reconcile EventTarget's generic
+// addEventListener overload with FabricLike's narrowed 'message'-only one. Cast
+// at the call site (mirrors the `asBroadcaster`-style casts used for the CRDT
+// session's own transport fakes) rather than fighting the DOM lib types.
 class FakeFabric extends EventTarget {
-  constructor() { super(); this.sent = [] }
-  send(frame) { this.sent.push(frame) }
-  emitMessage(payload) {
-    this.dispatchEvent(new CustomEvent('message', { detail: { data: JSON.stringify(payload) } }))
+  sent: string[] = []
+  send(frame: string) { this.sent.push(frame) }
+  emitMessage(payload: unknown) {
+    this.dispatchEvent(new CustomEvent('message', { detail: { data: JSON.stringify(payload) } }) as FabricMessageEvent)
   }
 }
+const asFabric = (f: FakeFabric): FabricLike => f as unknown as FabricLike
 
-const ME = { accountId: 'me', displayName: 'Me' }
+const ME: LocalIdentity = { accountId: 'me', displayName: 'Me' }
 
 beforeEach(() => { vi.useFakeTimers() })
 afterEach(() => { vi.useRealTimers() })
 
-function parseSent(fabric) {
+function parseSent(fabric: FakeFabric) {
   return fabric.sent.map((f) => JSON.parse(f))
 }
 
@@ -35,7 +42,7 @@ describe('useLiveCursors — sheet cursor broadcast', () => {
   it('sends immediately on the first call, then throttles bursts', () => {
     const fabric = new FakeFabric()
     const { result } = renderHook(() =>
-      useLiveCursors({ fabric, localIdentity: ME, color: '#123456' }),
+      useLiveCursors({ fabric: asFabric(fabric), localIdentity: ME, color: '#123456' }),
     )
 
     // Leading edge: first broadcast goes out synchronously.
@@ -63,7 +70,7 @@ describe('useLiveCursors — slide cursor broadcast', () => {
   it('carries the slideId and type=slide', () => {
     const fabric = new FakeFabric()
     const { result } = renderHook(() =>
-      useLiveCursors({ fabric, localIdentity: ME, color: '#abc' }),
+      useLiveCursors({ fabric: asFabric(fabric), localIdentity: ME, color: '#abc' }),
     )
     act(() => { result.current.broadcastSlideCursor('slide-7') })
     const [frame] = parseSent(fabric)
@@ -76,7 +83,7 @@ describe('useLiveCursors — remote roster projection', () => {
   it('adds a remote peer cursor and ignores our own echo', () => {
     const fabric = new FakeFabric()
     const { result } = renderHook(() =>
-      useLiveCursors({ fabric, localIdentity: ME, color: '#000' }),
+      useLiveCursors({ fabric: asFabric(fabric), localIdentity: ME, color: '#000' }),
     )
 
     act(() => {
@@ -100,7 +107,7 @@ describe('useLiveCursors — remote roster projection', () => {
   it('ignores frames on other channels', () => {
     const fabric = new FakeFabric()
     const { result } = renderHook(() =>
-      useLiveCursors({ fabric, localIdentity: ME, color: '#000' }),
+      useLiveCursors({ fabric: asFabric(fabric), localIdentity: ME, color: '#000' }),
     )
     act(() => {
       fabric.emitMessage({ channel: 'grid_op', payload: { accountId: 'x' } })
