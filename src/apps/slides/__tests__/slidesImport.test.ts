@@ -4,7 +4,7 @@
 import { describe, it, expect } from 'vitest'
 import JSZip from 'jszip'
 import { pptxToSlides, odpToSlides } from '../slidesImport.js'
-import { sanitizeObjects } from '../slideObjects'
+import { sanitizeObjects, type TextSlideObject, type ImageSlideObject } from '../slideObjects'
 
 const RASTER = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])
 
@@ -58,20 +58,20 @@ describe('pptxToSlides — fidelity', () => {
     const deck = await pptxToSlides(await makePptx(), 'd.pptx')
     expect(deck.slides).toHaveLength(1)
     const objs = deck.slides[0].objects
-    const title = objs.find((o) => o.type === 'text' && /<h2>/.test(o.html))
+    const title = objs.find((o) => o.type === 'text' && /<h2>/.test(o.html)) as TextSlideObject | undefined
     expect(title).toBeTruthy()
-    expect(title.html).toContain('My Title')
+    expect(title!.html).toContain('My Title')
     // Title geometry maps from EMU offsets → normalized fractions in [0,1].
-    expect(title.x).toBeGreaterThan(0)
-    expect(title.x).toBeLessThan(0.2)
-    expect(title.y).toBeGreaterThan(0)
+    expect(title!.x).toBeGreaterThan(0)
+    expect(title!.x).toBeLessThan(0.2)
+    expect(title!.y).toBeGreaterThan(0)
 
-    const body = objs.find((o) => o.type === 'text' && /Point A/.test(o.html))
-    expect(body.html).toContain('<strong>Point A</strong>')
+    const body = objs.find((o) => o.type === 'text' && /Point A/.test(o.html)) as TextSlideObject | undefined
+    expect(body!.html).toContain('<strong>Point A</strong>')
 
-    const img = objs.find((o) => o.type === 'image')
-    expect(img.src).toMatch(/^data:image\/png;base64,/)
-    expect(img.w).toBeCloseTo(3000000 / 12192000, 3)
+    const img = objs.find((o) => o.type === 'image') as ImageSlideObject | undefined
+    expect(img!.src).toMatch(/^data:image\/png;base64,/)
+    expect(img!.w).toBeCloseTo(3000000 / 12192000, 3)
 
     expect(deck.slides[0].notes).toContain('Speaker note here')
   })
@@ -81,7 +81,7 @@ describe('pptxToSlides — security', () => {
   it('script-like run text survives sanitizeObjects with no live script', async () => {
     const deck = await pptxToSlides(await makePptx(), 'd.pptx')
     const clean = sanitizeObjects(deck.slides[0].objects)
-    const joined = clean.map((o) => o.html || o.src || '').join(' ')
+    const joined = clean.map((o) => (o as TextSlideObject).html || (o as ImageSlideObject).src || '').join(' ')
     // The run text is XML-escaped as it is lifted from the part, so it renders as
     // visible literal text — never a live <script> element.
     expect(joined).not.toMatch(/<script/i)
@@ -128,13 +128,13 @@ describe('odpToSlides — fidelity', () => {
     const deck = await odpToSlides(await makeOdp(), 'd.odp')
     expect(deck.slides).toHaveLength(1)
     const objs = deck.slides[0].objects
-    const text = objs.find((o) => o.type === 'text')
-    expect(text.html).toContain('ODP Title')
-    expect(text.x).toBeCloseTo(1 / 10, 2)      // 1in of a 10in page
-    expect(text.y).toBeCloseTo(0.5 / 7.5, 2)
-    const img = objs.find((o) => o.type === 'image')
-    expect(img.src).toMatch(/^data:image\/png;base64,/)
-    expect(img.w).toBeCloseTo(4 / 10, 2)
+    const text = objs.find((o) => o.type === 'text') as TextSlideObject | undefined
+    expect(text!.html).toContain('ODP Title')
+    expect(text!.x).toBeCloseTo(1 / 10, 2)      // 1in of a 10in page
+    expect(text!.y).toBeCloseTo(0.5 / 7.5, 2)
+    const img = objs.find((o) => o.type === 'image') as ImageSlideObject | undefined
+    expect(img!.src).toMatch(/^data:image\/png;base64,/)
+    expect(img!.w).toBeCloseTo(4 / 10, 2)
   })
 
   it('imported objects pass sanitizeObjects unchanged in count', async () => {
