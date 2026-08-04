@@ -23,15 +23,36 @@
  */
 
 import { cloneElement, useCallback, useEffect, useRef, useState } from 'react'
+import type { ButtonHTMLAttributes, MouseEvent as ReactMouseEvent, KeyboardEvent as ReactKeyboardEvent, ReactElement, ReactNode, Ref } from 'react'
 
 const FOCUSABLE = 'input:not([disabled]), [role="menuitem"]:not([disabled])'
 const ITEM_SEL = '[role="menuitem"]:not([disabled])'
 
-export default function Menu({ trigger, children, align = 'left', width = 'w-44', className = '' }) {
+interface TriggerProps {
+  onClick?: (e: ReactMouseEvent) => void
+  onKeyDown?: (e: ReactKeyboardEvent) => void
+}
+
+// React elements carry a legacy top-level `ref` alongside `props` (outside the
+// public ReactElement<P> type surface) — this mirrors that at the type level
+// so we can read/merge the caller's own ref, same as the original JS did.
+interface ElementWithRef {
+  ref?: Ref<HTMLElement> | null
+}
+
+interface MenuProps {
+  trigger: ReactElement<TriggerProps>
+  children?: ReactNode
+  align?: 'left' | 'right'
+  width?: string
+  className?: string
+}
+
+function MenuBase({ trigger, children, align = 'left', width = 'w-44', className = '' }: MenuProps) {
   const [open, setOpen] = useState(false)
-  const rootRef = useRef(null)
-  const menuRef = useRef(null)
-  const triggerRef = useRef(null)
+  const rootRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLElement | null>(null)
 
   const close = useCallback((restoreFocus = false) => {
     setOpen(false)
@@ -41,8 +62,8 @@ export default function Menu({ trigger, children, align = 'left', width = 'w-44'
   // Outside-click + Escape.
   useEffect(() => {
     if (!open) return
-    const onDown = (e) => { if (!rootRef.current?.contains(e.target)) setOpen(false) }
-    const onKey = (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(true) } }
+    const onDown = (e: MouseEvent) => { if (!rootRef.current?.contains(e.target as Node)) setOpen(false) }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); close(true) } }
     document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onKey)
     return () => {
@@ -53,15 +74,16 @@ export default function Menu({ trigger, children, align = 'left', width = 'w-44'
 
   // Move focus into the panel on open.
   useEffect(() => {
-    if (open) menuRef.current?.querySelector(FOCUSABLE)?.focus()
+    if (open) (menuRef.current?.querySelector(FOCUSABLE) as HTMLElement | null)?.focus()
   }, [open])
 
-  const onMenuKeyDown = (e) => {
+  const onMenuKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(e.key)) return
-    const items = [...menuRef.current.querySelectorAll(ITEM_SEL)]
+    if (!menuRef.current) return
+    const items = [...menuRef.current.querySelectorAll<HTMLElement>(ITEM_SEL)]
     if (!items.length) return
     e.preventDefault()
-    const i = items.indexOf(document.activeElement)
+    const i = items.indexOf(document.activeElement as HTMLElement)
     if (e.key === 'ArrowDown') items[(i + 1) % items.length].focus()
     else if (e.key === 'ArrowUp') items[(i - 1 + items.length) % items.length].focus()
     else if (e.key === 'Home') items[0].focus()
@@ -69,23 +91,23 @@ export default function Menu({ trigger, children, align = 'left', width = 'w-44'
   }
 
   const triggerEl = cloneElement(trigger, {
-    ref: (node) => {
+    ref: (node: HTMLElement | null) => {
       triggerRef.current = node
-      const r = trigger.ref
+      const r = (trigger as unknown as ElementWithRef).ref
       if (typeof r === 'function') r(node)
-      else if (r) r.current = node
+      else if (r) (r as { current: HTMLElement | null }).current = node
     },
     'aria-haspopup': 'menu',
     'aria-expanded': open,
-    onClick: (e) => { trigger.props.onClick?.(e); setOpen((v) => !v) },
-    onKeyDown: (e) => {
+    onClick: (e: ReactMouseEvent) => { trigger.props.onClick?.(e); setOpen((v) => !v) },
+    onKeyDown: (e: ReactKeyboardEvent) => {
       trigger.props.onKeyDown?.(e)
       if (e.key === 'ArrowDown' || ((e.key === 'Enter' || e.key === ' ') && !open)) {
         e.preventDefault()
         setOpen(true)
       }
     },
-  })
+  } as Partial<TriggerProps> & { ref: Ref<HTMLElement>; 'aria-haspopup': string; 'aria-expanded': boolean })
 
   return (
     <div ref={rootRef} className={`relative ${className}`}>
@@ -110,7 +132,12 @@ export default function Menu({ trigger, children, align = 'left', width = 'w-44'
   )
 }
 
-Menu.Item = function MenuItem({ children, onClick, active, disabled, className = '', ...rest }) {
+interface MenuItemProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  children?: ReactNode
+  active?: boolean
+}
+
+function MenuItem({ children, onClick, active, disabled, className = '', ...rest }: MenuItemProps) {
   return (
     <button
       type="button"
@@ -132,7 +159,7 @@ Menu.Item = function MenuItem({ children, onClick, active, disabled, className =
 }
 
 // Non-interactive section label for grouping items.
-Menu.Label = function MenuLabel({ children }) {
+function MenuLabel({ children }: { children?: ReactNode }) {
   return (
     <p className="px-3 py-1 text-2xs font-semibold text-ink-faint tracking-eyebrow uppercase select-none">
       {children}
@@ -140,6 +167,10 @@ Menu.Label = function MenuLabel({ children }) {
   )
 }
 
-Menu.Sep = function MenuSep() {
+function MenuSep() {
   return <div className="my-1 border-t border-line" aria-hidden="true" />
 }
+
+const Menu = Object.assign(MenuBase, { Item: MenuItem, Label: MenuLabel, Sep: MenuSep })
+
+export default Menu
