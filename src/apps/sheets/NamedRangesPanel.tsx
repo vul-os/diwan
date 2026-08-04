@@ -1,5 +1,5 @@
 /**
- * src/apps/sheets/NamedRangesPanel.jsx
+ * src/apps/sheets/NamedRangesPanel.tsx
  *
  * Named ranges side panel.
  * Persists named ranges in sheet.namedRanges (sheet metadata) — an array of
@@ -14,7 +14,25 @@ import { useState } from 'react'
 import { X, Plus, Trash2, Edit2, Copy, Check } from 'lucide-react'
 import { Button, IconButton } from '../../components/ui'
 
-function getNamedRanges(data) {
+export interface NamedRangeEntry {
+  name: string
+  range: string
+  sheetName: string
+}
+
+export interface NRSheet {
+  name?: string
+  namedRanges?: NamedRangeEntry[]
+  [key: string]: unknown
+}
+
+export interface NamedRangesPanelProps {
+  data: NRSheet[]
+  onClose: () => void
+  onChange?: (data: NRSheet[]) => void
+}
+
+function getNamedRanges(data: NRSheet[] | null | undefined): NamedRangeEntry[] {
   // Stored on the first sheet's metadata for simplicity.
   return data?.[0]?.namedRanges || []
 }
@@ -24,21 +42,21 @@ function getNamedRanges(data) {
 // see namedRanges.js. FortuneSheet's grammar has no native name binding, so a
 // name is entered by referencing its range; this affordance copies exactly that
 // reference so the user can paste it into a formula.)
-function refFor(r) {
+function refFor(r: NamedRangeEntry): string {
   const needsQuote = !/^[A-Za-z_][A-Za-z0-9_]*$/.test(r.sheetName || '')
   const sheet = needsQuote ? `'${String(r.sheetName).replace(/'/g, "''")}'` : r.sheetName
   return r.sheetName ? `${sheet}!${r.range}` : r.range
 }
 
-export default function NamedRangesPanel({ data, onClose, onChange }) {
-  const [ranges,   setRanges]   = useState(getNamedRanges(data))
-  const [editIdx,  setEditIdx]  = useState(null)
-  const [form,     setForm]     = useState({ name: '', range: '', sheetName: data?.[0]?.name || 'Sheet1' })
+export default function NamedRangesPanel({ data, onClose, onChange }: NamedRangesPanelProps) {
+  const [ranges,   setRanges]   = useState<NamedRangeEntry[]>(getNamedRanges(data))
+  const [editIdx,  setEditIdx]  = useState<number | null>(null)
+  const [form,     setForm]     = useState<NamedRangeEntry>({ name: '', range: '', sheetName: data?.[0]?.name || 'Sheet1' })
   const [editing,  setEditing]  = useState(false)
   const [error,    setError]    = useState('')
-  const [copiedIdx, setCopiedIdx] = useState(null)
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
 
-  function copyRef(i) {
+  function copyRef(i: number) {
     const ref = refFor(ranges[i])
     try { navigator.clipboard?.writeText(ref) } catch { /* clipboard blocked — ignore */ }
     setCopiedIdx(i)
@@ -54,14 +72,14 @@ export default function NamedRangesPanel({ data, onClose, onChange }) {
     setError('')
   }
 
-  function startEdit(i) {
+  function startEdit(i: number) {
     setForm({ ...ranges[i] })
     setEditIdx(i)
     setEditing(true)
     setError('')
   }
 
-  function validate(f) {
+  function validate(f: NamedRangeEntry): string | null {
     if (!f.name.trim()) return 'Name is required'
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(f.name)) return 'Name must start with a letter and contain only letters, digits, underscores'
     if (!f.range.trim()) return 'Range is required'
@@ -76,7 +94,7 @@ export default function NamedRangesPanel({ data, onClose, onChange }) {
   function save() {
     const err = validate(form)
     if (err) { setError(err); return }
-    let next
+    let next: NamedRangeEntry[]
     if (editIdx !== null) {
       next = ranges.map((r, i) => i === editIdx ? { ...form } : r)
     } else {
@@ -87,13 +105,13 @@ export default function NamedRangesPanel({ data, onClose, onChange }) {
     pushChange(next)
   }
 
-  function remove(i) {
+  function remove(i: number) {
     const next = ranges.filter((_, idx) => idx !== i)
     setRanges(next)
     pushChange(next)
   }
 
-  function pushChange(next) {
+  function pushChange(next: NamedRangeEntry[]) {
     if (!onChange) return
     const nextData = data.map((sheet, idx) =>
       idx === 0 ? { ...sheet, namedRanges: next } : sheet
