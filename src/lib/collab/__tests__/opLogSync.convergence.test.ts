@@ -159,7 +159,7 @@ async function newTree(log: OpLogSyncOptions['transport']): Promise<{ s: TreeSes
 async function reloadTreeTitles(log: OpLogSyncOptions['transport']): Promise<string[]> {
   const { s, sync } = await newTree(log)
   await sync.stop()
-  return s.orderedSlides().map(({ data }: { data: { title: string } }) => data.title)
+  return s.orderedSlides().map(({ data }) => (data as { title: string }).title)
 }
 
 describe('OpLogSync tree convergence (Slides)', () => {
@@ -213,7 +213,8 @@ describe('OpLogSync tree convergence (Slides)', () => {
     const slide = s.orderedSlides()[0].data
     // Object edit from A and title edit from B both survive (object-granular LWW).
     expect(slide.title).toBe('B-TITLE')
-    expect(slide.objects.find((o: { id: string, text: string }) => o.id === 'o1').text).toBe('EDITED')
+    const editedObj = (slide.objects ?? []).find((o) => o.id === 'o1') as { id: string, text: string } | undefined
+    expect(editedObj?.text).toBe('EDITED')
   })
 
   it('hydrate disables cleanly when the server has no update log (404)', async () => {

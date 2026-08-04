@@ -41,26 +41,31 @@
  *   session.destroy();
  */
 
+import type { FabricClient } from '../collab/webrtc/fabric.js'
+
 // ---------------------------------------------------------------------------
 // Lamport clock (same as grid.js)
 // ---------------------------------------------------------------------------
 
 class LamportClock {
-  constructor(replicaId) {
+  replicaId: string
+  c: number
+
+  constructor(replicaId: string) {
     this.replicaId = replicaId
     this.c = 0
   }
 
-  tick() {
+  tick(): string {
     this.c += 1
     return this._format(this.c)
   }
 
-  observe(remoteCounter) {
+  observe(remoteCounter: number): void {
     if (remoteCounter > this.c) this.c = remoteCounter
   }
 
-  _format(counter) {
+  _format(counter: number): string {
     return (
       String(Date.now()).padStart(20, '0') +
       '_' +
@@ -82,7 +87,7 @@ class LamportClock {
  * `parseInt` admits negatives and non-numeric garbage as NaN instead of
  * rejecting them here.
  */
-function opIdCounter(id) {
+function opIdCounter(id: unknown): number | null {
   const n = Number(String(id).split('_')[1])
   return Number.isInteger(n) && n >= 0 ? n : null
 }
@@ -103,7 +108,7 @@ function opIdCounter(id) {
 // order. Reject at the decode boundary instead: a malformed id sorts
 // strictly BELOW every well-formed one, in both argument positions, so it
 // can never win a compare it takes part in.
-function opIdLess(a, b) {
+function opIdLess(a: unknown, b: unknown): boolean {
   const ai = opIdCounter(a)
   const bi = opIdCounter(b)
   if (ai === null || bi === null) return ai === null && bi !== null
@@ -130,6 +135,32 @@ const TREE_OP_SET_SLIDE = 5
 const ROOT_ID = ''
 
 // ---------------------------------------------------------------------------
+// Op / slide shapes
+// ---------------------------------------------------------------------------
+
+/** An Excalidraw-like slide object — untrusted shape off the wire; only `id`
+ *  and `z` (paint order) are relied on here. */
+export type SlideObject = { id?: string, z?: number, [key: string]: unknown }
+/** A slide: an object-array (`objects`) plus arbitrary scalar props
+ *  (title/content/background/master/transition/animations/notes/…). */
+export type Slide = { objects?: SlideObject[], [key: string]: unknown }
+
+/** One changed object in a TREE_OP_SET_SLIDE — `obj: null` means deleted. */
+export type SlideObjectOp = { id: string, opId: string, obj: SlideObject | null }
+/** One changed scalar prop in a TREE_OP_SET_SLIDE. */
+export type SlideScalarOp = { key: string, opId: string, val: unknown }
+
+export type TreeOpInsert = { kind: typeof TREE_OP_INSERT, id: string, parent: string, ordKey: string }
+export type TreeOpMove = { kind: typeof TREE_OP_MOVE, id: string, target: string, parent: string, ordKey: string }
+export type TreeOpSetText = { kind: typeof TREE_OP_SET_TEXT, id: string, target: string, value?: string }
+export type TreeOpDelete = { kind: typeof TREE_OP_DELETE, id: string, target: string }
+export type TreeOpSetSlide = {
+  kind: typeof TREE_OP_SET_SLIDE, id: string, target: string,
+  objects?: SlideObjectOp[], scalars?: SlideScalarOp[],
+}
+export type TreeOp = TreeOpInsert | TreeOpMove | TreeOpSetText | TreeOpDelete | TreeOpSetSlide
+
+// ---------------------------------------------------------------------------
 // Slide value <-> object-granular state
 // ---------------------------------------------------------------------------
 //
@@ -145,15 +176,23 @@ const ROOT_ID = ''
 const OBJECTS_KEY = 'objects'
 
 /** Deterministic JSON for equality checks (stable key order). */
-function stableStringify(v) {
+function stableStringify(v: unknown): string {
   if (v === null || typeof v !== 'object') return JSON.stringify(v)
   if (Array.isArray(v)) return '[' + v.map(stableStringify).join(',') + ']'
-  const keys = Object.keys(v).sort()
-  return '{' + keys.map((k) => JSON.stringify(k) + ':' + stableStringify(v[k])).join(',') + '}'
+  const rec = v as Record<string, unknown>
+  const keys = Object.keys(rec).sort()
+  return '{' + keys.map((k) => JSON.stringify(k) + ':' + stableStringify(rec[k])).join(',') + '}'
 }
 
-function objectId(o, i) {
+function objectId(o: SlideObject | null | undefined, i: number): string {
   return o && typeof o === 'object' && typeof o.id === 'string' && o.id ? o.id : `_anon_${i}`
+}
+
+/** A per-node structured slide state's persisted form. */
+export type SlideStateSnapshot = {
+  objects: Array<{ id: string, opId: string, obj: SlideObject }>
+  objTomb: Array<{ id: string, opId: string }>
+  scalars: Array<{ key: string, opId: string, val: unknown }>
 }
 
 /**
@@ -161,6 +200,10 @@ function objectId(o, i) {
  * merges other states / ops per-object and per-scalar (latest opId wins).
  */
 class SlideState {
+  objects: Map<string, { opId: string, obj: SlideObject }>
+  objTomb: Map<string, string>
+  scalars: Map<string, { opId: string, val: unknown }>
+
   constructor() {
     this.objects = new Map()  // id → { opId, obj }
     this.objTomb = new Map()  // id → opId (delete stamp)
@@ -169,7 +212,7 @@ class SlideState {
 
   /** Apply a whole-slide LWW baseline (legacy SET_TEXT). Every field is stamped
    * with the SAME opId; per-object/per-scalar ops with a higher opId refine it. */
-  applyWhole(opId, slide) {
+  applyWhole(opId: string, slide: Slide): void {
     if (!slide || typeof slide !== 'object') return
     for (const [key, val] of Object.entries(slide)) {
       if (key === OBJECTS_KEY) continue
@@ -180,7 +223,7 @@ class SlideState {
     }
   }
 
-  applySetSlide(op) {
+  applySetSlide(op: TreeOpSetSlide): void {
     if (Array.isArray(op.objects)) {
       for (const e of op.objects) {
         if (!e || typeof e.id !== 'string') continue
@@ -196,7 +239,7 @@ class SlideState {
     }
   }
 
-  _setObject(id, opId, obj) {
+  _setObject(id: string, opId: string, obj: SlideObject): void {
     const cur = this.objects.get(id)
     if (cur && !opIdLess(cur.opId, opId)) return   // keep newer
     this.objects.set(id, { opId, obj })
@@ -205,33 +248,33 @@ class SlideState {
     if (t && opIdLess(t, opId)) this.objTomb.delete(id)
   }
 
-  _tombObject(id, opId) {
+  _tombObject(id: string, opId: string): void {
     const cur = this.objTomb.get(id)
     if (cur && !opIdLess(cur, opId)) return
     this.objTomb.set(id, opId)
   }
 
-  _setScalar(key, opId, val) {
+  _setScalar(key: string, opId: string, val: unknown): void {
     const cur = this.scalars.get(key)
     if (cur && !opIdLess(cur.opId, opId)) return
     this.scalars.set(key, { opId, val })
   }
 
   /** True if there is any content (used to distinguish an empty node). */
-  hasContent() {
+  hasContent(): boolean {
     return this.scalars.size > 0 || this.objects.size > 0
   }
 
   /** Reconstruct the plain slide object. Objects that are tombstoned (with a
    * stamp >= their last set) are omitted. Objects[] is sorted by (z, id) so the
    * reconstruction is deterministic across replicas. */
-  toSlide() {
-    const slide = {}
+  toSlide(): Slide {
+    const slide: Slide = {}
     for (const [key, { val }] of this.scalars) slide[key] = val
-    const live = []
+    const live: SlideObject[] = []
     for (const [id, { obj }] of this.objects) {
       const t = this.objTomb.get(id)
-      const setStamp = this.objects.get(id).opId
+      const setStamp = this.objects.get(id)!.opId
       if (t && !opIdLess(t, setStamp)) continue   // tombstone wins → dropped
       live.push(obj)
     }
@@ -246,7 +289,7 @@ class SlideState {
     return slide
   }
 
-  clone() {
+  clone(): SlideState {
     const s = new SlideState()
     s.objects = new Map(this.objects)
     s.objTomb = new Map(this.objTomb)
@@ -254,7 +297,7 @@ class SlideState {
     return s
   }
 
-  snapshot() {
+  snapshot(): SlideStateSnapshot {
     return {
       objects: [...this.objects.entries()].map(([id, { opId, obj }]) => ({ id, opId, obj })),
       objTomb: [...this.objTomb.entries()].map(([id, opId]) => ({ id, opId })),
@@ -262,7 +305,7 @@ class SlideState {
     }
   }
 
-  static restore(snap) {
+  static restore(snap: SlideStateSnapshot | null | undefined): SlideState {
     const s = new SlideState()
     if (!snap || typeof snap !== 'object') return s
     for (const e of snap.objects || []) if (e && typeof e.id === 'string') s.objects.set(e.id, { opId: e.opId, obj: e.obj })
@@ -272,9 +315,9 @@ class SlideState {
   }
 
   /** Max opId carried anywhere in this state (to seed the Lamport clock). */
-  maxOpId() {
+  maxOpId(): string {
     let mx = ''
-    const consider = (id) => { if (id && (mx === '' || opIdLess(mx, id))) mx = id }
+    const consider = (id: string) => { if (id && (mx === '' || opIdLess(mx, id))) mx = id }
     for (const { opId } of this.objects.values()) consider(opId)
     for (const opId of this.objTomb.values()) consider(opId)
     for (const { opId } of this.scalars.values()) consider(opId)
@@ -289,11 +332,16 @@ class SlideState {
  * a local edit to ONE object only broadcasts that object — never clobbering a
  * concurrent peer edit to another object on the same slide.
  */
-function diffSlide(prev, next) {
-  const prevObjs = new Map((Array.isArray(prev?.objects) ? prev.objects : []).map((o, i) => [objectId(o, i), o]))
-  const nextObjs = new Map((Array.isArray(next?.objects) ? next.objects : []).map((o, i) => [objectId(o, i), o]))
+type SlideDiff = {
+  objects: Array<{ id: string, obj: SlideObject | null }>
+  scalars: Array<{ key: string, val: unknown }>
+}
 
-  const objects = []
+function diffSlide(prev: Slide | undefined, next: Slide | undefined): SlideDiff {
+  const prevObjs = new Map((Array.isArray(prev?.objects) ? prev!.objects! : []).map((o, i) => [objectId(o, i), o] as const))
+  const nextObjs = new Map((Array.isArray(next?.objects) ? next!.objects! : []).map((o, i) => [objectId(o, i), o] as const))
+
+  const objects: Array<{ id: string, obj: SlideObject | null }> = []
   for (const [id, o] of nextObjs) {
     const before = prevObjs.get(id)
     if (!before || stableStringify(before) !== stableStringify(o)) objects.push({ id, obj: o })
@@ -302,7 +350,7 @@ function diffSlide(prev, next) {
     if (!nextObjs.has(id)) objects.push({ id, obj: null })   // deleted
   }
 
-  const scalars = []
+  const scalars: Array<{ key: string, val: unknown }> = []
   const keys = new Set([...Object.keys(prev || {}), ...Object.keys(next || {})])
   keys.delete(OBJECTS_KEY)
   for (const key of keys) {
@@ -317,27 +365,63 @@ function diffSlide(prev, next) {
 // TreeCRDT — in-memory LWW ordered tree
 // ---------------------------------------------------------------------------
 
+type TreeNode = {
+  id: string
+  parent: string
+  ordKey: string
+  ordId: string
+  slide: SlideState
+  deleted: boolean
+}
+
+/** A node as read from a snapshot (own format — always fully populated) or a
+ *  peer/legacy source (partial; missing fields fall back sanely). */
+export type TreeNodeLike = {
+  id: string
+  parent?: string
+  ordKey?: string
+  ordId?: string
+  deleted?: boolean
+  slide?: SlideStateSnapshot
+  value?: string
+  valueId?: string
+}
+
+/** The full snapshot shape TreeCRDT.snapshot() always produces. */
+export type TreeNodeSnapshot = {
+  id: string
+  parent: string
+  ordKey: string
+  ordId: string
+  deleted: boolean
+  slide: SlideStateSnapshot
+  value: string
+  valueId: string
+}
+
 class TreeCRDT {
+  // nodeId (string) → { id, parent, ordKey, ordId, slide:SlideState, deleted }
+  // (`slide` is the object-granular P1 state; the legacy value/valueId are
+  // folded INTO it via applyWhole so old ops/snapshots still converge.)
+  private _nodes: Map<string, TreeNode>
+
   constructor() {
-    // nodeId (string) → { id, parent, ordKey, ordId, slide:SlideState, deleted }
-    // (`slide` is the object-granular P1 state; the legacy value/valueId are
-    // folded INTO it via applyWhole so old ops/snapshots still converge.)
     this._nodes = new Map()
   }
 
-  _newNode(over = {}) {
+  private _newNode(over: Partial<TreeNode> = {}): TreeNode {
     return {
       id: '', parent: ROOT_ID, ordKey: '', ordId: '',
       slide: new SlideState(), deleted: false, ...over,
     }
   }
 
-  apply(op) {
+  apply(op: TreeOp): void {
     switch (op.kind) {
       case TREE_OP_INSERT: {
         if (this._nodes.has(op.id)) {
           // Node exists; fill parent/ordKey if we don't have a positioning op yet.
-          const n = this._nodes.get(op.id)
+          const n = this._nodes.get(op.id)!
           if (!n.ordId || opIdLess(n.ordId, op.id)) {
             n.parent = op.parent
             n.ordKey = op.ordKey
@@ -382,7 +466,7 @@ class TreeCRDT {
           n = this._newNode({ id: op.target })
           this._nodes.set(op.target, n)
         }
-        let slide
+        let slide: Slide
         try { slide = op.value ? JSON.parse(op.value) : {} } catch { slide = {} }
         n.slide.applyWhole(op.id, slide)
         break
@@ -409,8 +493,8 @@ class TreeCRDT {
     }
   }
 
-  _wouldCycle(node, newParent) {
-    let cur = newParent
+  private _wouldCycle(node: string, newParent: string): boolean {
+    let cur: string | undefined = newParent
     let limit = this._nodes.size + 1
     while (cur && cur !== ROOT_ID && limit-- > 0) {
       if (cur === node) return true
@@ -422,14 +506,14 @@ class TreeCRDT {
   }
 
   /** Return visible children of parent sorted by (ordKey, id). */
-  children(parentId) {
-    const out = []
+  children(parentId: string): string[] {
+    const out: string[] = []
     for (const [id, n] of this._nodes) {
       if (!n.deleted && n.parent === parentId) out.push(id)
     }
     out.sort((a, b) => {
-      const na = this._nodes.get(a)
-      const nb = this._nodes.get(b)
+      const na = this._nodes.get(a)!
+      const nb = this._nodes.get(b)!
       if (na.ordKey !== nb.ordKey) return na.ordKey < nb.ordKey ? -1 : 1
       return a < b ? -1 : a > b ? 1 : 0
     })
@@ -437,13 +521,13 @@ class TreeCRDT {
   }
 
   /** Depth-first ordered list of visible node ids from root. */
-  order() {
-    const out = []
+  order(): string[] {
+    const out: string[] = []
     this._walk(ROOT_ID, out)
     return out
   }
 
-  _walk(parentId, out) {
+  private _walk(parentId: string, out: string[]): void {
     for (const id of this.children(parentId)) {
       out.push(id)
       this._walk(id, out)
@@ -451,14 +535,14 @@ class TreeCRDT {
   }
 
   /** Return the reconstructed plain slide object for a node (or undefined). */
-  value(id) {
+  value(id: string): Slide | undefined {
     const n = this._nodes.get(id)
     if (!n || n.deleted) return undefined
     return n.slide.toSlide()
   }
 
   /** The raw SlideState for a node (used by TreeSession.setSlide diffing). */
-  slideState(id) {
+  slideState(id: string): SlideState | null {
     const n = this._nodes.get(id)
     return n ? n.slide : null
   }
@@ -470,7 +554,7 @@ class TreeCRDT {
    * only wins for entries whose opId is strictly newer. `n.slide` (from a new
    * peer's snapshot) is preferred; a legacy `value` is folded in via applyWhole.
    */
-  mergeSlideSnapshot(id, snapNode) {
+  mergeSlideSnapshot(id: string, snapNode: TreeNodeLike): void {
     let n = this._nodes.get(id)
     if (!n) { n = this._newNode({ id }); this._nodes.set(id, n) }
     if (snapNode.slide) {
@@ -479,14 +563,14 @@ class TreeCRDT {
       for (const [oid, opId] of incoming.objTomb) n.slide._tombObject(oid, opId)
       for (const [key, { opId, val }] of incoming.scalars) n.slide._setScalar(key, opId, val)
     } else if (snapNode.value !== undefined && snapNode.value !== '') {
-      let slide
+      let slide: Slide
       try { slide = JSON.parse(snapNode.value) } catch { slide = {} }
       n.slide.applyWhole(snapNode.valueId || snapNode.ordId || snapNode.id, slide)
     }
   }
 
-  snapshot() {
-    const out = []
+  snapshot(): TreeNodeSnapshot[] {
+    const out: TreeNodeSnapshot[] = []
     for (const [, n] of this._nodes) {
       out.push({
         id: n.id, parent: n.parent, ordKey: n.ordKey, ordId: n.ordId,
@@ -502,17 +586,17 @@ class TreeCRDT {
     return out
   }
 
-  restore(nodes) {
+  restore(nodes: TreeNodeLike[]): void {
     this._nodes.clear()
     for (const n of nodes) {
       const node = this._newNode({
-        id: n.id, parent: n.parent, ordKey: n.ordKey, ordId: n.ordId, deleted: !!n.deleted,
+        id: n.id, parent: n.parent ?? ROOT_ID, ordKey: n.ordKey ?? '', ordId: n.ordId ?? '', deleted: !!n.deleted,
       })
       if (n.slide) {
         node.slide = SlideState.restore(n.slide)
       } else if (n.value !== undefined && n.value !== '') {
         // Legacy snapshot: fold the whole-slide value in under its valueId.
-        let slide
+        let slide: Slide
         try { slide = JSON.parse(n.value) } catch { slide = {} }
         node.slide.applyWhole(n.valueId || n.ordId || n.id, slide)
       }
@@ -529,7 +613,7 @@ class TreeCRDT {
  * Return an ordKey string positioned between `before` and `after`.
  * Uses a simple midpoint-string approach; infinite precision.
  */
-export function ordKeyBetween(before, after) {
+export function ordKeyBetween(before?: string | null, after?: string | null): string {
   const b = before || 'a'
   const a = after  || 'z'
   if (b < a) {
@@ -541,7 +625,7 @@ export function ordKeyBetween(before, after) {
   return b + 'm'
 }
 
-function midString(lo, hi) {
+function midString(lo: string, hi: string): string {
   // Find first differing position.
   let i = 0
   while (i < lo.length && i < hi.length && lo[i] === hi[i]) i++
@@ -558,7 +642,7 @@ function midString(lo, hi) {
   return lo + 'm'
 }
 
-function midChar(c) {
+function midChar(c: string | undefined): string {
   const code = c ? c.charCodeAt(0) : 'z'.charCodeAt(0)
   return String.fromCharCode(Math.floor(('a'.charCodeAt(0) + code) / 2))
 }
@@ -567,18 +651,33 @@ function midChar(c) {
 // TreeSession — ties TreeCRDT to a FabricClient
 // ---------------------------------------------------------------------------
 
-const SNAPSHOT_KEY = (id) => `crdt_tree_${id}`
-const OP_LOG_KEY   = (id) => `crdt_tree_ops_${id}`
+const SNAPSHOT_KEY = (id: string) => `crdt_tree_${id}`
+const OP_LOG_KEY   = (id: string) => `crdt_tree_ops_${id}`
 const MAX_OPLOG    = 500
 
+export type TreeSessionOptions = {
+  sessionId: string
+  replicaId: string
+  fabricClient?: FabricClient | null
+}
+
+type FabricMessage = {
+  type: string
+  session: string
+  op?: unknown
+  nodes?: unknown
+}
+
 export class TreeSession extends EventTarget {
-  /**
-   * @param {object} opts
-   * @param {string}            opts.sessionId
-   * @param {string}            opts.replicaId
-   * @param {FabricClient|null} [opts.fabricClient]
-   */
-  constructor({ sessionId, replicaId, fabricClient = null }) {
+  private _session: string
+  private _replicaId: string
+  private _fabric: FabricClient | null
+  private _clock: LamportClock
+  private _crdt: TreeCRDT
+  private _destroyed: boolean
+  private _onFabricMessage?: (ev: Event) => void
+
+  constructor({ sessionId, replicaId, fabricClient = null }: TreeSessionOptions) {
     super()
     this._session   = sessionId
     this._replicaId = replicaId
@@ -590,7 +689,7 @@ export class TreeSession extends EventTarget {
     this._loadLocal()
 
     if (this._fabric) {
-      this._onFabricMessage = (ev) => this._handleFabricMessage(ev.detail.data)
+      this._onFabricMessage = (ev: Event) => this._handleFabricMessage((ev as CustomEvent).detail.data)
       this._fabric.addEventListener('message', this._onFabricMessage)
     }
   }
@@ -601,13 +700,13 @@ export class TreeSession extends EventTarget {
 
   /**
    * Insert a new slide node.
-   * @param {string}  ordKey   - position key (use ordKeyBetween)
-   * @param {object}  data     - slide data object (will be JSON-encoded as value)
-   * @returns {string} the new nodeId
+   * @param ordKey - position key (use ordKeyBetween)
+   * @param data   - slide data object (will be JSON-encoded as value)
+   * @returns the new nodeId
    */
-  insertSlide(ordKey, data) {
+  insertSlide(ordKey: string, data?: Slide): string {
     const id = this._clock.tick()
-    const op = { kind: TREE_OP_INSERT, id, parent: ROOT_ID, ordKey }
+    const op: TreeOpInsert = { kind: TREE_OP_INSERT, id, parent: ROOT_ID, ordKey }
     this._crdt.apply(op)
     this._broadcast({ type: 'tree_op', session: this._session, op })
     this._persistOp(op)
@@ -625,15 +724,15 @@ export class TreeSession extends EventTarget {
    * SAME slide therefore both survive (per-object LWW); two peers editing the
    * SAME object is deterministic per-object LWW.
    */
-  setSlide(nodeId, data) {
+  setSlide(nodeId: string, data: Slide): void {
     const prev = this._crdt.value(nodeId) || {}
     const { objects, scalars } = diffSlide(prev, data || {})
     if (objects.length === 0 && scalars.length === 0) return   // nothing changed
 
     // Stamp every changed entry with its own fresh opId.
-    const objOps = objects.map((e) => ({ id: e.id, opId: this._clock.tick(), obj: e.obj }))
-    const scalarOps = scalars.map((e) => ({ key: e.key, opId: this._clock.tick(), val: e.val }))
-    const op = {
+    const objOps: SlideObjectOp[] = objects.map((e) => ({ id: e.id, opId: this._clock.tick(), obj: e.obj }))
+    const scalarOps: SlideScalarOp[] = scalars.map((e) => ({ key: e.key, opId: this._clock.tick(), val: e.val }))
+    const op: TreeOpSetSlide = {
       kind: TREE_OP_SET_SLIDE, id: this._clock.tick(), target: nodeId,
       objects: objOps, scalars: scalarOps,
     }
@@ -644,9 +743,9 @@ export class TreeSession extends EventTarget {
   }
 
   /** Move / reorder a slide. */
-  moveSlide(nodeId, newOrdKey) {
+  moveSlide(nodeId: string, newOrdKey: string): void {
     const id = this._clock.tick()
-    const op = { kind: TREE_OP_MOVE, id, target: nodeId, parent: ROOT_ID, ordKey: newOrdKey }
+    const op: TreeOpMove = { kind: TREE_OP_MOVE, id, target: nodeId, parent: ROOT_ID, ordKey: newOrdKey }
     this._crdt.apply(op)
     this._broadcast({ type: 'tree_op', session: this._session, op })
     this._persistOp(op)
@@ -654,9 +753,9 @@ export class TreeSession extends EventTarget {
   }
 
   /** Delete a slide. */
-  deleteSlide(nodeId) {
+  deleteSlide(nodeId: string): void {
     const id = this._clock.tick()
-    const op = { kind: TREE_OP_DELETE, id, target: nodeId }
+    const op: TreeOpDelete = { kind: TREE_OP_DELETE, id, target: nodeId }
     this._crdt.apply(op)
     this._broadcast({ type: 'tree_op', session: this._session, op })
     this._persistOp(op)
@@ -671,24 +770,24 @@ export class TreeSession extends EventTarget {
   // -------------------------------------------------------------------------
 
   /** Fire a 'localOp' event so an update-log sync can append the op as a frame. */
-  _emitLocalOp(op) {
+  private _emitLocalOp(op: TreeOp): void {
     this.dispatchEvent(new CustomEvent('localOp', { detail: { op } }))
   }
 
   /** Apply an op that arrived from the durable log (idempotent LWW). Same ingest
    * path as a fabric op, so clock-observe + re-render fire once. */
-  applyLogOp(op) {
-    this._ingestTreeOp(op)
+  applyLogOp(op: unknown): void {
+    this._ingestTreeOp(op as TreeOp)
   }
 
   /** Merge a full snapshot from the durable log (per-object/per-scalar LWW union
    * — never a blind replace). */
-  applyLogSnapshot(nodes) {
-    if (Array.isArray(nodes)) this._ingestSnapshotNodes(nodes)
+  applyLogSnapshot(nodes: unknown): void {
+    if (Array.isArray(nodes)) this._ingestSnapshotNodes(nodes as TreeNodeLike[])
   }
 
   /** The full compacted state to post as a durable snapshot frame. */
-  logSnapshotData() {
+  logSnapshotData(): TreeNodeSnapshot[] {
     return this._crdt.snapshot()
   }
 
@@ -700,7 +799,7 @@ export class TreeSession extends EventTarget {
    * Return ordered slides as [{ nodeId, data }].
    * data is the parsed slide object stored by insertSlide / setSlide.
    */
-  orderedSlides() {
+  orderedSlides(): Array<{ nodeId: string, data: Slide }> {
     return this._crdt.order().map((nodeId) => {
       const data = this._crdt.value(nodeId) || {}
       return { nodeId, data }
@@ -711,20 +810,20 @@ export class TreeSession extends EventTarget {
   // Persistence (localStorage)
   // -------------------------------------------------------------------------
 
-  saveLocal() {
+  saveLocal(): void {
     try {
       localStorage.setItem(SNAPSHOT_KEY(this._session), JSON.stringify(this._crdt.snapshot()))
     } catch { /* quota — ignore */ }
   }
 
-  _loadLocal() {
+  private _loadLocal(): void {
     try {
       const raw = localStorage.getItem(SNAPSHOT_KEY(this._session))
       if (raw) {
-        const nodes = JSON.parse(raw)
+        const nodes: TreeNodeSnapshot[] = JSON.parse(raw)
         this._crdt.restore(nodes)
         for (const n of nodes) {
-          const seedIds = [n.ordId, n.valueId]
+          const seedIds: Array<string | undefined> = [n.ordId, n.valueId]
           if (n.slide) {
             for (const e of n.slide.objects || []) seedIds.push(e.opId)
             for (const e of n.slide.objTomb || []) seedIds.push(e.opId)
@@ -740,16 +839,16 @@ export class TreeSession extends EventTarget {
       }
       const logRaw = localStorage.getItem(OP_LOG_KEY(this._session))
       if (logRaw) {
-        const ops = JSON.parse(logRaw)
+        const ops: TreeOp[] = JSON.parse(logRaw)
         for (const op of ops) this._crdt.apply(op)
       }
     } catch { /* corrupt — ignore */ }
   }
 
-  _persistOp(op) {
+  private _persistOp(op: TreeOp): void {
     try {
       const logRaw = localStorage.getItem(OP_LOG_KEY(this._session))
-      const ops = logRaw ? JSON.parse(logRaw) : []
+      const ops: TreeOp[] = logRaw ? JSON.parse(logRaw) : []
       ops.push(op)
       if (ops.length > MAX_OPLOG) ops.splice(0, ops.length - MAX_OPLOG)
       localStorage.setItem(OP_LOG_KEY(this._session), JSON.stringify(ops))
@@ -760,21 +859,21 @@ export class TreeSession extends EventTarget {
   // Fabric transport
   // -------------------------------------------------------------------------
 
-  _broadcast(msg) {
+  private _broadcast(msg: FabricMessage): void {
     if (!this._fabric) return
     try {
       this._fabric.send(JSON.stringify(msg))
     } catch { /* disconnected */ }
   }
 
-  _handleFabricMessage(raw) {
+  private _handleFabricMessage(raw: unknown): void {
     if (this._destroyed) return
-    let msg
-    try { msg = typeof raw === 'string' ? JSON.parse(raw) : raw } catch { return }
+    let msg: FabricMessage | undefined
+    try { msg = (typeof raw === 'string' ? JSON.parse(raw) : raw) as FabricMessage } catch { return }
     if (!msg || msg.session !== this._session) return
 
     if (msg.type === 'tree_op' && msg.op) {
-      this._ingestTreeOp(msg.op)
+      this._ingestTreeOp(msg.op as TreeOp)
     } else if (msg.type === 'tree_snapshot_request') {
       this._broadcast({
         type: 'tree_snapshot',
@@ -782,15 +881,16 @@ export class TreeSession extends EventTarget {
         nodes: this._crdt.snapshot(),
       })
     } else if (msg.type === 'tree_snapshot' && msg.nodes) {
-      this._ingestSnapshotNodes(msg.nodes)
+      this._ingestSnapshotNodes(msg.nodes as TreeNodeLike[])
     }
   }
 
   /** Ingest one tree op (fabric OR durable log): advance the Lamport clock,
    * apply, persist, and surface remoteOp for a re-render. */
-  _ingestTreeOp(op) {
+  private _ingestTreeOp(op: TreeOp): void {
     if (!op) return
-    for (const field of [op.id, op.target]) {
+    const target = (op as { target?: string }).target
+    for (const field of [op.id, target]) {
       if (field && typeof field === 'string') {
         const parts = field.split('_')
         this._clock.observe(parseInt(parts[1], 10) || 0)
@@ -802,7 +902,7 @@ export class TreeSession extends EventTarget {
   }
 
   /** Merge a tree snapshot's nodes (cold-join / durable-log hydrate). */
-  _ingestSnapshotNodes(nodes) {
+  private _ingestSnapshotNodes(nodes: TreeNodeLike[]): void {
     for (const n of nodes) {
         // DATA-INTEGRITY: advance our Lamport clock past every counter carried in
         // the snapshot BEFORE the joiner edits anything. Otherwise the clock stays
@@ -813,7 +913,7 @@ export class TreeSession extends EventTarget {
         // Seed from ordId + every per-object/per-scalar opId in the granular slide
         // state (n.slide), plus the legacy valueId, so the joiner's first edit
         // mints a strictly-higher opId than anything the node already holds.
-        const seedIds = [n.ordId, n.valueId]
+        const seedIds: Array<string | undefined> = [n.ordId, n.valueId]
         if (n.slide) {
           for (const e of n.slide.objects || []) seedIds.push(e.opId)
           for (const e of n.slide.objTomb || []) seedIds.push(e.opId)
@@ -836,9 +936,9 @@ export class TreeSession extends EventTarget {
         // Establish the node at id=n.id first, then, if it was moved, replay the
         // MOVE (id: n.ordId) so the ordKey/ordId converge to the peer's LWW value.
         if (n.id) {
-          this._crdt.apply({ kind: TREE_OP_INSERT, id: n.id, parent: n.parent, ordKey: n.ordKey })
+          this._crdt.apply({ kind: TREE_OP_INSERT, id: n.id, parent: n.parent ?? ROOT_ID, ordKey: n.ordKey ?? '' })
           if (n.ordId && n.ordId !== n.id) {
-            this._crdt.apply({ kind: TREE_OP_MOVE, id: n.ordId, target: n.id, parent: n.parent, ordKey: n.ordKey })
+            this._crdt.apply({ kind: TREE_OP_MOVE, id: n.ordId, target: n.id, parent: n.parent ?? ROOT_ID, ordKey: n.ordKey ?? '' })
           }
           // P1: UNION-merge the object-granular slide state (per-object/per-scalar
           // LWW) instead of replaying a whole-slide SET_TEXT. A whole replay would
@@ -855,11 +955,11 @@ export class TreeSession extends EventTarget {
   }
 
   /** Request a snapshot from peers on first join. */
-  requestSnapshot() {
+  requestSnapshot(): void {
     this._broadcast({ type: 'tree_snapshot_request', session: this._session })
   }
 
-  destroy() {
+  destroy(): void {
     this._destroyed = true
     if (this._fabric && this._onFabricMessage) {
       this._fabric.removeEventListener('message', this._onFabricMessage)
@@ -872,7 +972,7 @@ export class TreeSession extends EventTarget {
 // Stable per-tab replicaId
 // ---------------------------------------------------------------------------
 
-export function getTreeReplicaId() {
+export function getTreeReplicaId(): string {
   let id = sessionStorage.getItem('crdt_tree_replica')
   if (!id) {
     id = crypto.randomUUID().slice(0, 8)
