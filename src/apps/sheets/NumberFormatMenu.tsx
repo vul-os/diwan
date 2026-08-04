@@ -1,5 +1,5 @@
 /**
- * src/apps/sheets/NumberFormatMenu.jsx
+ * src/apps/sheets/NumberFormatMenu.tsx
  *
  * Compact number-format picker for the Sheets toolbar. Applies a display-format
  * preset (currency / percent / date / …) to the current selection by rewriting
@@ -16,16 +16,26 @@
 import { useEffect, useRef, useState } from 'react'
 import { Hash, ChevronDown } from 'lucide-react'
 import { IconButton, Tooltip } from '../../components/ui'
-import { NUMBER_FORMAT_PRESETS, applyNumberFormat, detectPresetId } from './numberFormats.js'
+import { NUMBER_FORMAT_PRESETS, applyNumberFormat, detectPresetId, type SheetData } from './numberFormats.js'
 
-export default function NumberFormatMenu({ selection, activeCell, data, onChange }) {
+interface SelectionRect { r0: number; r1: number; c0: number; c1: number }
+interface ActiveCell { row?: number; col?: number }
+
+interface NumberFormatMenuProps {
+  selection: SelectionRect | null
+  activeCell?: ActiveCell | null
+  data: SheetData[]
+  onChange?: (data: SheetData[]) => void
+}
+
+export default function NumberFormatMenu({ selection, activeCell, data, onChange }: NumberFormatMenuProps) {
   const [open, setOpen] = useState(false)
-  const ref = useRef(null)
+  const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!open) return
-    const onDown = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false) }
-    const onKey  = (e) => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false) } }
+    const onDown = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    const onKey  = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false) } }
     document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onKey)
     return () => {
@@ -45,7 +55,7 @@ export default function NumberFormatMenu({ selection, activeCell, data, onChange
   )?.v
   const currentId = detectPresetId(activeVal)
 
-  function apply(presetId) {
+  function apply(presetId: string) {
     const next = applyNumberFormat(data, [rect.r0, rect.r1], [rect.c0, rect.c1], presetId)
     onChange?.(next)
     setOpen(false)
