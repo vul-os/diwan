@@ -76,24 +76,28 @@
  */
 
 import { sha256 } from '@noble/hashes/sha2.js'
-import { loadSync } from './kotvaSync.js'
+import { loadSync, type KotvaSyncNamespace } from './kotvaSync.js'
 import { bytesToB64, b64ToBytes } from './ydoc.js'
 import {
   GridEngineGuard, ENGINE_KOTVA_SYNC, HELLO_TYPE,
   classifyOp, classifySnapshot, mismatchLogLine,
+  type EngineMismatch,
 } from './gridEngine.js'
+import type { FabricClient } from '../collab/webrtc/fabric.js'
+import type { SyncEngine, HlcClock } from '@vul-os/kotva-sync'
+import type { ChartDescriptor, PivotDescriptor, ColorScaleRule, GridCellSnapshot } from './grid.js'
 
 const NS = 'sheet'
 const FIELD = 'v'
 const VAL_SET = 'v'
 const VAL_CLEAR = 'x'
 
-const SNAPSHOT_KEY = (id) => `crdt_sgrid_${id}`
-const OP_LOG_KEY = (id) => `crdt_sgrid_ops_${id}`
+const SNAPSHOT_KEY = (id: string) => `crdt_sgrid_${id}`
+const OP_LOG_KEY = (id: string) => `crdt_sgrid_ops_${id}`
 const MAX_OPLOG = 500
 
 /** The loaded substrate namespace, or null until `initSubstrateSync()` resolves. */
-let sync = null
+let sync: KotvaSyncNamespace | null = null
 
 /**
  * Load the substrate engine. MUST be awaited before constructing a
@@ -103,13 +107,13 @@ let sync = null
  * alternative, buffering local edits behind an in-flight load, would mean the
  * user can type into a grid that is not yet recording. Idempotent.
  */
-export async function initSubstrateSync() {
+export async function initSubstrateSync(): Promise<KotvaSyncNamespace> {
   if (!sync) sync = await loadSync()
   return sync
 }
 
 /** True once the engine is loaded and sessions may be constructed. */
-export function substrateSyncReady() {
+export function substrateSyncReady(): boolean {
   return sync !== null
 }
 
@@ -125,15 +129,15 @@ export function substrateSyncReady() {
  * This is an ADDRESSING derivation, not a security one: the author bytes here
  * are not a public key, because this path does not sign (see the header note).
  */
-export function authorFromReplicaId(replicaId) {
+export function authorFromReplicaId(replicaId: string): Uint8Array {
   return sha256(new TextEncoder().encode(String(replicaId)))
 }
 
-function cellTarget(r, c) {
+function cellTarget(r: number, c: number): string {
   return `cell:${r},${c}`
 }
 
-function parseCellTarget(target) {
+function parseCellTarget(target: unknown): { r: number; c: number } | null {
   if (typeof target !== 'string' || !target.startsWith('cell:')) return null
   const [rs, cs] = target.slice(5).split(',')
   const r = Number(rs)
@@ -141,6 +145,8 @@ function parseCellTarget(target) {
   if (!Number.isInteger(r) || !Number.isInteger(c)) return null
   return { r, c }
 }
+
+export type SubstrateWireOp = { dsync: 1; b: string }
 
 /**
  * The wire form of a substrate op inside an existing Diwan frame.
@@ -151,24 +157,67 @@ function parseCellTarget(target) {
  * base64-wrapped. Nothing else is added — the envelope is transport, the bytes
  * are the semantics.
  */
-function wireOp(bytes) {
+function wireOp(bytes: Uint8Array): SubstrateWireOp {
   return { dsync: 1, b: bytesToB64(bytes) }
 }
 
-function opBytesFromWire(op) {
-  if (!op || op.dsync !== 1 || typeof op.b !== 'string') return null
-  const bytes = b64ToBytes(op.b)
+function opBytesFromWire(op: unknown): Uint8Array | null {
+  if (!op || typeof op !== 'object') return null
+  const o = op as Record<string, unknown>
+  if (o.dsync !== 1 || typeof o.b !== 'string') return null
+  const bytes = b64ToBytes(o.b)
   return bytes && bytes.length ? bytes : null
 }
 
+type DecodedHlc = unknown
+
+type DecodedLwwOp = {
+  kind: number
+  ns: string
+  target: string
+  field: string
+  value: { tstr?: string }
+  hlc: DecodedHlc
+}
+
+export type SubstrateGridSessionOptions = {
+  /** file / document id */
+  sessionId: string
+  /** stable per-tab id */
+  replicaId: string
+  /** live transport; null = local-only */
+  fabricClient?: FabricClient | null
+}
+
+type FabricMessage = {
+  type: string
+  session: string
+  op?: unknown
+  opId?: string
+  chart?: ChartDescriptor
+  chartId?: string
+  pivot?: PivotDescriptor
+  pivotId?: string
+  rule?: ColorScaleRule
+  ruleId?: string
+  action?: string
+  engine?: string
+  reply?: boolean
+  cells?: unknown
+}
+
 export class SubstrateGridSession extends EventTarget {
-  /**
-   * @param {object} opts
-   * @param {string} opts.sessionId  - file / document id
-   * @param {string} opts.replicaId  - stable per-tab id
-   * @param {FabricClient|null} [opts.fabricClient] - live transport; null = local-only
-   */
-  constructor({ sessionId, replicaId, fabricClient = null }) {
+  private _session: string
+  private _replicaId: string
+  private _fabric: FabricClient | null
+  private _destroyed: boolean
+  private _engine: SyncEngine
+  private _clock: HlcClock
+  private _winners: Map<string, { bytes: Uint8Array; hlc: string }>
+  private _engineGuard: GridEngineGuard
+  private _onFabricMessage?: (ev: Event) => void
+
+  constructor({ sessionId, replicaId, fabricClient = null }: SubstrateGridSessionOptions) {
     super()
     if (!sync) {
       throw new Error(
@@ -199,7 +248,7 @@ export class SubstrateGridSession extends EventTarget {
     // interoperate with it. In short: the two engines share wire TYPES but not
     // op PAYLOADS, so a mixed room exchanges nothing at all while both editors
     // report "Live". This latches the session closed the moment that is visible.
-    this._engineGuard = new GridEngineGuard(ENGINE_KOTVA_SYNC, (info) => {
+    this._engineGuard = new GridEngineGuard(ENGINE_KOTVA_SYNC, (info: EngineMismatch) => {
       console.error(mismatchLogLine(info))
       // Deferred one microtask — see the matching note in grid.js: a mismatch
       // can latch during this constructor, before the editor has subscribed.
@@ -211,14 +260,14 @@ export class SubstrateGridSession extends EventTarget {
     this._loadLocal()
 
     if (this._fabric) {
-      this._onFabricMessage = (ev) => this._handleFabricMessage(ev.detail.data)
+      this._onFabricMessage = (ev: Event) => this._handleFabricMessage((ev as CustomEvent).detail.data)
       this._fabric.addEventListener('message', this._onFabricMessage)
       this._announceEngine()
     }
   }
 
   /** The engine mismatch that stopped this session, or null while it is sound. */
-  get engineMismatch() {
+  get engineMismatch(): EngineMismatch | null {
     return this._engineGuard.mismatch
   }
 
@@ -230,7 +279,7 @@ export class SubstrateGridSession extends EventTarget {
    * the peer that caused the mismatch never learns of it and keeps typing into a
    * document it believes is shared.
    */
-  _announceEngine(reply = false) {
+  private _announceEngine(reply = false): void {
     this._sendRaw({
       type: HELLO_TYPE, session: this._session, engine: ENGINE_KOTVA_SYNC, reply,
     })
@@ -241,18 +290,19 @@ export class SubstrateGridSession extends EventTarget {
   // -------------------------------------------------------------------------
 
   /** Write a cell value and broadcast the op. */
-  setCell(row, col, value) {
+  setCell(row: number, col: number, value: unknown): void {
     this._write(row, col, VAL_SET + String(value))
   }
 
   /** Clear a cell (LWW, not a death certificate — see the header). */
-  clearCell(row, col) {
+  clearCell(row: number, col: number): void {
     this._write(row, col, VAL_CLEAR)
   }
 
-  _write(row, col, tagged) {
+  private _write(row: number, col: number, tagged: string): void {
+    const sy = sync as KotvaSyncNamespace
     const hlc = this._clock.tick(Date.now())
-    const bytes = sync.encode_op(JSON.stringify({
+    const bytes = sy.encode_op(JSON.stringify({
       kind: 3, // lww-set (§4.2)
       ns: NS,
       target: cellTarget(row, col),
@@ -283,13 +333,13 @@ export class SubstrateGridSession extends EventTarget {
    * The update log is the SECOND place two engines can meet — it is per-file and
    * durable, so a `grid.js` client appending to it leaves frames here that this
    * engine cannot fold. Same guard as the fabric path. */
-  applyLogOp(op) {
+  applyLogOp(op: unknown): boolean {
     if (this._engineGuard.observeShape(classifyOp(op))) return false
     return this._ingestWire(op)
   }
 
   /** Merge a snapshot frame: a compacted list of canonical ops (never a replace). */
-  applyLogSnapshot(ops) {
+  applyLogSnapshot(ops: unknown): void {
     if (this._engineGuard.observeShape(classifySnapshot(ops))) return
     if (!Array.isArray(ops)) return
     let changed = false
@@ -299,7 +349,7 @@ export class SubstrateGridSession extends EventTarget {
   }
 
   /** The compacted op set to post as a durable snapshot frame. */
-  logSnapshotData() {
+  logSnapshotData(): SubstrateWireOp[] {
     return [...this._winners.values()].map((w) => wireOp(w.bytes))
   }
 
@@ -308,9 +358,9 @@ export class SubstrateGridSession extends EventTarget {
   // -------------------------------------------------------------------------
 
   /** Non-deleted cells as [{ r, c, v }] — the FortuneSheet celldata shape. */
-  cells() {
+  cells(): GridCellSnapshot[] {
     const state = JSON.parse(this._engine.observable_state_json())
-    const out = []
+    const out: GridCellSnapshot[] = []
     for (const [target, field, value] of state.lww || []) {
       if (field !== FIELD) continue
       const rc = parseCellTarget(target)
@@ -332,7 +382,7 @@ export class SubstrateGridSession extends EventTarget {
    * projection and hoping the projection is faithful. `grid.js` has no
    * equivalent; this is a capability the shared engine adds.
    */
-  stateRoot() {
+  stateRoot(): Uint8Array {
     return this._engine.state_root()
   }
 
@@ -350,7 +400,8 @@ export class SubstrateGridSession extends EventTarget {
    * corrupting the grid — the same fail-closed posture `grid.js` has toward an
    * op it cannot parse.
    */
-  _ingest(bytes) {
+  private _ingest(bytes: Uint8Array): boolean {
+    const sy = sync as KotvaSyncNamespace
     let applied = false
     try {
       applied = this._engine.ingest_ambient_authenticated(bytes, Date.now())
@@ -359,9 +410,9 @@ export class SubstrateGridSession extends EventTarget {
     }
     if (!applied) return false
 
-    let decoded
+    let decoded: DecodedLwwOp
     try {
-      decoded = JSON.parse(sync.decode_op(bytes))
+      decoded = JSON.parse(sy.decode_op(bytes))
     } catch {
       return true
     }
@@ -372,19 +423,20 @@ export class SubstrateGridSession extends EventTarget {
     return true
   }
 
-  _ingestWire(op, { quiet = false } = {}) {
+  private _ingestWire(op: unknown, { quiet = false }: { quiet?: boolean } = {}): boolean {
     const bytes = opBytesFromWire(op)
     if (!bytes) return false
     const changed = this._ingest(bytes)
     if (changed && !quiet) {
-      this._persistOp(op)
+      this._persistOp(op as SubstrateWireOp)
       this.dispatchEvent(new CustomEvent('remoteOp', { detail: { op } }))
     }
     return changed
   }
 
   /** Track the highest-HLC op per cell, using the ENGINE's comparator. */
-  _recordWinner(decoded, bytes) {
+  private _recordWinner(decoded: DecodedLwwOp, bytes: Uint8Array): void {
+    const sy = sync as KotvaSyncNamespace
     const rc = parseCellTarget(decoded.target)
     if (!rc || decoded.field !== FIELD) return
     const key = `${rc.r},${rc.c}`
@@ -392,7 +444,7 @@ export class SubstrateGridSession extends EventTarget {
     const prev = this._winners.get(key)
     if (prev) {
       let cmp = 0
-      try { cmp = sync.compare_hlc(hlc, prev.hlc) } catch { cmp = 0 }
+      try { cmp = sy.compare_hlc(hlc, prev.hlc) } catch { cmp = 0 }
       if (cmp <= 0) return
     }
     this._winners.set(key, { bytes, hlc })
@@ -402,14 +454,14 @@ export class SubstrateGridSession extends EventTarget {
   // Local persistence (localStorage) — same shape/keys discipline as grid.js
   // -------------------------------------------------------------------------
 
-  saveLocal() {
+  saveLocal(): void {
     try {
       localStorage.setItem(SNAPSHOT_KEY(this._session), JSON.stringify(this.logSnapshotData()))
       localStorage.removeItem(OP_LOG_KEY(this._session))
     } catch { /* quota — ignore */ }
   }
 
-  _loadLocal() {
+  private _loadLocal(): void {
     try {
       const raw = localStorage.getItem(SNAPSHOT_KEY(this._session))
       if (raw) for (const op of JSON.parse(raw)) this._ingestWire(op, { quiet: true })
@@ -418,10 +470,10 @@ export class SubstrateGridSession extends EventTarget {
     } catch { /* corrupt storage — ignore */ }
   }
 
-  _persistOp(op) {
+  private _persistOp(op: SubstrateWireOp): void {
     try {
       const logRaw = localStorage.getItem(OP_LOG_KEY(this._session))
-      const ops = logRaw ? JSON.parse(logRaw) : []
+      const ops: SubstrateWireOp[] = logRaw ? JSON.parse(logRaw) : []
       ops.push(op)
       if (ops.length > MAX_OPLOG) ops.splice(0, ops.length - MAX_OPLOG)
       localStorage.setItem(OP_LOG_KEY(this._session), JSON.stringify(ops))
@@ -438,38 +490,38 @@ export class SubstrateGridSession extends EventTarget {
   // and pretending otherwise would be a bigger change than the adoption itself.
   // -------------------------------------------------------------------------
 
-  upsertChart(chart) {
+  upsertChart(chart: ChartDescriptor): void {
     if (!chart || typeof chart.id !== 'string') return
     this._broadcast({ type: 'chart_op', session: this._session, opId: this._overlayId(), action: 'upsert', chart })
   }
 
-  removeChart(chartId) {
+  removeChart(chartId: string): void {
     if (typeof chartId !== 'string') return
     this._broadcast({ type: 'chart_op', session: this._session, opId: this._overlayId(), action: 'delete', chartId })
   }
 
-  upsertPivot(pivot) {
+  upsertPivot(pivot: PivotDescriptor): void {
     if (!pivot || typeof pivot.id !== 'string') return
     this._broadcast({ type: 'pivot_op', session: this._session, opId: this._overlayId(), action: 'upsert', pivot })
   }
 
-  removePivot(pivotId) {
+  removePivot(pivotId: string): void {
     if (typeof pivotId !== 'string') return
     this._broadcast({ type: 'pivot_op', session: this._session, opId: this._overlayId(), action: 'delete', pivotId })
   }
 
-  upsertColorScale(rule) {
+  upsertColorScale(rule: ColorScaleRule): void {
     if (!rule || typeof rule.id !== 'string') return
     this._broadcast({ type: 'cs_op', session: this._session, opId: this._overlayId(), action: 'upsert', rule })
   }
 
-  removeColorScale(ruleId) {
+  removeColorScale(ruleId: string): void {
     if (typeof ruleId !== 'string') return
     this._broadcast({ type: 'cs_op', session: this._session, opId: this._overlayId(), action: 'delete', ruleId })
   }
 
   /** An overlay op id: the HLC, encoded so the receiver can order LWW-by-id. */
-  _overlayId() {
+  private _overlayId(): string {
     const h = JSON.parse(this._clock.tick(Date.now()))
     return `${h.wall}_${h.counter}_${this._replicaId}`
   }
@@ -480,12 +532,12 @@ export class SubstrateGridSession extends EventTarget {
   // -------------------------------------------------------------------------
 
   /** Put a frame on the wire unconditionally. Only the handshake may use this. */
-  _sendRaw(msg) {
+  private _sendRaw(msg: FabricMessage): void {
     if (!this._fabric) return
     try { this._fabric.send(JSON.stringify(msg)) } catch { /* disconnected */ }
   }
 
-  _broadcast(msg) {
+  private _broadcast(msg: FabricMessage): void {
     // Latched mismatch ⇒ emit no DOCUMENT frame. An op a mismatched peer cannot
     // fold is worse than no op: it keeps their editor looking live while their
     // document walks away from ours.
@@ -493,10 +545,10 @@ export class SubstrateGridSession extends EventTarget {
     this._sendRaw(msg)
   }
 
-  _handleFabricMessage(raw) {
+  private _handleFabricMessage(raw: unknown): void {
     if (this._destroyed) return
-    let msg
-    try { msg = typeof raw === 'string' ? JSON.parse(raw) : raw } catch { return }
+    let msg: FabricMessage | undefined
+    try { msg = (typeof raw === 'string' ? JSON.parse(raw) : raw) as FabricMessage } catch { return }
     if (!msg || msg.session !== this._session) return
 
     // The handshake is handled BEFORE the fail-closed gate, and is the only
@@ -539,11 +591,11 @@ export class SubstrateGridSession extends EventTarget {
     }
   }
 
-  requestSnapshot() {
+  requestSnapshot(): void {
     this._broadcast({ type: 'grid_snapshot_request', session: this._session })
   }
 
-  destroy() {
+  destroy(): void {
     this._destroyed = true
     if (this._fabric && this._onFabricMessage) {
       this._fabric.removeEventListener('message', this._onFabricMessage)
