@@ -21,9 +21,14 @@ import { describe, it, expect, beforeAll, beforeEach } from 'vitest'
 import { OpLogSync } from '../../collab/opLogSync.js'
 import { createMemoryUpdateLog } from '../../collab/updateLog.js'
 import { SubstrateGridSession, initSubstrateSync } from '../substrateGrid.js'
+import type { UpdateLogTransport, UpdateLogFrame } from '../../collab/updateLog.js'
+
+type MemoryLog = UpdateLogTransport & {
+  _debug: () => { head: number, frames: UpdateLogFrame[], snapshot: UpdateLogFrame | null }
+}
 
 let n = 0
-function uid(prefix) { return `${prefix}-${Date.now()}-${n++}` }
+function uid(prefix: string): string { return `${prefix}-${Date.now()}-${n++}` }
 
 // The engine is WASM: load it once for the whole file, exactly as the editor
 // loads it once before opening a session.
@@ -33,20 +38,20 @@ beforeEach(() => {
   try { localStorage.clear() } catch { /* no localStorage */ }
 })
 
-function gridAdapter(session) {
+function gridAdapter(session: SubstrateGridSession) {
   return {
-    subscribeLocal: (cb) => {
-      const h = (e) => cb(e.detail.op)
+    subscribeLocal: (cb: (op: unknown) => void) => {
+      const h = (e: Event) => cb((e as CustomEvent).detail.op)
       session.addEventListener('localOp', h)
       return () => session.removeEventListener('localOp', h)
     },
-    applyOp: (op) => session.applyLogOp(op),
-    applySnapshot: (snap) => session.applyLogSnapshot(snap),
+    applyOp: (op: unknown) => session.applyLogOp(op),
+    applySnapshot: (snap: unknown) => session.applyLogSnapshot(snap),
     encodeSnapshot: () => session.logSnapshotData(),
   }
 }
 
-async function newGrid(log) {
+async function newGrid(log: MemoryLog): Promise<{ s: SubstrateGridSession, sync: OpLogSync }> {
   const s = new SubstrateGridSession({
     sessionId: uid('sgrid'), replicaId: uid('rep'), fabricClient: null,
   })
@@ -55,17 +60,17 @@ async function newGrid(log) {
   return { s, sync }
 }
 
-function cellMap(session) {
-  const out = {}
+function cellMap(session: SubstrateGridSession): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
   for (const { r, c, v } of session.cells()) out[`${r},${c}`] = v
   return out
 }
 
-function hex(bytes) {
+function hex(bytes: Uint8Array): string {
   return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-async function reloadGrid(log) {
+async function reloadGrid(log: MemoryLog): Promise<{ cells: Record<string, unknown>, root: string }> {
   const { s, sync } = await newGrid(log)
   await sync.stop()
   return { cells: cellMap(s), root: hex(s.stateRoot()) }
@@ -121,7 +126,7 @@ describe('substrate grid convergence (Sheets on the shared engine)', () => {
 
     const dbg = log._debug()
     expect(dbg.snapshot).not.toBeNull()
-    expect(dbg.frames.every((f) => f.seq > dbg.snapshot.floor)).toBe(true)
+    expect(dbg.frames.every((f) => f.seq > dbg.snapshot!.floor!)).toBe(true)
 
     const reloaded = await reloadGrid(log)
     expect(reloaded.cells).toEqual({ '0,0': 'x', '0,1': 'y', '1,1': 'z' })
@@ -204,8 +209,8 @@ describe('substrate grid semantics match the grid.js path', () => {
     const s = new SubstrateGridSession({
       sessionId: uid('sgrid'), replicaId: uid('rep'), fabricClient: null,
     })
-    const ops = []
-    s.addEventListener('localOp', (e) => ops.push(e.detail.op))
+    const ops: unknown[] = []
+    s.addEventListener('localOp', (e) => ops.push((e as CustomEvent).detail.op))
     s.setCell(1, 1, 'once')
 
     const before = hex(s.stateRoot())
@@ -238,9 +243,9 @@ describe('substrate grid semantics match the grid.js path', () => {
     const b = new SubstrateGridSession({
       sessionId: uid('sgrid'), replicaId: uid('repB'), fabricClient: null,
     })
-    const aOps = []; const bOps = []
-    a.addEventListener('localOp', (e) => aOps.push(e.detail.op))
-    b.addEventListener('localOp', (e) => bOps.push(e.detail.op))
+    const aOps: unknown[] = []; const bOps: unknown[] = []
+    a.addEventListener('localOp', (e) => aOps.push((e as CustomEvent).detail.op))
+    b.addEventListener('localOp', (e) => bOps.push((e as CustomEvent).detail.op))
 
     a.setCell(0, 0, 'a1'); a.setCell(0, 1, 'a2'); a.clearCell(0, 1)
     b.setCell(0, 0, 'b1'); b.setCell(1, 1, 'b2')
