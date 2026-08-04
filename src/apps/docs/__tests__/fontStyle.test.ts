@@ -12,6 +12,12 @@ import {
   fontFamilyAttribute,
 } from '../../../lib/tiptap/fontStyle.js'
 
+// parseHTML only reads `.style.<prop>` off its argument — a minimal stub
+// covers it without constructing a real DOM element, cast through a local
+// type the way narrow interface mocks are done elsewhere in the suite.
+type StyleElementStub = { style: { fontSize?: string; fontFamily?: string } }
+const asElement = (e: StyleElementStub): HTMLElement => e as unknown as HTMLElement
+
 describe('normalizeFontSize', () => {
   it('appends pt to a bare number', () => {
     expect(normalizeFontSize('18')).toBe('18pt')
@@ -60,8 +66,8 @@ describe('fontSizeAttribute.renderHTML', () => {
     expect(fontSizeAttribute.renderHTML({ fontSize: null })).toEqual({})
   })
   it('parses a font-size back off an element', () => {
-    expect(fontSizeAttribute.parseHTML({ style: { fontSize: '14px' } })).toBe('14px')
-    expect(fontSizeAttribute.parseHTML({ style: { fontSize: '' } })).toBeNull()
+    expect(fontSizeAttribute.parseHTML(asElement({ style: { fontSize: '14px' } }))).toBe('14px')
+    expect(fontSizeAttribute.parseHTML(asElement({ style: { fontSize: '' } }))).toBeNull()
   })
 })
 
@@ -74,6 +80,6 @@ describe('fontFamilyAttribute.renderHTML', () => {
     expect(fontFamilyAttribute.renderHTML({ fontFamily: null })).toEqual({})
   })
   it('strips quotes when parsing off an element', () => {
-    expect(fontFamilyAttribute.parseHTML({ style: { fontFamily: '"Georgia"' } })).toBe('Georgia')
+    expect(fontFamilyAttribute.parseHTML(asElement({ style: { fontFamily: '"Georgia"' } }))).toBe('Georgia')
   })
 })
