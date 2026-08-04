@@ -2,7 +2,69 @@ import { create } from 'zustand'
 import { api } from '../lib/api'
 import { writeDraft, clearDraft } from '../lib/draftStore'
 
-function defaultContent(type) {
+/** A file record as returned by the /files API. Fields beyond the ones this
+ *  store itself reads are passed through untouched (index signature). */
+export interface DiwanFile {
+  id: string
+  name: string
+  type: string
+  content?: unknown
+  rev?: number
+  starred?: boolean
+  trashed?: boolean
+  parent_id?: string
+  owner?: string
+  updated_at?: string
+  created_at?: string
+  [key: string]: unknown
+}
+
+export interface DiwanFolder {
+  id: string
+  name: string
+  parent_id?: string
+  trashed?: boolean
+  [key: string]: unknown
+}
+
+/** Errors thrown by lib/api's `request()` carry `.status` + any JSON error
+ *  body fields (e.g. `.current`, the server's newer file on a 409 conflict). */
+interface ApiError extends Error {
+  status?: number
+  current?: DiwanFile
+}
+
+interface UpdateFileOpts {
+  rev?: number
+  onConflict?: (current: DiwanFile | undefined, content: unknown) => boolean | Promise<boolean> | void | Promise<void>
+  _retried?: boolean
+}
+
+interface FilesState {
+  files: DiwanFile[]
+  folders: DiwanFolder[]
+  loading: boolean
+  sharedWithMe: DiwanFile[]
+  fetchFiles: () => Promise<void>
+  fetchSharedWithMe: () => Promise<void>
+  fetchFolders: () => Promise<void>
+  createFolder: (name: string, parentId?: string) => Promise<DiwanFolder>
+  renameFolder: (id: string, name: string) => Promise<DiwanFolder>
+  trashFolder: (id: string, trashed: boolean) => Promise<DiwanFolder>
+  deleteFolder: (id: string) => Promise<void>
+  moveFile: (id: string, opts?: { parentId?: string; starred?: boolean; trashed?: boolean }) => Promise<DiwanFile>
+  toggleStar: (id: string) => Promise<DiwanFile>
+  trashFile: (id: string) => Promise<DiwanFile>
+  restoreFile: (id: string) => Promise<DiwanFile>
+  createFile: (name: string, type: string, opts?: { content?: unknown; parentId?: string }) => Promise<DiwanFile>
+  updateFile: (id: string, name: string, content: unknown, opts?: UpdateFileOpts) => Promise<DiwanFile>
+  deleteFile: (id: string) => Promise<void>
+  renameFile: (id: string, name: string) => Promise<void>
+  saveFileWithDraft: (id: string, name: string, content: unknown) => Promise<DiwanFile>
+  markDirty: (id: string) => void
+}
+
+function defaultContent(type: string): unknown {
   switch (type) {
     case 'doc':
       return { type: 'doc', content: [{ type: 'paragraph' }] }
@@ -19,29 +81,36 @@ function defaultContent(type) {
   }
 }
 
+export type SaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'error'
+export interface SaveState {
+  status: SaveStatus
+  error: string | null
+}
+type SaveStateListener = (state: SaveState) => void
+
 // Per-file save state: 'idle' | 'dirty' | 'saving' | 'saved' | 'error'
 // Stored as a plain map outside Zustand to avoid excessive re-renders in editors
 // that only care about their own file's state.
-const saveStateListeners = new Map() // id -> Set<fn>
-const saveStates = new Map()         // id -> { status, error }
+const saveStateListeners = new Map<string, Set<SaveStateListener>>()
+const saveStates = new Map<string, SaveState>()
 
-export function getSaveState(id) {
+export function getSaveState(id: string): SaveState {
   return saveStates.get(id) || { status: 'idle', error: null }
 }
 
-export function onSaveStateChange(id, fn) {
+export function onSaveStateChange(id: string, fn: SaveStateListener): () => void {
   if (!saveStateListeners.has(id)) saveStateListeners.set(id, new Set())
-  saveStateListeners.get(id).add(fn)
-  return () => saveStateListeners.get(id).delete(fn)
+  saveStateListeners.get(id)!.add(fn)
+  return () => saveStateListeners.get(id)?.delete(fn)
 }
 
-function setSaveState(id, status, error = null) {
+function setSaveState(id: string, status: SaveStatus, error: string | null = null) {
   saveStates.set(id, { status, error })
   const listeners = saveStateListeners.get(id)
   if (listeners) listeners.forEach((fn) => fn({ status, error }))
 }
 
-export const useFilesStore = create((set, get) => ({
+export const useFilesStore = create<FilesState>((set, get) => ({
   files: [],
   folders: [],
   loading: false,
@@ -56,7 +125,7 @@ export const useFilesStore = create((set, get) => ({
       // Coerce to an array: `files` feeds .filter/.map/.slice across AppHome and
       // the app-shell rail, so a malformed/non-array response must never poison
       // it (that would crash the whole shell, not just this list).
-      set({ files: Array.isArray(files) ? files : [], loading: false })
+      set({ files: Array.isArray(files) ? (files as DiwanFile[]) : [], loading: false })
     } catch {
       set({ loading: false })
     }
@@ -66,7 +135,7 @@ export const useFilesStore = create((set, get) => ({
   // just leaves the section empty (it is additive UX).
   fetchSharedWithMe: async () => {
     try {
-      const res = await api.listSharedWithMe()
+      const res = await api.listSharedWithMe() as { files?: DiwanFile[] } | undefined
       set({ sharedWithMe: Array.isArray(res?.files) ? res.files : [] })
     } catch {
       set({ sharedWithMe: [] })
@@ -77,26 +146,26 @@ export const useFilesStore = create((set, get) => ({
   fetchFolders: async () => {
     try {
       const folders = await api.listFolders()
-      set({ folders: Array.isArray(folders) ? folders : [] })
+      set({ folders: Array.isArray(folders) ? (folders as DiwanFolder[]) : [] })
     } catch {
       /* folders are optional UX; a failure just hides the tree */
     }
   },
 
   createFolder: async (name, parentId = '') => {
-    const folder = await api.createFolder(name, parentId)
+    const folder = await api.createFolder(name, parentId) as DiwanFolder
     set({ folders: [...get().folders, folder] })
     return folder
   },
 
   renameFolder: async (id, name) => {
-    const folder = await api.updateFolder(id, { name })
+    const folder = await api.updateFolder(id, { name }) as DiwanFolder
     set({ folders: get().folders.map((f) => (f.id === id ? folder : f)) })
     return folder
   },
 
   trashFolder: async (id, trashed) => {
-    const folder = await api.trashFolder(id, trashed)
+    const folder = await api.trashFolder(id, trashed) as DiwanFolder
     set({ folders: get().folders.map((f) => (f.id === id ? folder : f)) })
     return folder
   },
@@ -110,7 +179,7 @@ export const useFilesStore = create((set, get) => ({
 
   // Move / star / trash a file. Applies the returned canonical file to state.
   moveFile: async (id, opts) => {
-    const file = await api.moveFile(id, opts)
+    const file = await api.moveFile(id, opts) as DiwanFile
     set({ files: get().files.map((f) => (f.id === id ? file : f)) })
     return file
   },
@@ -128,12 +197,12 @@ export const useFilesStore = create((set, get) => ({
   // places the new file in a folder (validated + ACL-checked server-side).
   createFile: async (name, type, { content, parentId } = {}) => {
     const seed = content !== undefined ? content : defaultContent(type)
-    const file = await api.createFile(name, type, seed)
+    const file = await api.createFile(name, type, seed) as DiwanFile
     let placed = file
     // If a folder was requested, move the freshly-created file into it. The
     // server enforces that the caller owns both the file and the target folder.
     if (parentId) {
-      try { placed = await api.moveFile(file.id, { parentId }) } catch { /* keep at root on failure */ }
+      try { placed = await api.moveFile(file.id, { parentId }) as DiwanFile } catch { /* keep at root on failure */ }
     }
     set({ files: [placed, ...get().files] })
     return placed
@@ -161,21 +230,26 @@ export const useFilesStore = create((set, get) => ({
     const known = get().files.find((f) => f.id === id)
     const rev = opts.rev ?? known?.rev ?? 0
     try {
-      const file = await api.updateFile(id, name, content, rev)
+      const file = await api.updateFile(id, name, content, rev) as DiwanFile
       set({ files: get().files.map((f) => (f.id === id ? file : f)) })
       return file
     } catch (err) {
-      if (err?.status !== 409) throw err
+      const apiErr = err as ApiError
+      if (apiErr?.status !== 409) throw err
       // Adopt the server's newer file so state carries the latest rev + content.
-      const current = err.current
+      const current = apiErr.current
       if (current) set({ files: get().files.map((f) => (f.id === id ? current : f)) })
       if (opts.onConflict) {
         // Let the caller reconcile non-CRDT structure explicitly (may re-throw).
         const resolved = await opts.onConflict(current, content)
-        if (resolved === false) { const e = new Error('save conflict'); e.status = 409; e.current = current; throw e }
+        if (resolved === false) {
+          const e = Object.assign(new Error('save conflict'), { status: 409, current }) as ApiError
+          throw e
+        }
       }
       if (opts._retried || !current) {
-        const e = new Error('save conflict'); e.status = 409; e.current = current; throw e
+        const e = Object.assign(new Error('save conflict'), { status: 409, current }) as ApiError
+        throw e
       }
       // Retry once against the newer rev, re-applying this caller's content.
       return get().updateFile(id, name, content, { rev: current.rev, _retried: true, onConflict: opts.onConflict })
@@ -212,7 +286,7 @@ export const useFilesStore = create((set, get) => ({
       return file
     } catch (err) {
       // Draft survives in IndexedDB; surface error state
-      setSaveState(id, 'error', err.message || 'Save failed')
+      setSaveState(id, 'error', (err as Error)?.message || 'Save failed')
       throw err
     }
   },
