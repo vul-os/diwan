@@ -20,7 +20,7 @@ import {
   bringToFront, sendToBack, bringForward, sendBackward,
   groupObjects, ungroupObjects, expandSelectionToGroups, align, distribute,
 } from './slideArrange.js'
-import { animationClassFor, playAnimationsOn, prefersReducedMotion } from './slideAnimations.js'
+import { animationClassFor, playAnimationsOn, prefersReducedMotion } from './slideAnimations'
 import SlideCanvas from './SlideCanvas.jsx'
 
 // ── P2: object model + migration ────────────────────────────────────────────

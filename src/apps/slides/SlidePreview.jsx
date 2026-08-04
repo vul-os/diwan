@@ -18,7 +18,7 @@ function revealThemeUrl(name) {
 import { sanitizeSlideHtml as sanitize } from '../../lib/sanitize'
 import { ensureObjects, sortByZ } from './slideObjects'
 import ShapeSvg from './ShapeSvg.jsx'
-import { playAnimationsOn } from './slideAnimations.js'
+import { playAnimationsOn } from './slideAnimations'
 
 /**
  * SlidePreview — full-screen reveal.js presentation overlay.

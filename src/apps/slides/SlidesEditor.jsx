@@ -37,7 +37,7 @@ import {
   bringToFront, sendToBack, bringForward, sendBackward,
   groupObjects, ungroupObjects, expandSelectionToGroups, align, distribute,
 } from './slideArrange.js'
-import { playAnimationsOn } from './slideAnimations.js'
+import { playAnimationsOn } from './slideAnimations'
 import { TreeSession, getTreeReplicaId, ordKeyBetween } from '../../lib/crdt/tree.js'
 import { OpLogSync } from '../../lib/collab/opLogSync.js'
 import { updateLogEnabled } from '../../lib/flags.js'

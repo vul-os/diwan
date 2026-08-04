@@ -18,8 +18,19 @@
  * see everywhere.
  */
 
+export type AnimationEffect = 'fade-in' | 'fly-in' | 'bounce' | 'zoom-in' | 'spin' | 'custom'
+export type AnimationType = 'entrance' | 'exit' | 'emphasis'
+
+export interface SlideAnimation {
+  id?: string
+  label?: string
+  type?: AnimationType
+  effect: AnimationEffect
+  order?: number
+}
+
 // Effect → CSS class emitting a keyframe. Kept aligned with index.css.
-const ENTRANCE_CLASS = {
+const ENTRANCE_CLASS: Record<AnimationEffect, string> = {
   'fade-in': 'vslide-anim-fade-in',
   'fly-in': 'vslide-anim-fly-in',
   'bounce': 'vslide-anim-bounce',
@@ -27,7 +38,7 @@ const ENTRANCE_CLASS = {
   'spin': 'vslide-anim-spin-in',
   'custom': 'vslide-anim-fade-in',
 }
-const EXIT_CLASS = {
+const EXIT_CLASS: Record<AnimationEffect, string> = {
   'fade-in': 'vslide-anim-fade-out',
   'fly-in': 'vslide-anim-fly-out',
   'bounce': 'vslide-anim-fade-out',
@@ -35,7 +46,7 @@ const EXIT_CLASS = {
   'spin': 'vslide-anim-spin-out',
   'custom': 'vslide-anim-fade-out',
 }
-const EMPHASIS_CLASS = {
+const EMPHASIS_CLASS: Record<AnimationEffect, string> = {
   'fade-in': 'vslide-anim-pulse',
   'fly-in': 'vslide-anim-pulse',
   'bounce': 'vslide-anim-bounce-emph',
@@ -47,7 +58,7 @@ const EMPHASIS_CLASS = {
 const STAGGER_MS = 220
 
 /** True when the user asked for reduced motion. Safe in jsdom (guards matchMedia). */
-export function prefersReducedMotion() {
+export function prefersReducedMotion(): boolean {
   try {
     return typeof window !== 'undefined'
       && typeof window.matchMedia === 'function'
@@ -62,11 +73,13 @@ export function prefersReducedMotion() {
  * Returns null if the effect/type is not recognised (nothing to play).
  * Pure + framework-free so it is unit-testable without a DOM.
  */
-export function animationClassFor(anim) {
+export function animationClassFor(
+  anim: SlideAnimation | null | undefined,
+): { className: string; delayMs: number; type: AnimationType } | null {
   if (!anim || typeof anim !== 'object') return null
-  const order = Number.isFinite(anim.order) ? Math.max(0, anim.order) : 0
+  const order = Number.isFinite(anim.order) ? Math.max(0, anim.order as number) : 0
   const delayMs = order * STAGGER_MS
-  let className
+  let className: string | undefined
   if (anim.type === 'exit') className = EXIT_CLASS[anim.effect]
   else if (anim.type === 'emphasis') className = EMPHASIS_CLASS[anim.effect]
   else className = ENTRANCE_CLASS[anim.effect] // default: entrance
@@ -80,17 +93,20 @@ export function animationClassFor(anim) {
  * entrances have settled. Returns a cleanup function that removes the applied
  * classes/styles. Honours reduced-motion by short-circuiting to final state.
  *
- * @param {Element[]} els   candidate elements (each animation targets els[order]
- *                          when present, else all els share the animation).
- * @param {Array}     anims stored slide.animations
+ * `els` are the candidate elements (each animation targets els[order]
+ * when present, else all els share the animation). `anims` is the stored
+ * slide.animations array.
  */
-export function playAnimationsOn(els, anims) {
-  const targets = Array.isArray(els) ? els.filter(Boolean) : []
+export function playAnimationsOn(
+  els: readonly (HTMLElement | null | undefined)[] | null | undefined,
+  anims: readonly SlideAnimation[] | null | undefined,
+): () => void {
+  const targets = Array.isArray(els) ? els.filter((e): e is HTMLElement => Boolean(e)) : []
   const list = Array.isArray(anims) ? [...anims].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)) : []
   if (targets.length === 0 || list.length === 0) return () => {}
 
   const reduced = prefersReducedMotion()
-  const applied = [] // { el, className }
+  const applied: Array<{ el: HTMLElement; className: string }> = []
 
   list.forEach((anim, i) => {
     const resolved = animationClassFor(anim)
