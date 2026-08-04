@@ -1,5 +1,5 @@
 /**
- * src/shells/RequireAuth.jsx — auth boundary shared by all subdomain shells.
+ * src/shells/RequireAuth.tsx — auth boundary shared by all subdomain shells.
  *
  * Calls GET /api/auth/me on mount and believes ONLY an explicit
  * `200 {"authenticated": true}`. Anything else is not a session:
@@ -19,10 +19,18 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
 import { ErrorState, LoadingState } from '../components/ui'
 
-export default function RequireAuth({ children, apiBase = '' }) {
-  const [state, setState] = useState('loading')
+type AuthState = 'loading' | 'error' | 'authed'
+
+interface RequireAuthProps {
+  children?: ReactNode
+  apiBase?: string
+}
+
+export default function RequireAuth({ children, apiBase = '' }: RequireAuthProps) {
+  const [state, setState] = useState<AuthState>('loading')
   const [attempt, setAttempt] = useState(0)
 
   const retry = useCallback(() => {
@@ -46,7 +54,7 @@ export default function RequireAuth({ children, apiBase = '' }) {
           setState('error')
           return
         }
-        const body = await r.json().catch(() => null)
+        const body = await r.json().catch(() => null) as { authenticated?: boolean } | null
         if (!cancelled) setState(body?.authenticated === true ? 'authed' : 'error')
       })
       .catch(() => {

@@ -28,7 +28,7 @@ vi.mock('../apps/pdf/PDFEditor.jsx', () => ({
 }))
 
 // Mock RequireAuth to pass through children (auth tested separately)
-vi.mock('../shells/RequireAuth.jsx', () => ({
+vi.mock('../shells/RequireAuth', () => ({
   default: ({ children }) => <>{children}</>,
 }))
 
