@@ -8,7 +8,9 @@
  * the object's absolutely-positioned box exactly.
  */
 
-export default function ShapeSvg({ obj }) {
+import type { ShapeSlideObject } from './slideObjects'
+
+export default function ShapeSvg({ obj }: { obj: ShapeSlideObject }) {
   const fill = obj.fill || '#7c6af7'
   const stroke = obj.stroke || '#5b4dd0'
   const sw = Number.isFinite(obj.strokeWidth) ? obj.strokeWidth : 2

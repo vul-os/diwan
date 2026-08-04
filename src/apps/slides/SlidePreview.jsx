@@ -17,7 +17,7 @@ function revealThemeUrl(name) {
 // javascript: URLs, <iframe>).
 import { sanitizeSlideHtml as sanitize } from '../../lib/sanitize'
 import { ensureObjects, sortByZ } from './slideObjects'
-import ShapeSvg from './ShapeSvg.jsx'
+import ShapeSvg from './ShapeSvg'
 import { playAnimationsOn } from './slideAnimations'
 
 /**

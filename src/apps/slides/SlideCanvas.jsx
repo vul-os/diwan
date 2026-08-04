@@ -23,7 +23,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import {
   MIN_OBJECT_SIZE, sortByZ, sanitizeObject,
 } from './slideObjects'
-import ShapeSvg from './ShapeSvg.jsx'
+import ShapeSvg from './ShapeSvg'
 
 const ASPECT = 9 / 16          // stage height / width
 const HANDLE = 8               // handle hit size (px)
