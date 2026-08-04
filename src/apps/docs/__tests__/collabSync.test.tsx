@@ -19,6 +19,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { Editor } from '@tiptap/react'
+import type { JSONContent } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Link from '@tiptap/extension-link'
 import TextStyle from '@tiptap/extension-text-style'
@@ -28,6 +29,7 @@ import Table from '@tiptap/extension-table'
 import TableRow from '@tiptap/extension-table-row'
 import TableCell from '@tiptap/extension-table-cell'
 import TableHeader from '@tiptap/extension-table-header'
+import type { Schema } from '@tiptap/pm/model'
 import { DocImage } from '../docsImage.js'
 import { YCollab } from '../collabExtension.js'
 import {
@@ -37,11 +39,14 @@ import {
   readMappedRanges,
   decorationCommentId,
 } from '../commentDecorations.js'
+import type { CommentPluginState } from '../commentDecorations.js'
 import {
   Y, createYContext, applyRemoteUpdate, seedUpdateFromPMJSON,
   Y_FRAGMENT, REMOTE_ORIGIN, encodeUpdateEnvelope, decodeUpdateEnvelope,
   checkFragmentRenderable, validateDocJSON,
 } from '../../../lib/crdt/ydoc.js'
+import type { YContext } from '../../../lib/crdt/ydoc.js'
+import type { Comment } from '../../../lib/crdt/comments.js'
 
 // Every case here mounts two REAL ProseMirror editors (full Docs extension set,
 // tables included). That costs seconds in jsdom on a loaded machine, and it is
@@ -65,9 +70,20 @@ const extensions = () => [
 ]
 
 /** One collaborating client: a Y.Doc + a REAL TipTap editor bound to it. */
-function makePeer() {
+interface Peer {
+  ydoc: Y.Doc
+  ctx: YContext
+  editor: Editor
+  element: HTMLDivElement
+  inbox: Uint8Array[]
+}
+
+function makePeer(): Peer {
   const ydoc = new Y.Doc()
-  const ctx = createYContext(null, ydoc)
+  // No editor/schema exists yet — createYContext is seeded with a placeholder
+  // and immediately corrected below once the editor (and its real schema) is
+  // built. Nothing reads ctx.schema in between.
+  const ctx = createYContext(null as unknown as Schema, ydoc)
   const element = document.createElement('div')
   document.body.appendChild(element)
   const editor = new Editor({
@@ -86,7 +102,7 @@ function makePeer() {
  * others through applyRemoteUpdate — the SAME validated ingress the server and
  * p2p sessions use — so the tests exercise the real remote path.
  */
-function connect(...peers) {
+function connect(...peers: Peer[]) {
   for (const p of peers) {
     p.ydoc.on('update', (update, origin) => {
       if (origin === REMOTE_ORIGIN) return   // don't echo what we just received
@@ -116,8 +132,8 @@ function connect(...peers) {
   }
 }
 
-let peers = []
-function peer() { const p = makePeer(); peers.push(p); return p }
+let peers: Peer[] = []
+function peer(): Peer { const p = makePeer(); peers.push(p); return p }
 
 beforeEach(() => { peers = [] })
 afterEach(() => {
@@ -125,7 +141,7 @@ afterEach(() => {
 })
 
 // Deep document comparison, deliberately NOT via getText().
-const json = (p) => p.editor.getJSON()
+const json = (p: Peer): JSONContent => p.editor.getJSON()
 
 // ───────────────────────────────────────────────────────────────────────────
 // 1. Formatting + structure propagate. (Under the old transport NONE of these
@@ -144,10 +160,10 @@ describe('a remote peer sees formatting and structure, not just text', () => {
     a.editor.commands.toggleBold()
     net.flush()
 
-    const para = json(b).content[0]
-    const bolded = para.content.find((n) => (n.marks || []).some((m) => m.type === 'bold'))
+    const para = json(b).content![0]
+    const bolded = para.content!.find((n) => (n.marks || []).some((m) => m.type === 'bold'))
     expect(bolded).toBeTruthy()
-    expect(bolded.text).toBe('hello')
+    expect(bolded!.text).toBe('hello')
     // And the peers agree on the whole document, mark for mark.
     expect(json(b)).toEqual(json(a))
   })
@@ -162,8 +178,8 @@ describe('a remote peer sees formatting and structure, not just text', () => {
     a.editor.commands.toggleHeading({ level: 2 })
     net.flush()
 
-    expect(json(b).content[0].type).toBe('heading')
-    expect(json(b).content[0].attrs.level).toBe(2)
+    expect(json(b).content![0].type).toBe('heading')
+    expect(json(b).content![0].attrs!.level).toBe(2)
     expect(json(b)).toEqual(json(a))
   })
 
@@ -174,7 +190,7 @@ describe('a remote peer sees formatting and structure, not just text', () => {
     a.editor.commands.setContent('<ul><li><p>one</p></li><li><p>two</p></li></ul>')
     net.flush()
 
-    const list = json(b).content[0]
+    const list = json(b).content![0]
     expect(list.type).toBe('bulletList')
     expect(list.content).toHaveLength(2)
     expect(json(b)).toEqual(json(a))
@@ -189,11 +205,11 @@ describe('a remote peer sees formatting and structure, not just text', () => {
     a.editor.commands.insertTable({ rows: 3, cols: 3, withHeaderRow: true })
     net.flush()
 
-    const table = json(b).content.find((n) => n.type === 'table')
+    const table = json(b).content!.find((n) => n.type === 'table')
     expect(table).toBeTruthy()
-    expect(table.content).toHaveLength(3)                       // 3 rows
-    expect(table.content[0].content).toHaveLength(3)            // 3 cells in row 1
-    expect(table.content[0].content[0].type).toBe('tableHeader')
+    expect(table!.content).toHaveLength(3)                       // 3 rows
+    expect(table!.content![0].content).toHaveLength(3)            // 3 cells in row 1
+    expect(table!.content![0].content![0].type).toBe('tableHeader')
     expect(json(b)).toEqual(json(a))
   })
 
@@ -207,11 +223,11 @@ describe('a remote peer sees formatting and structure, not just text', () => {
     a.editor.commands.setImage({ src, alt: 'a picture' })
     net.flush()
 
-    const img = json(b).content.flatMap((n) => n.content || []).find((n) => n.type === 'image')
-      || json(b).content.find((n) => n.type === 'image')
+    const img = json(b).content!.flatMap((n) => n.content || []).find((n) => n.type === 'image')
+      || json(b).content!.find((n) => n.type === 'image')
     expect(img).toBeTruthy()
-    expect(img.attrs.src).toBe(src)
-    expect(img.attrs.alt).toBe('a picture')
+    expect(img!.attrs!.src).toBe(src)
+    expect(img!.attrs!.alt).toBe('a picture')
     expect(json(b)).toEqual(json(a))
   })
 
@@ -225,8 +241,8 @@ describe('a remote peer sees formatting and structure, not just text', () => {
     a.editor.commands.setLink({ href: 'https://vulos.org' })
     net.flush()
 
-    const marked = json(b).content[0].content.find((n) => (n.marks || []).some((m) => m.type === 'link'))
-    expect(marked.marks.find((m) => m.type === 'link').attrs.href).toBe('https://vulos.org')
+    const marked = json(b).content![0].content!.find((n) => (n.marks || []).some((m) => m.type === 'link'))
+    expect(marked!.marks!.find((m) => m.type === 'link')!.attrs!.href).toBe('https://vulos.org')
     expect(json(b)).toEqual(json(a))
   })
 })
@@ -250,7 +266,7 @@ describe('concurrent edits converge without corrupting each other', () => {
     net.flush()
 
     expect(json(a)).toEqual(json(b))
-    const paras = json(a).content.map((p) => (p.content || []).map((t) => t.text).join(''))
+    const paras = json(a).content!.map((p) => (p.content || []).map((t) => t.text).join(''))
     expect(paras[0]).toBe('alpha ONE')
     expect(paras[2]).toBe('gamma TWO')
     expect(paras).toHaveLength(3)   // no paragraph was split or lost
@@ -282,8 +298,8 @@ describe('concurrent edits converge without corrupting each other', () => {
     // Structure is byte-for-byte the same shape …
     expect(shape(after)).toEqual(shape(before))
     // … the edit landed in the RIGHT cell …
-    const cellText = (doc, row, col) =>
-      doc.content.find((n) => n.type === 'table').content[row].content[col].content[0].content[0].text
+    const cellText = (doc: JSONContent, row: number, col: number): string | undefined =>
+      doc.content!.find((n) => n.type === 'table')!.content![row].content![col].content![0].content![0].text
     expect(cellText(after, 1, 1)).toBe('r1c2!')
     // … and no other cell moved.
     expect(cellText(after, 1, 0)).toBe('r1c1')
@@ -301,10 +317,10 @@ describe('concurrent edits converge without corrupting each other', () => {
     a.editor.commands.insertContentAt(1, 'XX')   // into the leading paragraph
     net.flush()
 
-    const list = json(b).content.find((n) => n.type === 'bulletList')
-    expect(list.content).toHaveLength(2)
-    expect(list.content[0].content[0].content[0].text).toBe('one')
-    expect(list.content[1].content[0].content[0].text).toBe('two')
+    const list = json(b).content!.find((n) => n.type === 'bulletList')
+    expect(list!.content).toHaveLength(2)
+    expect(list!.content![0].content![0].content![0].text).toBe('one')
+    expect(list!.content![1].content![0].content![0].text).toBe('two')
     expect(json(a)).toEqual(json(b))
   })
 
@@ -321,9 +337,9 @@ describe('concurrent edits converge without corrupting each other', () => {
     net.flush()
 
     expect(json(a)).toEqual(json(b))
-    const text = json(a).content[0].content.map((n) => n.text).join('')
+    const text = json(a).content![0].content!.map((n) => n.text).join('')
     expect(text).toBe('shared sentence more')
-    expect(json(a).content[0].content[0].marks.some((m) => m.type === 'bold')).toBe(true)
+    expect(json(a).content![0].content![0].marks!.some((m) => m.type === 'bold')).toBe(true)
   })
 })
 
@@ -351,7 +367,7 @@ describe('round-trip preserves the document exactly', () => {
     expect(decoded).not.toBeNull()
 
     const rebuilt = new Y.Doc()
-    Y.applyUpdate(rebuilt, decoded)
+    Y.applyUpdate(rebuilt, decoded!)
     const res = checkFragmentRenderable(rebuilt.getXmlFragment(Y_FRAGMENT), a.editor.schema)
     expect(res.ok).toBe(true)
     expect(res.json).toEqual(original)
@@ -395,7 +411,7 @@ describe('undo is user-scoped', () => {
     b.editor.commands.insertContentAt(1, 'X')       // remote: "Xhello!"
     net.flush()
 
-    const textOf = (p) => p.editor.getJSON().content[0].content.map((n) => n.text).join('')
+    const textOf = (p: Peer): string => p.editor.getJSON().content![0].content!.map((n) => n.text).join('')
     expect(textOf(a)).toBe('Xhello!')
 
     // A undoes. It must take back A's own "!" — never B's "X".
@@ -413,7 +429,7 @@ describe('undo is user-scoped', () => {
     b.editor.commands.insertContentAt(4, 'd')     // purely remote, from A's view
     net.flush()
 
-    expect(a.editor.getJSON().content[0].content[0].text).toBe('abcd')
+    expect(a.editor.getJSON().content![0].content![0].text).toBe('abcd')
     expect(a.editor.can().undo()).toBe(false)     // not on A's undo stack
   })
 })
@@ -453,7 +469,7 @@ describe('a hostile peer cannot inject content or crash the renderer', () => {
     // The live document is untouched and the editor is still alive.
     expect(json(a)).toEqual(before)
     a.editor.commands.insertContentAt(1, 'ok')
-    expect(json(a).content[0].content[0].text).toContain('ok')
+    expect(json(a).content![0].content![0].text).toContain('ok')
   })
 
   it('refuses a javascript: link and an SVG image src (sanitisation cannot be bypassed by a peer)', () => {
@@ -515,11 +531,12 @@ describe('comment anchors survive a remote peer\'s edit', () => {
     net.flush()
 
     const mapped = readMappedRanges(
-      COMMENT_PLUGIN_KEY.getState(b.editor.state).decorations,
-      comments,
+      commentPluginState(b.editor).decorations,
+      asComments(comments),
     )
     const range = mapped.get('c1')
-    expect(range.from).toBe(from + 'oh, '.length)
+    expect(range).toBeTruthy()
+    expect(range!.from).toBe(from + 'oh, '.length)
     // And it still covers exactly the words it was attached to.
     expect(anchoredText(b.editor, 'c1')).toBe('world')
   })
@@ -552,27 +569,48 @@ describe('comment anchors survive a remote peer\'s edit', () => {
 
 // ── helpers ────────────────────────────────────────────────────────────────
 
+// The comment shape these tests build is a minimal stand-in for the full CRDT
+// `Comment` record (only `id`/`anchor` are read by the code under test here) —
+// cast through a narrow local type rather than `any`.
+interface AnchorTestComment {
+  id: string
+  anchor: { type: string; from: number; to: number }
+  resolved: boolean
+}
+function asComments(cs: AnchorTestComment[]): Comment[] {
+  return cs as unknown as Comment[]
+}
+
+/** The comment-decorations plugin's live state — throws if the extension
+ *  somehow isn't active (it always is in these tests; this just satisfies the
+ *  PluginKey.getState() → possibly-undefined return type). */
+function commentPluginState(editor: Editor): CommentPluginState {
+  const state = COMMENT_PLUGIN_KEY.getState(editor.state)
+  if (!state) throw new Error('comment decorations plugin not active')
+  return state
+}
+
 /** Push a comment list into the decoration plugin (as DocsEditor does). */
-function dispatchComments(editor, comments) {
+function dispatchComments(editor: Editor, comments: AnchorTestComment[]): void {
   const tr = editor.state.tr
-  tr.setMeta(COMMENT_META, { comments, activeId: null })
+  tr.setMeta(COMMENT_META, { comments: asComments(comments), activeId: null })
   editor.view.dispatch(tr)
 }
 
 /** The document text currently covered by a comment's (mapped) anchor. */
-function anchoredText(editor, commentId) {
-  const decos = COMMENT_PLUGIN_KEY.getState(editor.state).decorations.find()
+function anchoredText(editor: Editor, commentId: string): string | null {
+  const decos = commentPluginState(editor).decorations.find()
   const d = decos.find((x) => decorationCommentId(x) === commentId)
   if (!d) return null
   return editor.state.doc.textBetween(d.from, d.to, ' ')
 }
 
 /** Document position of the first occurrence of `needle`. */
-function findTextPos(editor, needle) {
+function findTextPos(editor: Editor, needle: string): number {
   let found = -1
   editor.state.doc.descendants((node, pos) => {
     if (found >= 0) return false
-    if (node.isText && node.text.includes(needle)) found = pos + node.text.indexOf(needle)
+    if (node.isText && node.text && node.text.includes(needle)) found = pos + node.text.indexOf(needle)
     return true
   })
   if (found < 0) throw new Error(`text not found: ${needle}`)
@@ -580,12 +618,13 @@ function findTextPos(editor, needle) {
 }
 
 /** The document's structure with all text stripped — for "did the shape move?" */
-function shape(node) {
+function shape(node: unknown): unknown {
   if (Array.isArray(node)) return node.map(shape)
   if (!node || typeof node !== 'object') return node
-  const out = { type: node.type }
-  if (node.attrs) out.attrs = node.attrs
-  if (node.content) out.content = node.content.map(shape)
-  if (node.text != null) out.type = 'text'
+  const n = node as JSONContent
+  const out: Record<string, unknown> = { type: n.type }
+  if (n.attrs) out.attrs = n.attrs
+  if (n.content) out.content = n.content.map(shape)
+  if (n.text != null) out.type = 'text'
   return out
 }
