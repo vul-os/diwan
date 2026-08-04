@@ -38,7 +38,13 @@
  *   breaks — y-offsets (px, relative to contentEl top) where a page ends and the
  *            next begins, in ascending order. length === pageCount - 1.
  */
-export function measurePageBreaks(contentEl, pageContentHeightPx) {
+export interface PageBreaksResult {
+  breaks: number[]
+  pageCount: number
+  contentHeight: number
+}
+
+export function measurePageBreaks(contentEl: HTMLElement | null | undefined, pageContentHeightPx: number): PageBreaksResult {
   if (!contentEl || !(pageContentHeightPx > 0)) {
     return { breaks: [], pageCount: 1, contentHeight: 0 }
   }
@@ -50,7 +56,7 @@ export function measurePageBreaks(contentEl, pageContentHeightPx) {
     return { breaks: [], pageCount: 1, contentHeight: totalHeight }
   }
 
-  const breaks = []
+  const breaks: number[] = []
   // `pageTop` is the y-offset (relative to content top) where the CURRENT page
   // begins. A block whose bottom crosses pageTop + pageHeight starts a new page.
   let pageTop = 0
@@ -109,7 +115,7 @@ export function measurePageBreaks(contentEl, pageContentHeightPx) {
 }
 
 /** True if a top-level block element carries an explicit page break. */
-function hasExplicitBreak(el) {
+function hasExplicitBreak(el: Element | null | undefined): boolean {
   if (!el || el.nodeType !== 1) return false
   if (el.hasAttribute?.('data-page-break')) return true
   try {
@@ -124,23 +130,29 @@ function hasExplicitBreak(el) {
  * Debounce helper used by the editor's pagination effect. Coalesces bursts of
  * updates (typing) into a single measurement on the next idle frame.
  */
-export function createDebouncedMeasure(fn, delayMs = 250) {
-  let timer = null
-  let raf = null
+export interface DebouncedMeasure {
+  (): void
+  cancel: () => void
+  flush: () => void
+}
+
+export function createDebouncedMeasure(fn: () => void, delayMs = 250): DebouncedMeasure {
+  let timer: ReturnType<typeof setTimeout> | null = null
+  let raf: number | null = null
   const run = () => {
     if (raf) cancelAnimationFrame(raf)
     raf = requestAnimationFrame(() => { raf = null; fn() })
   }
-  const debounced = () => {
-    clearTimeout(timer)
+  const debounced = (() => {
+    if (timer) clearTimeout(timer)
     timer = setTimeout(run, delayMs)
-  }
+  }) as DebouncedMeasure
   debounced.cancel = () => {
-    clearTimeout(timer)
+    if (timer) clearTimeout(timer)
     if (raf) cancelAnimationFrame(raf)
     timer = null
     raf = null
   }
-  debounced.flush = () => { clearTimeout(timer); run() }
+  debounced.flush = () => { if (timer) clearTimeout(timer); run() }
   return debounced
 }
