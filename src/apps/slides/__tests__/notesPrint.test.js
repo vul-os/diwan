@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { buildNotesPrintHtml, escapeNotesHtml } from '../notesPrint.js'
+import { buildNotesPrintHtml, escapeNotesHtml } from '../notesPrint'
 import { sanitizeSlideHtml } from '../../../lib/sanitize.js'
 
 describe('buildNotesPrintHtml — injection boundary', () => {

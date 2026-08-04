@@ -9,19 +9,31 @@
  * through the caller's HTML sanitiser instead.
  */
 
-export function escapeNotesHtml(s) {
-  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => (
-    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
-  ))
+export function escapeNotesHtml(s: unknown): string {
+  const map: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
+  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => map[c])
+}
+
+interface NotesPrintSlide {
+  title?: string
+  content?: string
+  notes?: string
+}
+
+interface NotesPrintDeck {
+  slides?: NotesPrintSlide[]
 }
 
 /**
  * Build the print-notes HTML string.
- * @param {object} slidesData  the deck ({ slides: [...] })
- * @param {string} title       the deck title (escaped)
- * @param {(html:string)=>string} sanitize  HTML sanitiser for slide.content
+ * `slidesData` is the deck ({ slides: [...] }); `title` is the deck title
+ * (escaped); `sanitize` is the HTML sanitiser for slide.content.
  */
-export function buildNotesPrintHtml(slidesData, title, sanitize) {
+export function buildNotesPrintHtml(
+  slidesData: NotesPrintDeck | null | undefined,
+  title: string,
+  sanitize: (html: string) => string,
+): string {
   const esc = escapeNotesHtml
   const slides = Array.isArray(slidesData?.slides) ? slidesData.slides : []
   const body = slides.map((slide, i) => `
