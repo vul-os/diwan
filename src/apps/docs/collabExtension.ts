@@ -27,13 +27,21 @@ import {
   ySyncPlugin, yUndoPlugin, yUndoPluginKey,
   undo as yUndo, redo as yRedo,
 } from 'y-prosemirror'
+import type * as Y from 'yjs'
+import type { Command } from '@tiptap/core'
 
-export const YCollab = Extension.create({
+export interface YCollabOptions {
+  /** the document's Y fragment */
+  fragment: Y.XmlFragment | null
+}
+
+type UndoRedoFn = typeof yUndo | typeof yRedo
+
+export const YCollab = Extension.create<YCollabOptions>({
   name: 'yCollab',
 
   addOptions() {
     return {
-      /** @type {import('yjs').XmlFragment|null} the document's Y fragment */
       fragment: null,
     }
   },
@@ -53,7 +61,7 @@ export const YCollab = Extension.create({
     // opened a transaction for this command — dispatching that stale `tr` after
     // the view has moved on throws "Applying a mismatched transaction". So we tell
     // TipTap not to dispatch it and let Yjs own the update.
-    const run = (fn) => () => ({ tr, state, dispatch }) => {
+    const run = (fn: UndoRedoFn): (() => Command) => () => ({ tr, state, dispatch }) => {
       tr.setMeta('preventDispatch', true)
       const undoManager = yUndoPluginKey.getState(state)?.undoManager
       if (!undoManager) return false
