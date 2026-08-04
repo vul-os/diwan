@@ -1,5 +1,5 @@
 /**
- * src/apps/sheets/DataValidationPanel.jsx
+ * src/apps/sheets/DataValidationPanel.tsx
  *
  * Data-validation side panel: dropdown lists (literal or from a range, including
  * another sheet), checkboxes, number ranges, dates, and text content/length.
@@ -29,17 +29,48 @@ import {
   buildRegulation,
   applyValidation,
   listValidationRules,
+  type ConditionMeta,
+  type DVSheet,
 } from './dataValidation.js'
 
-function colLetter(col) {
+interface ActiveCell { row: number; col: number }
+
+export interface DataValidationPanelProps {
+  data: DVSheet[]
+  activeCell?: ActiveCell | null
+  onClose: () => void
+  onChange?: (data: DVSheet[]) => void
+}
+
+interface DVForm {
+  kind: string
+  items: string
+  sourceRange: string
+  allowMulti: boolean
+  checkedValue: string
+  uncheckedValue: string
+  condition: string
+  value1: string
+  value2: string
+  rejectInvalid: boolean
+  hint: string
+}
+
+function colLetter(col: number): string {
   let s = ''
   let n = col
   do { s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26) - 1 } while (n >= 0)
   return s
 }
-function cellA1(row, col) { return `${colLetter(col)}${row + 1}` }
+function cellA1(row: number, col: number): string { return `${colLetter(col)}${row + 1}` }
 
-const EMPTY_FORM = {
+// parseRange (ConditionalFormatPanel.jsx, not yet converted) infers a `number[]`
+// row/column shape rather than the `[number, number]` tuple applyValidation's
+// signature declares — a local, typed adapter over the same runtime contract.
+const parseRangeTyped = (text: string): { row: [number, number]; column: [number, number] }[] | undefined =>
+  parseRange(text) as { row: [number, number]; column: [number, number] }[] | undefined
+
+const EMPTY_FORM: DVForm = {
   kind: 'dropdown',
   items: '',
   sourceRange: '',
@@ -53,8 +84,15 @@ const EMPTY_FORM = {
   hint: '',
 }
 
+interface ConditionGroup {
+  list: ConditionMeta[]
+  arity: (v: unknown) => number
+  input: string
+  default: string
+}
+
 // The condition list + arity for each kind that has one.
-const CONDITIONS = {
+const CONDITIONS: Record<string, ConditionGroup> = {
   number:     { list: NUMBER_CONDITIONS, arity: numberConditionArity, input: 'decimal', default: 'between' },
   textLength: { list: NUMBER_CONDITIONS, arity: numberConditionArity, input: 'numeric', default: 'between' },
   date:       { list: DATE_CONDITIONS,   arity: dateConditionArity,   input: 'date',    default: 'between' },
@@ -62,7 +100,7 @@ const CONDITIONS = {
 }
 
 // The message shown when buildRegulation refuses the form.
-const KIND_ERROR = {
+const KIND_ERROR: Record<string, string> = {
   dropdown:      'Add at least one dropdown item (comma-separated).',
   dropdownRange: 'Enter a valid source range, e.g. Sheet2!A1:A10.',
   checkbox:      'Give the checkbox two different values.',
@@ -72,7 +110,7 @@ const KIND_ERROR = {
   textLength:    'Enter a whole-number length for the condition.',
 }
 
-export default function DataValidationPanel({ data, activeCell, onClose, onChange }) {
+export default function DataValidationPanel({ data, activeCell, onClose, onChange }: DataValidationPanelProps) {
   const sheet = data?.[0]
   const rules = useMemo(() => listValidationRules(sheet), [sheet])
 
@@ -81,7 +119,7 @@ export default function DataValidationPanel({ data, activeCell, onClose, onChang
     : 'A1'
   const [editing, setEditing] = useState(false)
   const [range, setRange]     = useState(defaultRange)
-  const [form, setForm]       = useState(EMPTY_FORM)
+  const [form, setForm]       = useState<DVForm>(EMPTY_FORM)
   const [error, setError]     = useState('')
 
   const inputCls = 'w-full rounded border border-line bg-bg px-2 py-1.5 text-xs text-ink focus:outline-none focus:border-line-strong'
@@ -97,11 +135,11 @@ export default function DataValidationPanel({ data, activeCell, onClose, onChang
     setEditing(true)
   }
 
-  function patch(p) { setForm((f) => ({ ...f, ...p })); setError('') }
+  function patch(p: Partial<DVForm>) { setForm((f) => ({ ...f, ...p })); setError('') }
 
   // Switching criteria resets the condition to one the new kind actually has
   // (a `date` rule must never carry over a `moreThanThe` from the number list).
-  function changeKind(kind) {
+  function changeKind(kind: string) {
     const next = CONDITIONS[kind]
     patch({ kind, condition: next ? next.default : EMPTY_FORM.condition, value1: '', value2: '' })
   }
@@ -114,17 +152,17 @@ export default function DataValidationPanel({ data, activeCell, onClose, onChang
     }
     const parsed = parseRange(range)?.[0]
     if (!parsed) { setError('Enter a valid range, e.g. A1:A10.'); return }
-    const next = applyValidation(data, range, reg, parseRange)
+    const next = applyValidation(data, range, reg, parseRangeTyped)
     onChange?.(next)
     setEditing(false)
   }
 
-  function removeRule(keys) {
+  function removeRule(keys: string[]) {
     // Clear every cell key this rule covers.
     let next = data
     for (const key of keys) {
       const [r, c] = key.split('_').map(Number)
-      next = applyValidation(next, cellA1(r, c), null, parseRange)
+      next = applyValidation(next, cellA1(r, c), null, parseRangeTyped)
     }
     onChange?.(next)
   }
@@ -288,7 +326,7 @@ export default function DataValidationPanel({ data, activeCell, onClose, onChang
                   <input
                     aria-label="Value"
                     type={cond.input === 'date' ? 'date' : 'text'}
-                    inputMode={cond.input === 'date' || cond.input === 'text' ? undefined : cond.input}
+                    inputMode={cond.input === 'date' || cond.input === 'text' ? undefined : (cond.input as React.HTMLAttributes<HTMLInputElement>['inputMode'])}
                     value={form.value1}
                     onChange={(e) => patch({ value1: e.target.value })}
                     className={inputCls}
@@ -298,7 +336,7 @@ export default function DataValidationPanel({ data, activeCell, onClose, onChang
                     <input
                       aria-label="Upper value"
                       type={cond.input === 'date' ? 'date' : 'text'}
-                      inputMode={cond.input === 'date' || cond.input === 'text' ? undefined : cond.input}
+                      inputMode={cond.input === 'date' || cond.input === 'text' ? undefined : (cond.input as React.HTMLAttributes<HTMLInputElement>['inputMode'])}
                       value={form.value2}
                       onChange={(e) => patch({ value2: e.target.value })}
                       className={inputCls}

@@ -57,7 +57,7 @@ export interface ValidationRuleGroup {
   count: number
 }
 
-interface ConditionMeta { value: string; label: string; needs: number }
+export interface ConditionMeta { value: string; label: string; needs: number }
 
 // Human-facing rule kinds → the native `type` / `type2` pair Fortune Sheet uses
 // in validateCellData(). We keep the surface small and Sheets-like.
