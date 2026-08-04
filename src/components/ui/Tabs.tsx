@@ -13,13 +13,27 @@
  */
 
 import { useRef } from 'react'
+import type { KeyboardEvent, ReactNode } from 'react'
 
-export default function Tabs({ value, onChange, items, className = '' }) {
-  const tabRefs = useRef([])
+export interface TabItem {
+  value: string
+  label: ReactNode
+  count?: number
+}
 
-  const onKeyDown = (e, idx) => {
+interface TabsProps {
+  value: string
+  onChange?: (value: string) => void
+  items: TabItem[]
+  className?: string
+}
+
+export default function Tabs({ value, onChange, items, className = '' }: TabsProps) {
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([])
+
+  const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>, idx: number) => {
     const last = items.length - 1
-    let next = null
+    let next: number | null = null
     if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = idx >= last ? 0 : idx + 1
     else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = idx <= 0 ? last : idx - 1
     else if (e.key === 'Home') next = 0
