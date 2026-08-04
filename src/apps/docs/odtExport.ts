@@ -16,22 +16,23 @@
 
 import { saveAs } from 'file-saver'
 import JSZip from 'jszip'
+import type { Editor, JSONContent } from '@tiptap/react'
 import { escapeXmlText } from '../../lib/xmlText.js'
 
 // Escape for ODF content.xml. escapeXmlText FIRST strips XML-1.0-illegal control
 // chars (VT/FF/NUL/…) that would otherwise make LibreOffice reject the .odt, THEN
 // escapes the five XML metacharacters. See src/lib/xmlText.js.
-function esc(s) {
+function esc(s: unknown): string {
   return escapeXmlText(s)
 }
 
 // Wrap escaped text in the nested spans for whichever marks are present. Each
 // mark maps to a single automatic style declared in content.xml's styles block.
-function runXml(node) {
+function runXml(node: JSONContent): string {
   if (node.type !== 'text') return ''
   let text = esc(node.text || '')
   const marks = (node.marks || []).map((m) => m.type)
-  const wrap = (styleName, inner) => `<text:span text:style-name="${styleName}">${inner}</text:span>`
+  const wrap = (styleName: string, inner: string) => `<text:span text:style-name="${styleName}">${inner}</text:span>`
   if (marks.includes('bold')) text = wrap('T-Bold', text)
   if (marks.includes('italic')) text = wrap('T-Italic', text)
   if (marks.includes('underline')) text = wrap('T-Underline', text)
@@ -39,13 +40,13 @@ function runXml(node) {
   return text
 }
 
-function inlineXml(nodes) {
+function inlineXml(nodes: JSONContent[] | undefined): string {
   return (nodes || []).map(runXml).join('')
 }
 
-const HEADING_STYLE = { 1: 'Heading_20_1', 2: 'Heading_20_2', 3: 'Heading_20_3', 4: 'Heading_20_4', 5: 'Heading_20_5', 6: 'Heading_20_6' }
+const HEADING_STYLE: Record<number, string> = { 1: 'Heading_20_1', 2: 'Heading_20_2', 3: 'Heading_20_3', 4: 'Heading_20_4', 5: 'Heading_20_5', 6: 'Heading_20_6' }
 
-function listXml(node) {
+function listXml(node: JSONContent): string {
   const items = (node.content || []).map((item) => {
     const parts = (item.content || []).map((child) => {
       if (child.type === 'bulletList' || child.type === 'orderedList') return listXml(child)
@@ -56,7 +57,7 @@ function listXml(node) {
   return `<text:list>${items.join('')}</text:list>`
 }
 
-function tableXml(node) {
+function tableXml(node: JSONContent): string {
   const rows = (node.content || []).map((row) => {
     const cells = (row.content || []).map((cell) => {
       const paras = (cell.content || []).map((p) => `<text:p>${inlineXml(p.content || [])}</text:p>`).join('')
@@ -68,7 +69,7 @@ function tableXml(node) {
   return `<table:table table:name="Table"><table:table-column table:number-columns-repeated="${nCols}"/>${rows.join('')}</table:table>`
 }
 
-function blockXml(node) {
+function blockXml(node: JSONContent): string {
   switch (node.type) {
     case 'heading': {
       const lvl = Math.min(Math.max(node.attrs?.level || 1, 1), 6)
@@ -112,7 +113,7 @@ const NS = [
 ].join(' ')
 
 /** Build the .odt package as a Blob (pure — no download side effect). */
-export async function buildOdtBlob(editor) {
+export async function buildOdtBlob(editor: Editor): Promise<Blob> {
   const json = editor.getJSON()
   const body = (json.content || []).map(blockXml).join('')
   const contentXml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -143,11 +144,13 @@ export async function buildOdtBlob(editor) {
   zip.file('mimetype', 'application/vnd.oasis.opendocument.text', { compression: 'STORE' })
   zip.file('content.xml', contentXml)
   zip.file('styles.xml', stylesXml)
-  zip.folder('META-INF').file('manifest.xml', manifest)
+  const metaInf = zip.folder('META-INF')
+  if (!metaInf) throw new Error('odtExport: failed to create META-INF folder in zip')
+  metaInf.file('manifest.xml', manifest)
   return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.oasis.opendocument.text' })
 }
 
-export async function exportToOdt(editor, filename) {
+export async function exportToOdt(editor: Editor, filename: string): Promise<void> {
   const blob = await buildOdtBlob(editor)
   saveAs(blob, `${filename}.odt`)
 }
