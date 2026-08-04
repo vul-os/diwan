@@ -14,13 +14,20 @@ import { render, screen, fireEvent, waitFor, within } from '@testing-library/rea
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { useFilesStore } from '../../store/filesStore.js'
 import SlidesEditor from '../../apps/slides/SlidesEditor.jsx'
-import { server, resetMock } from './server.js'
+import { server, resetMock } from './server'
 
 beforeAll(() => server.listen({ onUnhandledRequest: 'bypass' }))
 afterEach(() => server.resetHandlers())
 afterAll(() => server.close())
 
-function seedDeck(slides) {
+interface DeckSlide {
+  id: string
+  title: string
+  content: string
+  notes: string
+}
+
+function seedDeck(slides: DeckSlide[]) {
   useFilesStore.setState({
     files: [{
       id: 'deck1', name: 'My Deck', type: 'slide',
@@ -40,7 +47,7 @@ function mountDeck() {
   )
 }
 
-const slide = (id, title) => ({ id, title, content: `<p>${title}</p>`, notes: '' })
+const slide = (id: string, title: string): DeckSlide => ({ id, title, content: `<p>${title}</p>`, notes: '' })
 
 describe('Slides editor (full mount, MSW/RTL)', () => {
   beforeEach(() => resetMock())
@@ -75,14 +82,14 @@ describe('Slides editor (full mount, MSW/RTL)', () => {
 
     const thumbs = screen.getAllByLabelText(/^Slide \d/i)
     // Grab the rail thumbnails (first two matches).
-    const first = thumbs.find((t) => /Slide 1/.test(t.getAttribute('aria-label')))
-    const second = thumbs.find((t) => /Slide 2/.test(t.getAttribute('aria-label')))
+    const first = thumbs.find((t) => /Slide 1/.test(t.getAttribute('aria-label') ?? ''))
+    const second = thumbs.find((t) => /Slide 2/.test(t.getAttribute('aria-label') ?? ''))
     expect(first && second).toBeTruthy()
 
     // Drag slide 2 over slide 1 and drop → the moved slide becomes current (idx 0).
-    fireEvent.dragStart(second)
-    fireEvent.dragOver(first)
-    fireEvent.dragEnd(second)
+    fireEvent.dragStart(second!)
+    fireEvent.dragOver(first!)
+    fireEvent.dragEnd(second!)
 
     await waitFor(() => {
       // After the move, the slide now at position 1 is marked current.
@@ -96,7 +103,7 @@ describe('Slides editor (full mount, MSW/RTL)', () => {
     const openSpy = vi.spyOn(window, 'open').mockReturnValue({
       closed: false, close: () => {}, postMessage: () => {}, focus: () => {},
       document: { write: () => {}, close: () => {} },
-    })
+    } as unknown as Window)
     seedDeck([slide('s1', 'Intro')])
     mountDeck()
     await waitFor(() => expect(screen.getByDisplayValue('My Deck')).toBeInTheDocument())
