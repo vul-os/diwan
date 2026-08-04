@@ -35,11 +35,11 @@ export const INLINE_IMAGE_TYPES = new Set([
 export const MAX_INLINE_IMAGE_BYTES = 5 * 1024 * 1024
 
 /** True if a File is an embeddable raster image within the size cap. */
-export function isEmbeddableImage(file) {
+export function isEmbeddableImage(file: { type?: string; size?: number } | null | undefined): boolean {
   return !!file &&
-    INLINE_IMAGE_TYPES.has(file.type) &&
-    file.size > 0 &&
-    file.size <= MAX_INLINE_IMAGE_BYTES
+    INLINE_IMAGE_TYPES.has(file.type ?? '') &&
+    (file.size ?? 0) > 0 &&
+    (file.size ?? Infinity) <= MAX_INLINE_IMAGE_BYTES
 }
 
 /**
@@ -50,7 +50,7 @@ export function isEmbeddableImage(file) {
  * @param {File} file
  * @returns {Promise<string>} data: URI
  */
-export function fileToDataUri(file) {
+export function fileToDataUri(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     if (!file || !INLINE_IMAGE_TYPES.has(file.type)) {
       reject(new Error('Only PNG, JPEG, GIF, or WebP images can be inserted'))
@@ -80,7 +80,7 @@ export function fileToDataUri(file) {
 // alignment purely through `margin`/`display` — both allow-listed CSS props — so
 // it survives `sanitizeDocHtml` (no data-* attr dependency, which the doc config
 // does not guarantee) and round-trips through HTML export/import via the style.
-function alignStyle(align) {
+function alignStyle(align: unknown): string {
   switch (align) {
     case 'center': return 'display:block;margin-left:auto;margin-right:auto'
     case 'right':  return 'display:block;margin-left:auto;margin-right:0'
@@ -91,7 +91,7 @@ function alignStyle(align) {
 
 // Recover the alignment keyword from an <img>'s inline style on import so a
 // round-tripped doc keeps its alignment (mirrors alignStyle above).
-function parseAlign(el) {
+function parseAlign(el: HTMLElement): string | null {
   const style = (el.getAttribute('style') || '').replace(/\s+/g, '').toLowerCase()
   if (!/display:block/.test(style)) return null
   const l = /margin-left:auto/.test(style)
