@@ -1,5 +1,5 @@
 /**
- * src/apps/sheets/pivot.js  (WAVE-63 — reactive pivot tables)
+ * src/apps/sheets/pivot.ts  (WAVE-63 — reactive pivot tables)
  *
  * Pure pivot model + aggregation, mirroring the WAVE-54 chart model discipline.
  *
@@ -35,12 +35,88 @@
  * the DOM is React-escaped text — nothing here builds HTML or evals.
  */
 
-export const PIVOT_AGGS = [
+export type PivotAgg = 'SUM' | 'AVG' | 'COUNT' | 'COUNTA' | 'MAX' | 'MIN' | 'MEDIAN' | 'STDDEV' | 'PRODUCT' | 'COUNTUNIQUE'
+export type PivotDisplay = 'raw' | 'pct_total' | 'pct_row' | 'pct_col'
+export type PivotGrouping = 'none' | 'day' | 'month' | 'quarter' | 'year'
+
+export interface PivotValueSpec {
+  field: string
+  agg: PivotAgg
+  display: PivotDisplay
+}
+
+export interface Pivot {
+  id: string
+  range: string
+  title: string
+  rowField: string
+  colField: string
+  valueField: string
+  agg: PivotAgg
+  values: PivotValueSpec[]
+  rowGroup: PivotGrouping
+  colGroup: PivotGrouping
+  x: number
+  y: number
+}
+
+/** Loose, pre-validation input to `makePivot`. */
+export interface PivotInput {
+  id?: unknown
+  range?: unknown
+  title?: unknown
+  rowField?: unknown
+  colField?: unknown
+  valueField?: unknown
+  agg?: unknown
+  values?: unknown
+  rowGroup?: unknown
+  colGroup?: unknown
+  x?: unknown
+  y?: unknown
+}
+
+export interface PivotCellValue {
+  v?: string | number | boolean
+  m?: string | number
+  [key: string]: unknown
+}
+export interface PivotCellEntry {
+  r: number
+  c: number
+  v?: PivotCellValue | string | number | boolean | null
+}
+export interface PivotSheet {
+  id?: string
+  celldata?: PivotCellEntry[]
+  pivots?: Pivot[]
+  [key: string]: unknown
+}
+
+export interface PivotModel {
+  header: string[]
+  displays: (PivotDisplay | null)[]
+  table: (string | number)[][]
+}
+
+export interface PivotSheetResult {
+  name: string
+  celldata: {
+    r: number
+    c: number
+    v: { v: string | number; m: string; ct: { fa: string; t: string }; bl?: number }
+  }[]
+  config: Record<string, never>
+}
+
+interface Bounds { r0: number; r1: number; c0: number; c1: number }
+
+export const PIVOT_AGGS: PivotAgg[] = [
   'SUM', 'AVG', 'COUNT', 'COUNTA', 'MAX', 'MIN',
   // WAVE-64 additions.
   'MEDIAN', 'STDDEV', 'PRODUCT', 'COUNTUNIQUE',
 ]
-const PIVOT_AGG_SET = new Set(PIVOT_AGGS)
+const PIVOT_AGG_SET: Set<string> = new Set(PIVOT_AGGS)
 
 /**
  * Display modes (WAVE-64) — how an aggregated cell is PRESENTED. 'raw' is the
@@ -50,9 +126,9 @@ const PIVOT_AGG_SET = new Set(PIVOT_AGGS)
  * rows of the denominator set — never by summing sub-aggregates, which would be
  * nonsense for AVG/MAX/MEDIAN.
  */
-export const PIVOT_DISPLAYS = ['raw', 'pct_total', 'pct_row', 'pct_col']
-const PIVOT_DISPLAY_SET = new Set(PIVOT_DISPLAYS)
-export const PIVOT_DISPLAY_LABEL = {
+export const PIVOT_DISPLAYS: PivotDisplay[] = ['raw', 'pct_total', 'pct_row', 'pct_col']
+const PIVOT_DISPLAY_SET: Set<string> = new Set(PIVOT_DISPLAYS)
+export const PIVOT_DISPLAY_LABEL: Record<PivotDisplay, string> = {
   raw:       'Value',
   pct_total: '% of total',
   pct_row:   '% of row',
@@ -60,16 +136,16 @@ export const PIVOT_DISPLAY_LABEL = {
 }
 
 /** Date-grouping buckets (WAVE-64) for a row/column field holding dates. */
-export const PIVOT_GROUPINGS = ['none', 'day', 'month', 'quarter', 'year']
-const PIVOT_GROUPING_SET = new Set(PIVOT_GROUPINGS)
-export const PIVOT_GROUPING_LABEL = {
+export const PIVOT_GROUPINGS: PivotGrouping[] = ['none', 'day', 'month', 'quarter', 'year']
+const PIVOT_GROUPING_SET: Set<string> = new Set(PIVOT_GROUPINGS)
+export const PIVOT_GROUPING_LABEL: Record<PivotGrouping, string> = {
   none: 'No grouping', day: 'By day', month: 'By month', quarter: 'By quarter', year: 'By year',
 }
 
 // Only-numeric view of a group's values (blank/text rows are ignored, matching
 // spreadsheet SUM/AVERAGE/MAX/MIN semantics — a blank cell is NOT counted as 0).
-function numeric(vals) {
-  const out = []
+function numeric(vals: unknown[]): number[] {
+  const out: number[] = []
   for (const v of vals) {
     if (v === '' || v === null || v === undefined) continue
     const n = Number(v)
@@ -77,7 +153,7 @@ function numeric(vals) {
   }
   return out
 }
-const AGG_FN = {
+const AGG_FN: Record<string, (vals: unknown[]) => number> = {
   SUM:    (vals) => numeric(vals).reduce((a, b) => a + b, 0),
   // AVG divides by the count of NUMERIC values, not total group rows — a blank
   // or text row must not drag the average toward zero.
@@ -109,7 +185,7 @@ const AGG_FN = {
   // COUNTUNIQUE — distinct non-blank values (text or number), compared by their
   // string form so 1 and '1' are the same label, as in a spreadsheet.
   COUNTUNIQUE: (vals) => {
-    const seen = new Set()
+    const seen = new Set<string>()
     for (const v of vals) {
       if (v === '' || v === null || v === undefined) continue
       seen.add(String(v))
@@ -127,13 +203,13 @@ const MAX_GROUPS = 2000
 const MAX_VALUES = 8
 
 let _seq = 0
-export function newPivotId() {
+export function newPivotId(): string {
   _seq = (_seq + 1) % 1e6
   return 'pvt_' + Date.now().toString(36) + '_' + _seq.toString(36) + Math.random().toString(36).slice(2, 6)
 }
 
 /** Coerce an untrusted cell/label value to a safe, length-capped string. */
-export function pivotText(v, max = 200) {
+export function pivotText(v: unknown, max = 200): string {
   if (v === null || v === undefined) return ''
   let s = typeof v === 'string' ? v : String(v)
   s = s.replace(/[\t\n\r]+/g, ' ').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
@@ -147,13 +223,13 @@ export function pivotText(v, max = 200) {
  * every field. Unknown aggregation → 'SUM'. Always a fresh plain object (CRDT-
  * safe). This is the ingress clamp: run it on any peer-supplied descriptor.
  */
-export function makePivot(partial = {}) {
-  const agg = PIVOT_AGG_SET.has(partial.agg) ? partial.agg : 'SUM'
-  const s = (v, max = 120) => (typeof v === 'string' ? v.slice(0, max) : '')
+export function makePivot(partial: PivotInput = {}): Pivot {
+  const agg = (typeof partial.agg === 'string' && PIVOT_AGG_SET.has(partial.agg) ? partial.agg : 'SUM') as PivotAgg
+  const s = (v: unknown, max = 120): string => (typeof v === 'string' ? v.slice(0, max) : '')
   // Card position over the grid — finite + bounded (same clamp discipline as
   // makeChart geometry), so a corrupt/hostile descriptor can't drive NaN layout.
-  const num = (v, d, lo, hi) => { const n = Number(v); return isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d }
-  const grouping = (v) => (PIVOT_GROUPING_SET.has(v) ? v : 'none')
+  const num = (v: unknown, d: number, lo: number, hi: number): number => { const n = Number(v); return isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d }
+  const grouping = (v: unknown): PivotGrouping => (typeof v === 'string' && PIVOT_GROUPING_SET.has(v) ? v as PivotGrouping : 'none')
 
   // WAVE-64 VALUE FIELDS. The descriptor now carries a LIST of value fields
   // (field + aggregation + display mode). The legacy single `valueField`/`agg`
@@ -162,15 +238,15 @@ export function makePivot(partial = {}) {
   // NEW descriptor still sees a coherent single-value pivot instead of nothing.
   // Every entry is allow-listed + length-capped: this is the CRDT ingress clamp.
   const valueField = s(partial.valueField)
-  let values = []
+  let values: PivotValueSpec[] = []
   if (Array.isArray(partial.values)) {
-    for (const v of partial.values.slice(0, MAX_VALUES)) {
+    for (const v of (partial.values as Array<{ field?: unknown; agg?: unknown; display?: unknown }>).slice(0, MAX_VALUES)) {
       const field = s(v?.field)
       if (!field) continue                       // a value with no field is dropped
       values.push({
         field,
-        agg:     PIVOT_AGG_SET.has(v?.agg) ? v.agg : 'SUM',
-        display: PIVOT_DISPLAY_SET.has(v?.display) ? v.display : 'raw',
+        agg:     (typeof v?.agg === 'string' && PIVOT_AGG_SET.has(v.agg) ? v.agg : 'SUM') as PivotAgg,
+        display: (typeof v?.display === 'string' && PIVOT_DISPLAY_SET.has(v.display) ? v.display : 'raw') as PivotDisplay,
       })
     }
   }
@@ -195,20 +271,20 @@ export function makePivot(partial = {}) {
 }
 
 /** Read the pivots array off the first sheet (always an array). */
-export function getPivots(data) {
+export function getPivots(data: PivotSheet[] | null | undefined): Pivot[] {
   const arr = data?.[0]?.pivots
   return Array.isArray(arr) ? arr : []
 }
 
 /** Immutably replace the pivots array on the first sheet. */
-export function setPivots(data, pivots) {
+export function setPivots(data: PivotSheet[] | null | undefined, pivots: unknown): PivotSheet[] {
   return (data || []).map((sheet, idx) =>
     idx === 0 ? { ...sheet, pivots: Array.isArray(pivots) ? pivots : [] } : sheet
   )
 }
 
 /** Insert a pivot (immutably). */
-export function insertPivot(data, pivot) {
+export function insertPivot(data: PivotSheet[] | null | undefined, pivot: PivotInput): PivotSheet[] {
   return setPivots(data, [...getPivots(data), makePivot(pivot)])
 }
 
@@ -219,10 +295,10 @@ export function insertPivot(data, pivot) {
  * descriptor's existing `values` list — otherwise makePivot would re-mirror the
  * stale list back over the patch and the update would silently do nothing.
  */
-export function updatePivot(data, id, patch) {
+export function updatePivot(data: PivotSheet[] | null | undefined, id: string, patch: PivotInput): PivotSheet[] {
   const next = getPivots(data).map((p) => {
     if (p.id !== id) return p
-    const merged = { ...p, ...patch }
+    const merged: PivotInput = { ...p, ...patch }
     if (!patch?.values && (patch?.agg !== undefined || patch?.valueField !== undefined)) {
       delete merged.values
     }
@@ -232,7 +308,7 @@ export function updatePivot(data, id, patch) {
 }
 
 /** Delete a pivot by id (immutably). */
-export function deletePivot(data, id) {
+export function deletePivot(data: PivotSheet[] | null | undefined, id: string): PivotSheet[] {
   return setPivots(data, getPivots(data).filter((p) => p.id !== id))
 }
 
@@ -241,7 +317,7 @@ export function deletePivot(data, id) {
  * makePivot so a corrupt/legacy local descriptor can never reach aggregation
  * with an unsafe field. Idempotent. Used when loading content.
  */
-export function clampPivots(data) {
+export function clampPivots(data: PivotSheet[] | null | undefined): PivotSheet[] | null | undefined {
   const pivots = getPivots(data)
   if (!pivots.length) return data
   return setPivots(data, pivots.map((p) => makePivot(p)))
@@ -254,8 +330,8 @@ export function clampPivots(data) {
  * snapshot pivots keyed stably, then re-attach them onto the normalised sheets
  * so a plain cell edit never clobbers a live pivot.
  */
-export function pivotsBySheetId(data) {
-  const map = new Map()
+export function pivotsBySheetId(data: PivotSheet[] | null | undefined): Map<string, Pivot[]> {
+  const map = new Map<string, Pivot[]>()
   ;(data || []).forEach((sheet, idx) => {
     if (Array.isArray(sheet?.pivots) && sheet.pivots.length) {
       map.set(sheet?.id ?? `#${idx}`, sheet.pivots)
@@ -264,7 +340,7 @@ export function pivotsBySheetId(data) {
   return map
 }
 
-export function mergePivots(nextData, pivotsMap) {
+export function mergePivots(nextData: PivotSheet[] | null | undefined, pivotsMap: Map<string, Pivot[]> | null | undefined): PivotSheet[] | null | undefined {
   if (!pivotsMap || pivotsMap.size === 0) return nextData
   return (nextData || []).map((sheet, idx) => {
     const key = sheet?.id ?? `#${idx}`
@@ -277,7 +353,7 @@ export function mergePivots(nextData, pivotsMap) {
 
 // ── Cell reads ───────────────────────────────────────────────────────────────
 
-function cellDisplay(cell) {
+function cellDisplay(cell: PivotCellEntry | undefined): string | number | boolean {
   const v = cell?.v
   if (v === null || v === undefined) return ''
   if (typeof v === 'object') return v.v !== undefined && v.v !== null ? v.v : (v.m ?? '')
@@ -285,18 +361,18 @@ function cellDisplay(cell) {
 }
 
 // Parse "A1:D100" → {r0,c0,r1,c1} (0-indexed inclusive). Local, tiny, bounded.
-function colToIndex(letters) {
+function colToIndex(letters: string): number {
   const s = String(letters).toUpperCase()
   let idx = 0
   for (let i = 0; i < s.length; i++) idx = idx * 26 + (s.charCodeAt(i) - 64)
   return idx - 1
 }
-function parseA1(ref) {
+function parseA1(ref: string): { c: number; r: number } | null {
   const m = String(ref).match(/^([A-Za-z]+)(\d+)$/)
   if (!m) return null
   return { c: colToIndex(m[1]), r: parseInt(m[2], 10) - 1 }
 }
-function parseRangeBounds(range) {
+function parseRangeBounds(range: string | null | undefined): Bounds | null {
   const parts = String(range || '').trim().toUpperCase().split(':')
   if (parts.length === 1) {
     const a = parseA1(parts[0]); if (!a) return null
@@ -315,10 +391,10 @@ function parseRangeBounds(range) {
  * (row-major), header row included. Bounded by MAX_SOURCE_* so a pathological
  * range can't blow up memory/CPU. Returns [] when the range is invalid.
  */
-export function sourceTable(pivot, sheet) {
-  const b = parseRangeBounds(pivot?.range)
+export function sourceTable(pivot: Pivot | PivotInput | null | undefined, sheet: PivotSheet | null | undefined): (string | number | boolean)[][] {
+  const b = parseRangeBounds(typeof pivot?.range === 'string' ? pivot.range : '')
   if (!b) return []
-  const idx = new Map()
+  const idx = new Map<string, PivotCellEntry>()
   // Actual populated extent of the sheet — a pivot never needs to materialise
   // cells past the last real cell. This is BOTH the correctness bound (blank
   // trailing rows/cols add nothing) AND the DoS bound: a range like A1:ZZ999999
@@ -333,9 +409,9 @@ export function sourceTable(pivot, sheet) {
   const rows = Math.min(b.r1, usedR, b.r0 + MAX_SOURCE_ROWS - 1) - b.r0 + 1
   const cols = Math.min(b.c1, usedC, b.c0 + MAX_SOURCE_COLS - 1) - b.c0 + 1
   if (rows <= 0 || cols <= 0) return []
-  const table = []
+  const table: (string | number | boolean)[][] = []
   for (let r = 0; r < rows; r++) {
-    const row = []
+    const row: (string | number | boolean)[] = []
     for (let c = 0; c < cols; c++) {
       row.push(cellDisplay(idx.get((b.r0 + r) + ',' + (b.c0 + c))))
     }
@@ -354,7 +430,7 @@ export function sourceTable(pivot, sheet) {
 // Group-key separator: the ASCII unit-separator, which cannot appear in cell
 // display text (control chars are not produced by sourceTable's numeric/text
 // reads), so 'row<SEP>col' keys never collide with real category values.
-const SEP = '\u001f'
+const SEP = ''
 
 /**
  * dateBucket — bucket an untrusted cell value into a day/month/quarter/year key.
@@ -365,13 +441,13 @@ const SEP = '\u001f'
  * timezone. A value that is NOT a date is returned UNCHANGED (as its own group),
  * so a text row can never be silently swallowed into a wrong date bucket.
  */
-export function dateBucket(value, mode) {
+export function dateBucket(value: unknown, mode: string): string {
   if (mode === 'none' || !PIVOT_GROUPING_SET.has(mode)) return String(value ?? '')
   const d = toDate(value)
   if (!d) return String(value ?? '')
   const y = d.getUTCFullYear()
   const m = d.getUTCMonth() + 1
-  const pad = (n) => String(n).padStart(2, '0')
+  const pad = (n: number) => String(n).padStart(2, '0')
   switch (mode) {
     case 'year':    return String(y)
     case 'quarter': return `${y}-Q${Math.floor((m - 1) / 3) + 1}`
@@ -385,7 +461,7 @@ export function dateBucket(value, mode) {
 const EXCEL_EPOCH_MS = Date.UTC(1899, 11, 30)
 const DAY_MS = 86400000
 
-function toDate(value) {
+function toDate(value: unknown): Date | null {
   if (value instanceof Date) return isNaN(value.getTime()) ? null : value
   if (typeof value === 'number' && isFinite(value)) {
     // Serial dates only: 1 (1900-01-01) … ~2958465 (9999-12-31). A number outside
@@ -401,12 +477,17 @@ function toDate(value) {
 }
 
 /** Column label for a value field: "Sales", "Sales (AVG)", "Sales (% of row)"… */
-function valueLabel(v, multi) {
-  const bits = []
+function valueLabel(v: PivotValueSpec, multi: boolean): string {
+  const bits: string[] = []
   if (multi) bits.push(v.agg)
   if (v.display !== 'raw') bits.push(PIVOT_DISPLAY_LABEL[v.display])
   const base = pivotText(v.field)
   return bits.length ? `${base} (${bits.join(', ')})` : base
+}
+
+interface ResolvedValueSpec extends PivotValueSpec {
+  idx: number
+  fn: (vals: unknown[]) => number
 }
 
 /**
@@ -422,7 +503,7 @@ function valueLabel(v, multi) {
  * aggregate by the SAME aggregate re-taken over the denominator set (whole
  * table / the cell's row / the cell's column) — never by summing sub-aggregates.
  */
-export function computePivotModel(pivot, sheet) {
+export function computePivotModel(pivot: Pivot, sheet: PivotSheet | null | undefined): PivotModel | null {
   const table = sourceTable(pivot, sheet)
   if (!table || table.length < 2) return null
   const headers = table[0].map((h) => String(h ?? ''))
@@ -432,8 +513,8 @@ export function computePivotModel(pivot, sheet) {
 
   // Resolve the value fields to source column indexes; a value naming a header
   // that does not exist is dropped (fail-closed) rather than aggregating junk.
-  const legacy = pivot.valueField ? [{ field: pivot.valueField, agg: pivot.agg || 'SUM', display: 'raw' }] : []
-  const specs = []
+  const legacy: PivotValueSpec[] = pivot.valueField ? [{ field: pivot.valueField, agg: pivot.agg || 'SUM', display: 'raw' }] : []
+  const specs: ResolvedValueSpec[] = []
   for (const v of (Array.isArray(pivot.values) && pivot.values.length ? pivot.values : legacy)) {
     const idx = headers.indexOf(v.field)
     if (idx < 0) continue
@@ -444,9 +525,9 @@ export function computePivotModel(pivot, sheet) {
   const rowGroup = pivot.rowGroup || 'none'
   const colGroup = pivot.colGroup || 'none'
 
-  const rows = new Set()
-  const cols = new Set()
-  const groups = new Map()          // key → the raw SOURCE ROWS in that cell
+  const rows = new Set<string>()
+  const cols = new Set<string>()
+  const groups = new Map<string, (string | number | boolean)[][]>()          // key → the raw SOURCE ROWS in that cell
   for (let i = 1; i < table.length; i++) {
     if (groups.size > MAX_GROUPS) break // bound group explosion
     const row = table[i]
@@ -456,7 +537,7 @@ export function computePivotModel(pivot, sheet) {
     cols.add(cv)
     const key = rv + SEP + cv
     if (!groups.has(key)) groups.set(key, [])
-    groups.get(key).push(row)
+    groups.get(key)!.push(row)
   }
 
   const rowArr = [...rows].sort()
@@ -466,22 +547,22 @@ export function computePivotModel(pivot, sheet) {
   const multi = specs.length > 1
 
   // Raw source rows for a set of (row, column) cells.
-  const rowsFor = (rvs, cvs) => {
-    const out = []
+  const rowsFor = (rvs: string[], cvs: string[]): (string | number | boolean)[][] => {
+    const out: (string | number | boolean)[][] = []
     for (const rv of rvs) for (const cv of cvs) {
       const g = groups.get(rv + SEP + cv)
       if (g) out.push(...g)
     }
     return out
   }
-  const aggOf = (srcRows, spec) => spec.fn(srcRows.map((r) => r[spec.idx]))
+  const aggOf = (srcRows: (string | number | boolean)[][], spec: ResolvedValueSpec): number => spec.fn(srcRows.map((r) => r[spec.idx]))
 
   // Percent denominators, computed ONCE per spec / row / column — and only when a
   // spec actually asks for a percentage (the common all-'raw' pivot pays nothing).
   const needsPct = specs.some((s) => s.display !== 'raw')
-  const grand = new Map()   // spec → agg over every row
-  const rowDen = new Map()  // `${si}|${rv}`
-  const colDen = new Map()  // `${si}|${cv}`
+  const grand = new Map<number, number>()   // spec index → agg over every row
+  const rowDen = new Map<string, number>()  // `${si}|${rv}`
+  const colDen = new Map<string, number>()  // `${si}|${cv}`
   if (needsPct) {
     specs.forEach((spec, si) => {
       grand.set(si, aggOf(rowsFor(rowArr, allCvs), spec))
@@ -494,7 +575,7 @@ export function computePivotModel(pivot, sheet) {
   // the mode does not exist (a row-total has no single column), so it widens to
   // the grand total: the total column under "% of column" is that row's share of
   // everything, which is the only reading that stays additive.
-  const present = (value, spec, si, rv, cv) => {
+  const present = (value: number, spec: ResolvedValueSpec, si: number, rv: string | null, cv: string | null): number => {
     if (spec.display === 'raw') return round(value)
     const den = spec.display === 'pct_total' ? grand.get(si)
       : spec.display === 'pct_row' ? (rv != null ? rowDen.get(si + '|' + rv) : grand.get(si))
@@ -504,8 +585,8 @@ export function computePivotModel(pivot, sheet) {
   }
 
   // ── Header + per-column display map ──────────────────────────────────────
-  const header = [pivotText(pivot.rowField)]
-  const displays = [null]
+  const header: string[] = [pivotText(pivot.rowField)]
+  const displays: (PivotDisplay | null)[] = [null]
   if (showCols) {
     for (const cv of colArr) {
       for (const spec of specs) {
@@ -525,9 +606,9 @@ export function computePivotModel(pivot, sheet) {
   }
 
   // ── Data rows ─────────────────────────────────────────────────────────────
-  const out = [header]
+  const out: (string | number)[][] = [header]
   for (const rv of rowArr) {
-    const dataRow = [pivotText(rv)]
+    const dataRow: (string | number)[] = [pivotText(rv)]
     for (const cv of allCvs) {
       specs.forEach((spec, si) => {
         const cellRows = groups.get(rv + SEP + cv) || []
@@ -547,7 +628,7 @@ export function computePivotModel(pivot, sheet) {
   }
 
   // ── Grand-total row ───────────────────────────────────────────────────────
-  const totRow = ['Total']
+  const totRow: (string | number)[] = ['Total']
   for (const cv of allCvs) {
     specs.forEach((spec, si) => {
       const raw = aggOf(rowsFor(rowArr, [cv]), spec)
@@ -570,7 +651,7 @@ export function computePivotModel(pivot, sheet) {
  * Thin wrapper over computePivotModel, kept as the stable shape used by the
  * renderers, the static-sheet materialiser and the CRDT-era callers.
  */
-export function computePivot(pivot, sheet) {
+export function computePivot(pivot: Pivot, sheet: PivotSheet | null | undefined): (string | number)[][] | null {
   const model = computePivotModel(pivot, sheet)
   return model ? model.table : null
 }
@@ -579,13 +660,13 @@ export function computePivot(pivot, sheet) {
  * pivotPercentColumns — the set of column indexes whose values are percentages,
  * so a renderer can suffix '%' instead of showing a bare 33.33.
  */
-export function pivotPercentColumns(model) {
-  const set = new Set()
+export function pivotPercentColumns(model: PivotModel | null | undefined): Set<number> {
+  const set = new Set<number>()
   ;(model?.displays || []).forEach((d, i) => { if (d && d !== 'raw') set.add(i) })
   return set
 }
 
-function round(v) {
+function round(v: unknown): number {
   const n = Number(v)
   if (!isFinite(n)) return 0
   return Math.round(n * 1e6) / 1e6
@@ -599,7 +680,7 @@ function round(v) {
  * NOT stay reactive — that's what the live descriptor is for). Header row/col are
  * bolded. Values are already safe (pivotText for labels; numbers for aggregates).
  */
-export function pivotToSheet(pivot, sheet, name) {
+export function pivotToSheet(pivot: Pivot, sheet: PivotSheet | null | undefined, name: string | null | undefined): PivotSheetResult | null {
   const model = computePivotModel(pivot, sheet)
   if (!model) return null
   const result = model.table
@@ -607,7 +688,7 @@ export function pivotToSheet(pivot, sheet, name) {
   // scale, so the format code appends a literal % rather than multiplying by 100
   // again (which `0.00%` would do, showing 3333% for a third).
   const pctCols = pivotPercentColumns(model)
-  const celldata = []
+  const celldata: PivotSheetResult['celldata'] = []
   for (let r = 0; r < result.length; r++) {
     for (let c = 0; c < result[r].length; c++) {
       const val = result[r][c]
@@ -629,7 +710,7 @@ export function pivotToSheet(pivot, sheet, name) {
 }
 
 /** headers available in a pivot source (for the config UI dropdowns). */
-export function pivotHeaders(pivot, sheet) {
+export function pivotHeaders(pivot: Pivot | PivotInput | null | undefined, sheet: PivotSheet | null | undefined): string[] {
   const table = sourceTable(pivot, sheet)
   if (!table.length) return []
   return table[0].map((h) => String(h ?? '')).filter(Boolean)
@@ -640,13 +721,13 @@ export function pivotHeaders(pivot, sheet) {
  * depends on, plus its config. Used as a memo key so a pivot only recomputes
  * when ITS source values or config change — not on every unrelated keystroke.
  */
-export function pivotValuesSignature(pivot, sheet) {
+export function pivotValuesSignature(pivot: Pivot, sheet: PivotSheet | null | undefined): string {
   const b = parseRangeBounds(pivot?.range)
   if (!b) return pivot.id + '|invalid'
   // Fingerprint only the cells INSIDE the range that are actually populated —
   // iterate the celldata directly (bounded by the number of real cells), not
   // the raw range area, so a huge range doesn't produce a huge signature loop.
-  const parts = []
+  const parts: string[] = []
   for (const cell of sheet?.celldata || []) {
     if (cell.r < b.r0 || cell.r > b.r1 || cell.c < b.c0 || cell.c > b.c1) continue
     const d = cellDisplay(cell)
