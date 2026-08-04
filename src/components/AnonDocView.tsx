@@ -17,6 +17,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
+import type { FormEvent, ReactNode } from 'react'
 import { useParams } from 'react-router-dom'
 import { Lock, FileText, Loader2, AlertCircle, Eye } from 'lucide-react'
 import { api } from '../lib/api'
@@ -25,7 +26,18 @@ import { Button, Input, LoadingState } from './ui'
 // Render a TipTap doc node tree to read-only React elements (headings, paragraphs,
 // lists). Unknown nodes fall back to their text. This mirrors the server's
 // extraction shape without pulling in the full editor.
-function renderNode(node, key) {
+/** A TipTap doc node, as returned by the server's extraction. Structure is
+ *  dynamic/recursive (headings, paragraphs, lists, …) so fields stay optional. */
+interface DocNode {
+  type?: string
+  attrs?: { level?: number; [key: string]: unknown }
+  content?: DocNode[]
+  text?: string
+}
+
+const HEADING_SIZES: Record<number, string> = { 1: 'text-2xl', 2: 'text-xl', 3: 'text-lg' }
+
+function renderNode(node: DocNode | null | undefined, key: number): ReactNode {
   if (!node || typeof node !== 'object') return null
   const text = (node.content || []).map((c, i) =>
     c.type === 'text' ? c.text : renderNode(c, i)
@@ -33,9 +45,8 @@ function renderNode(node, key) {
   switch (node.type) {
     case 'heading': {
       const lvl = node.attrs?.level || 2
-      const Tag = `h${Math.min(Math.max(lvl, 1), 6)}`
-      const sizes = { 1: 'text-2xl', 2: 'text-xl', 3: 'text-lg' }
-      return <Tag key={key} className={`font-semibold text-ink mt-4 mb-1 ${sizes[lvl] || 'text-base'}`}>{text}</Tag>
+      const Tag = `h${Math.min(Math.max(lvl, 1), 6)}` as keyof JSX.IntrinsicElements
+      return <Tag key={key} className={`font-semibold text-ink mt-4 mb-1 ${HEADING_SIZES[lvl] || 'text-base'}`}>{text}</Tag>
     }
     case 'paragraph':
       return <p key={key} className="text-ink-muted leading-relaxed my-2">{text.length ? text : ' '}</p>
@@ -54,7 +65,7 @@ function renderNode(node, key) {
   }
 }
 
-function DocBody({ doc }) {
+function DocBody({ doc }: { doc?: DocNode | null }) {
   if (!doc || typeof doc !== 'object' || !Array.isArray(doc.content)) {
     // Not a TipTap doc (sheet/slide or raw) — show a plain read-only notice.
     return (
@@ -66,37 +77,56 @@ function DocBody({ doc }) {
   return <div className="prose-none">{doc.content.map((n, i) => renderNode(n, i))}</div>
 }
 
+interface ShareFile {
+  id?: string
+  name?: string
+  type?: string
+  content?: DocNode
+  read_only?: boolean
+}
+
+interface ShareMeta extends ShareFile {
+  requires_password?: boolean
+}
+
+interface AnonViewState {
+  loading: boolean
+  error: string | null
+  requiresPassword: boolean
+  file: ShareFile | null
+}
+
 export default function AnonDocView() {
   const { token } = useParams()
-  const [state, setState] = useState({ loading: true, error: null, requiresPassword: false, file: null })
+  const [state, setState] = useState<AnonViewState>({ loading: true, error: null, requiresPassword: false, file: null })
   const [password, setPassword] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
   const loadMeta = useCallback(async () => {
     setState((s) => ({ ...s, loading: true, error: null }))
     try {
-      const meta = await api.viewShareLinkMeta(token)
+      const meta = await api.viewShareLinkMeta(token as string) as ShareMeta
       if (meta.requires_password) {
         setState({ loading: false, error: null, requiresPassword: true, file: null })
       } else {
         setState({ loading: false, error: null, requiresPassword: false, file: meta })
       }
     } catch (e) {
-      setState({ loading: false, error: e.message || 'This link is unavailable', requiresPassword: false, file: null })
+      setState({ loading: false, error: (e as Error)?.message || 'This link is unavailable', requiresPassword: false, file: null })
     }
   }, [token])
 
   useEffect(() => { loadMeta() }, [loadMeta])
 
-  const submitPassword = async (e) => {
+  const submitPassword = async (e?: FormEvent) => {
     e?.preventDefault?.()
     setSubmitting(true)
     setState((s) => ({ ...s, error: null }))
     try {
-      const file = await api.viewShareLink(token, password)
+      const file = await api.viewShareLink(token as string, password) as ShareFile
       setState({ loading: false, error: null, requiresPassword: false, file })
     } catch (err) {
-      setState((s) => ({ ...s, error: err.message || 'Incorrect password' }))
+      setState((s) => ({ ...s, error: (err as Error)?.message || 'Incorrect password' }))
     } finally {
       setSubmitting(false)
     }
