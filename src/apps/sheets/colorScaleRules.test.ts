@@ -15,11 +15,20 @@ import {
   safeOptionalColor, safeText, CS_KINDS, CS_SINGLE_KINDS,
   toNativeConditionFormat, toNativeSingleColor, buildNativeConditionFormat,
   matchCells, colorScaleError, colorScaleSummary, isSingleKind, parseDay, cellString,
+  type CSSheet, type CSCellEntry, type CSCellObject, type ColorScaleRule, type PaintBg,
 } from './colorScales.js'
 
+// A handful of hostile/near-miss fixtures below deliberately never pass through
+// makeColorScale (that IS the render-boundary re-clamp under test), so they
+// don't structurally match ColorScaleRule; cast through unknown at those call
+// sites, the same way production crosses sibling-module boundaries elsewhere.
+function cast<T>(v: unknown): T { return v as T }
+
+type MixedSheet = CSSheet & { row: number; column: number; celldata: CSCellEntry[] }
+
 // A sheet of mixed content: numbers, text, dates, blanks.
-function mixedSheet(cells) {
-  const celldata = Object.entries(cells).map(([k, v]) => {
+function mixedSheet(cells: Record<string, string | number | CSCellObject>): MixedSheet {
+  const celldata: CSCellEntry[] = Object.entries(cells).map(([k, v]) => {
     const [r, c] = k.split('_').map(Number)
     if (v && typeof v === 'object') return { r, c, v }
     const t = typeof v === 'number' ? 'n' : 's'
@@ -27,8 +36,8 @@ function mixedSheet(cells) {
   })
   return { name: 'Sheet1', celldata, config: {}, row: 100, column: 26 }
 }
-const dateCell = (serial, display) => ({ v: serial, m: display, ct: { fa: 'yyyy-MM-dd', t: 'd' } })
-const keys = (matches) => matches.map(({ r, c }) => `${r}_${c}`)
+const dateCell = (serial: number, display: string): CSCellObject => ({ v: serial, m: display, ct: { fa: 'yyyy-MM-dd', t: 'd' } })
+const keys = (matches: { r: number; c: number }[]) => matches.map(({ r, c }) => `${r}_${c}`)
 
 describe('matchCells — numeric cell-value rules', () => {
   const sheet = mixedSheet({ '0_0': 5, '1_0': 10, '2_0': 15, '3_0': 'abc', '4_0': '9' })
@@ -183,8 +192,8 @@ describe('computeColorScale — single-colour paint map', () => {
       makeColorScale({ kind: 'greaterThan', range: 'A1', value1: '10', fill: 'url(javascript:alert(1))', textColor: 'expression(x)' }),
       sheet,
     )
-    expect(m['0_0'].bg).toMatch(/^#[0-9a-f]{3,6}$/)
-    expect(m['0_0'].fg).toBe('') // unusable text colour → keep the cell's own
+    expect(cast<PaintBg>(m['0_0']).bg).toMatch(/^#[0-9a-f]{3,6}$/)
+    expect(cast<PaintBg>(m['0_0']).fg).toBe('') // unusable text colour → keep the cell's own
   })
   it('computeAllColorScales re-clamps every rule (no render path reads a raw descriptor)', () => {
     const sheet = mixedSheet({ '0_0': 15 })
@@ -192,7 +201,7 @@ describe('computeColorScale — single-colour paint map', () => {
       [{ id: 'x', kind: 'greaterThan', range: 'A1', value1: '10', fill: 'javascript:x' }],
       sheet,
     )
-    expect(merged['0_0'].bg).toMatch(/^#[0-9a-f]{3,6}$/)
+    expect(cast<PaintBg>(merged['0_0']).bg).toMatch(/^#[0-9a-f]{3,6}$/)
   })
 })
 
@@ -235,7 +244,7 @@ describe('toNativeSingleColor — the canvas paint instruction', () => {
     expect(toNativeSingleColor(makeColorScale({ kind: 'greaterThan', range: 'A1:A3', value1: '999' }), sheet)).toEqual([])
   })
   it('toNativeConditionFormat routes single-colour kinds through it', () => {
-    const nat = toNativeConditionFormat(makeColorScale({ kind: 'lessThan', range: 'A1:A3', value1: '10' }), sheet)
+    const nat = toNativeConditionFormat(makeColorScale({ kind: 'lessThan', range: 'A1:A3', value1: '10' }), sheet, undefined)
     expect(nat).toHaveLength(1)
     expect(nat[0].cellrange).toEqual([{ row: [0, 0], column: [0, 0] }])
   })
@@ -243,16 +252,18 @@ describe('toNativeSingleColor — the canvas paint instruction', () => {
 
 describe('buildNativeConditionFormat — re-clamps at the render boundary', () => {
   it('a poisoned rule that reached sheet.colorScales cannot reach the canvas unclamped', () => {
-    const sheet = {
+    const sheet: MixedSheet = {
       ...mixedSheet({ '0_0': 15 }),
-      // Never went through makeColorScale: near-miss kind, hostile colour, object operand.
-      colorScales: [{
+      // Never went through makeColorScale: near-miss kind, hostile colour, object
+      // operand — cast, since that's exactly the gap buildNativeConditionFormat's
+      // re-clamp is under test for.
+      colorScales: cast<ColorScaleRule[]>([{
         id: 'x', kind: 'formula ', range: 'A1',
         fill: 'url(javascript:alert(1))', textColor: 'expression(1)',
         value1: { toString: () => 'boom' },
-      }],
+      }]),
     }
-    const merged = buildNativeConditionFormat(sheet)
+    const merged = buildNativeConditionFormat(sheet, undefined)
     for (const rule of merged) {
       expect(['between', 'duplicateValue']).toContain(rule.conditionName)
       expect(rule.format.cellColor).toMatch(/^#[0-9a-f]{3,6}$/)
@@ -263,14 +274,14 @@ describe('buildNativeConditionFormat — re-clamps at the render boundary', () =
     expect(json).not.toContain('boom')
   })
   it('single-colour rules and gradients render side by side, in rule order', () => {
-    const sheet = {
+    const sheet: MixedSheet = {
       ...mixedSheet({ '0_0': 1, '1_0': 2, '2_0': 3 }),
       colorScales: [
         makeColorScale({ kind: 'colorScale2', range: 'A1:A3' }),
         makeColorScale({ kind: 'greaterThan', range: 'A1:A3', value1: '2', fill: '#ff0000' }),
       ],
     }
-    const merged = buildNativeConditionFormat(sheet)
+    const merged = buildNativeConditionFormat(sheet, undefined)
     expect(merged.filter((r) => r.conditionName === 'between').length).toBeGreaterThan(1) // gradient bands
     const single = merged.filter((r) => r.conditionName === 'duplicateValue')
     expect(single).toHaveLength(1)
@@ -308,9 +319,11 @@ describe('makeColorScale — WAVE-64 ingress clamp (hostile descriptors)', () =>
     expect(makeColorScale({ kind: 'textContains', value1: 'x'.repeat(500) }).value1.length).toBe(120)
   })
   it('clampColorScales re-clamps a corrupt single-colour rule from a loaded file', () => {
-    const data = [{
+    const data: MixedSheet[] = [{
       ...mixedSheet({ '0_0': 1 }),
-      colorScales: [{ id: 'x', kind: 'EVIL', range: 'a1:b2', fill: 'red', textColor: 'url(x)', value1: 5, formula: 42 }],
+      // Corrupt/legacy record (wrong types on several fields) — never went
+      // through makeColorScale; that's exactly what clampColorScales re-clamps.
+      colorScales: cast<ColorScaleRule[]>([{ id: 'x', kind: 'EVIL', range: 'a1:b2', fill: 'red', textColor: 'url(x)', value1: 5, formula: 42 }]),
     }]
     const [rule] = getColorScales(clampColorScales(data))
     expect(rule.kind).toBe('colorScale2')
@@ -369,7 +382,8 @@ describe('reactivity signature — single-colour rules', () => {
       .not.toBe(colorScaleSignature(rule, mixedSheet({ '0_0': 1, '0_25': 2 })))
   })
   it('cellString reads a date cell’s display form', () => {
-    expect(cellString({ v: dateCell(45000, '2023-03-15') })).toBe('2023-03-15')
+    // cellString only ever reads `.v` (see colorScales.ts); r/c are irrelevant here.
+    expect(cellString(cast<CSCellEntry>({ v: dateCell(45000, '2023-03-15') }))).toBe('2023-03-15')
     expect(cellString(undefined)).toBe('')
   })
 })
