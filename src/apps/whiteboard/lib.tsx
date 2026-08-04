@@ -1,5 +1,5 @@
 /**
- * src/apps/whiteboard/lib.jsx — @vulos/office-client whiteboard library entry
+ * src/apps/whiteboard/lib.tsx — @vulos/office-client whiteboard library entry
  *
  * Exports <WhiteboardApp /> — the Excalidraw-based whiteboard editor as a single
  * embeddable React component, mounted on Office's distributed P2P collab engine
@@ -16,7 +16,12 @@ import { MemoryRouter, Routes, Route, Navigate } from 'react-router-dom'
 
 const WhiteboardEditor = lazy(() => import('./WhiteboardEditor.jsx'))
 
-export function WhiteboardApp({ theme = 'auto', initialWhiteboardID }) {
+interface WhiteboardAppProps {
+  theme?: 'light' | 'dark' | 'auto'
+  initialWhiteboardID?: string
+}
+
+export function WhiteboardApp({ theme = 'auto', initialWhiteboardID }: WhiteboardAppProps) {
   const initialPath = initialWhiteboardID ? `/whiteboards/${initialWhiteboardID}` : '/whiteboards'
   return (
     <div data-theme={theme} style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
