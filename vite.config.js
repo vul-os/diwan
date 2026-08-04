@@ -54,7 +54,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
-    setupFiles: ['./src/test-setup.js'],
+    setupFiles: ['./src/test-setup.ts'],
     include: ['src/**/*.test.{js,jsx,ts,tsx}', 'src/__tests__/**/*.test.{js,jsx,ts,tsx}'],
     // The collaboration suites mount REAL ProseMirror editors (two per test, full
     // Docs schema) — that is the point of them, and it is slow in jsdom. With the

@@ -9,11 +9,16 @@ import '@testing-library/jest-dom'
 // Stub the geometry with empty rects: ProseMirror reads "no rects" as "nothing
 // to scroll to" and carries on. This only ADDS methods jsdom leaves undefined;
 // it never overrides real behaviour.
-const emptyRectList = () => Object.assign([], { item: () => null })
-const zeroRect = () => ({
+//
+// The stub shapes below are plain objects, not real DOMRectList/DOMRect
+// instances (jsdom's own layout-less environment has no need for one), so the
+// assignments are cast to the DOM lib's types rather than reshaped to match —
+// reshaping them would risk changing what ProseMirror actually reads back.
+const emptyRectList = (): DOMRectList => Object.assign([], { item: () => null }) as unknown as DOMRectList
+const zeroRect = (): DOMRect => ({
   top: 0, left: 0, bottom: 0, right: 0, width: 0, height: 0, x: 0, y: 0,
   toJSON: () => ({}),
-})
+}) as unknown as DOMRect
 
 for (const proto of [Range.prototype, Element.prototype]) {
   if (typeof proto.getClientRects !== 'function') proto.getClientRects = emptyRectList
