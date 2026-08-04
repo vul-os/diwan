@@ -20,7 +20,7 @@ if (import.meta.env.DEV) {
 // the OS hub, or on unsupported browsers — see src/lib/pwa.js.
 import { registerServiceWorker } from './lib/pwa.js'
 
-ReactDOM.createRoot(document.getElementById('root')).render(
+ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <BrowserRouter>
       <App />
