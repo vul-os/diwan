@@ -15,10 +15,33 @@
  * (all values rendered as text to avoid XSS from audit detail fields).
  */
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, type ReactNode } from 'react'
 import { api } from '../../lib/api'
 
-const ACTION_LABELS = {
+interface Invite {
+  id: string
+  note?: string
+  max_uses: number
+  used_count: number
+  expires_at?: number
+  revoked: boolean
+}
+
+interface MintedInvite {
+  token: string
+  invite?: Invite
+}
+
+interface AuditEntry {
+  id: string
+  at?: number
+  actor?: string
+  action: string
+  target?: string
+  detail?: string
+}
+
+const ACTION_LABELS: Record<string, string> = {
   'acl.grant': 'ACL granted',
   'acl.revoke': 'ACL revoked',
   'acl.set_owner': 'Owner set',
@@ -29,13 +52,13 @@ const ACTION_LABELS = {
   'role.change': 'Role changed',
 }
 
-function fmtTime(unixNanos) {
+function fmtTime(unixNanos: number | undefined): string {
   if (!unixNanos) return ''
   const d = new Date(Math.floor(unixNanos / 1e6))
   return d.toLocaleString()
 }
 
-function fmtExpiry(unixSeconds) {
+function fmtExpiry(unixSeconds: number | undefined): string {
   if (!unixSeconds) return 'never'
   return new Date(unixSeconds * 1000).toLocaleString()
 }
@@ -73,7 +96,7 @@ export default function AdminApp() {
   )
 }
 
-function TabButton({ active, onClick, children }) {
+function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
   return (
     <button
       type="button"
@@ -88,20 +111,20 @@ function TabButton({ active, onClick, children }) {
   )
 }
 
-export function InvitesPanel({ onError }) {
-  const [invites, setInvites] = useState([])
+export function InvitesPanel({ onError }: { onError: (msg: string) => void }) {
+  const [invites, setInvites] = useState<Invite[]>([])
   const [note, setNote] = useState('')
-  const [maxUses, setMaxUses] = useState(1)
-  const [ttlHours, setTtlHours] = useState(168)
-  const [minted, setMinted] = useState(null) // { token, invite } shown once
+  const [maxUses, setMaxUses] = useState<number | string>(1)
+  const [ttlHours, setTtlHours] = useState<number | string>(168)
+  const [minted, setMinted] = useState<MintedInvite | null>(null) // { token, invite } shown once
   const [loading, setLoading] = useState(false)
 
   const refresh = useCallback(async () => {
     try {
-      const list = await api.adminListInvites()
+      const list = await api.adminListInvites() as Invite[]
       setInvites(Array.isArray(list) ? list : [])
     } catch (e) {
-      onError(e.message || 'Failed to load invites')
+      onError(e instanceof Error ? e.message : 'Failed to load invites')
     }
   }, [onError])
 
@@ -109,7 +132,7 @@ export function InvitesPanel({ onError }) {
     refresh()
   }, [refresh])
 
-  const mint = async (e) => {
+  const mint = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     onError('')
@@ -118,24 +141,24 @@ export function InvitesPanel({ onError }) {
         note,
         maxUses: Number(maxUses) || 1,
         ttlHours: Number(ttlHours) || 0,
-      })
+      }) as MintedInvite
       setMinted(res)
       setNote('')
       await refresh()
     } catch (err) {
-      onError(err.message || 'Failed to mint invite')
+      onError(err instanceof Error ? err.message : 'Failed to mint invite')
     } finally {
       setLoading(false)
     }
   }
 
-  const revoke = async (id) => {
+  const revoke = async (id: string) => {
     onError('')
     try {
       await api.adminRevokeInvite(id)
       await refresh()
     } catch (err) {
-      onError(err.message || 'Failed to revoke invite')
+      onError(err instanceof Error ? err.message : 'Failed to revoke invite')
     }
   }
 
@@ -240,15 +263,15 @@ export function InvitesPanel({ onError }) {
   )
 }
 
-export function AuditPanel({ onError }) {
-  const [entries, setEntries] = useState([])
+export function AuditPanel({ onError }: { onError: (msg: string) => void }) {
+  const [entries, setEntries] = useState<AuditEntry[]>([])
 
   const refresh = useCallback(async () => {
     try {
-      const list = await api.adminListAudit(500)
+      const list = await api.adminListAudit(500) as AuditEntry[]
       setEntries(Array.isArray(list) ? list : [])
     } catch (e) {
-      onError(e.message || 'Failed to load audit log')
+      onError(e instanceof Error ? e.message : 'Failed to load audit log')
     }
   }, [onError])
 
