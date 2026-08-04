@@ -38,7 +38,7 @@ import { saveAs } from 'file-saver'
 
 vi.mock('file-saver', () => ({ saveAs: vi.fn() }))
 
-function makeEditor() {
+function makeEditor(): Editor {
   return new Editor({
     extensions: [
       Document, Paragraph, Text,
@@ -49,7 +49,7 @@ function makeEditor() {
 }
 
 // Count rows / columns of the (first) table in the doc.
-function tableShape(editor) {
+function tableShape(editor: Editor): { rows: number; cols: number } {
   let rows = 0
   let cols = 0
   editor.state.doc.descendants((node) => {
@@ -61,7 +61,15 @@ function tableShape(editor) {
   return { rows, cols }
 }
 
-let editor
+// A saveAs Blob argument narrowed away from the `Blob | string` union the real
+// file-saver signature allows — this suite only ever hands it a Blob.
+function lastSavedBlob(): Blob {
+  const data = vi.mocked(saveAs).mock.calls.at(-1)?.[0]
+  if (!(data instanceof Blob)) throw new Error('expected saveAs to be called with a Blob')
+  return data
+}
+
+let editor: Editor | null = null
 afterEach(() => { editor?.destroy(); editor = null; vi.clearAllMocks() })
 
 // ── 1. Insert / edit ops ─────────────────────────────────────────────────────
@@ -107,34 +115,40 @@ describe('table insert + edit ops (live editor)', () => {
 
   it('toggles the header row', () => {
     editor = makeEditor()
-    editor.chain().focus().insertTable({ rows: 2, cols: 2, withHeaderRow: false }).run()
+    // Rebind to a `const`: a nested closure (countHeaders) below reads this,
+    // and only a const's narrowed (non-null) type survives into a nested
+    // function — the outer `let editor` would still read as possibly-null there.
+    const ed = editor
+    ed.chain().focus().insertTable({ rows: 2, cols: 2, withHeaderRow: false }).run()
 
     const countHeaders = () => {
       let h = 0
-      editor.state.doc.descendants((n) => { if (n.type.name === 'tableHeader') h += 1 })
+      ed.state.doc.descendants((n) => { if (n.type.name === 'tableHeader') h += 1 })
       return h
     }
     expect(countHeaders()).toBe(0)
-    editor.chain().focus().toggleHeaderRow().run()
+    ed.chain().focus().toggleHeaderRow().run()
     expect(countHeaders()).toBe(2) // 2 header cells in the top row
-    editor.chain().focus().toggleHeaderRow().run()
+    ed.chain().focus().toggleHeaderRow().run()
     expect(countHeaders()).toBe(0)
   })
 
   it('merges and splits cells', () => {
     editor = makeEditor()
-    editor.chain().focus().insertTable({ rows: 2, cols: 2, withHeaderRow: false }).run()
+    // Same rebind: the toThrow() assertion below wraps a closure reading `ed`.
+    const ed = editor
+    ed.chain().focus().insertTable({ rows: 2, cols: 2, withHeaderRow: false }).run()
 
     // Select the whole first row (two cells) then merge.
     // Move to the start of the table and select across the two top cells.
-    editor.chain().focus().selectAll().run()
+    ed.chain().focus().selectAll().run()
     // Merge across the current cell selection where possible.
-    if (editor.can().mergeCells()) {
-      editor.chain().focus().mergeCells().run()
+    if (ed.can().mergeCells()) {
+      ed.chain().focus().mergeCells().run()
     }
     // After a merge, at least one cell carries a colspan or rowspan > 1.
     let spanned = false
-    editor.state.doc.descendants((n) => {
+    ed.state.doc.descendants((n) => {
       if ((n.type.name === 'tableCell' || n.type.name === 'tableHeader')) {
         const cs = n.attrs?.colspan || 1
         const rs = n.attrs?.rowspan || 1
@@ -143,7 +157,7 @@ describe('table insert + edit ops (live editor)', () => {
     })
     // mergeCells is only possible with a multi-cell selection; if the harness
     // couldn't build one, splitCell must at least be a no-throw command.
-    expect(() => editor.chain().focus().splitCell().run()).not.toThrow()
+    expect(() => ed.chain().focus().splitCell().run()).not.toThrow()
     expect(typeof spanned).toBe('boolean')
   })
 
@@ -209,7 +223,7 @@ describe('sanitizer keeps tables but strips injection (wave-14 allow-list)', () 
 // fetch-capable CSS image()/src() functions through. Replaced with a property
 // allow-list. These tests lock the fail-closed contract in place.
 describe('WAVE-53: style allow-list blocks non-url exfil + clickjacking, keeps legit styles', () => {
-  const styleOf = (out) => (out.match(/style="([^"]*)"/) || [, ''])[1]
+  const styleOf = (out: string): string => (out.match(/style="([^"]*)"/) || [, ''])[1] as string
 
   it('drops position:fixed / position:absolute (clickjacking overlay)', () => {
     for (const pos of ['fixed', 'absolute']) {
@@ -344,7 +358,7 @@ describe('export round-trip: HTML export contains the table', () => {
 
     exportToHtml(editor, 'doc-with-table')
     expect(saveAs).toHaveBeenCalled()
-    const blob = saveAs.mock.calls.at(-1)[0]
+    const blob = lastSavedBlob()
     const html = await blob.text()
     expect(html).toContain('<table')  // TipTap emits <table style="min-width…">
     expect(html).toContain('</table>')
