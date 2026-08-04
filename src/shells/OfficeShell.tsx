@@ -1,5 +1,5 @@
 /**
- * src/shells/OfficeShell.jsx — office.vulos.org standalone shell
+ * src/shells/OfficeShell.tsx — office.vulos.org standalone shell
  *
  * Canonical shell: reuses the SAME left-rail Layout/Sidebar as app.vulos.org
  * (brand lockup, ThemeSwitch, Home/Settings, light mode, real design tokens)
@@ -23,8 +23,8 @@ import Layout from '../components/Layout'
 import Home from '../components/Home'
 import AppHome from '../components/AppHome'
 import Settings from '../components/Settings'
-import AnonDocView from '../components/AnonDocView.jsx'
-import InstallPrompt from '../lib/InstallPrompt.jsx'
+import AnonDocView from '../components/AnonDocView'
+import InstallPrompt from '../lib/InstallPrompt'
 import { LoadingState } from '../components/ui'
 
 const DocsEditor   = lazy(() => import('../apps/docs/DocsEditor.jsx'))

@@ -10,7 +10,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
-import OfficeShell from '../shells/OfficeShell.jsx'
+import OfficeShell from '../shells/OfficeShell'
 import '../index.css'
 // configure() MUST run BEFORE bootstrap touches localStorage — first-party
 // module, see src/lib/endpoints/index.js.

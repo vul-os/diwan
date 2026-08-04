@@ -32,7 +32,7 @@ vi.mock('../shells/RequireAuth', () => ({
   default: ({ children }) => <>{children}</>,
 }))
 
-import OfficeShell from '../shells/OfficeShell.jsx'
+import OfficeShell from '../shells/OfficeShell'
 
 describe('OfficeShell', () => {
   it('renders the canonical left-rail Sidebar with all four app links', async () => {
