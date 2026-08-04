@@ -10,31 +10,35 @@
 import { describe, it, expect, beforeAll, afterAll, afterEach, beforeEach, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
+import type { ExcalidrawProps, ExcalidrawImperativeAPI } from '@excalidraw/excalidraw/types'
 import { server, resetMock, mockState } from '../../../__tests__/msw/server.js'
+
+interface FakeBoardElement { id: string; [k: string]: unknown }
+interface FakeBoardFile { id: string; [k: string]: unknown }
 
 // Stub the Excalidraw canvas: jsdom cannot run its canvas engine. The stub hands
 // the editor a REAL imperative scene API (so the ExcalidrawYBinding runs for
 // real) and renders a testid we can assert mounted.
 vi.mock('@excalidraw/excalidraw', () => ({
-  Excalidraw: (props) => {
-    const give = (node) => {
+  Excalidraw: (props: ExcalidrawProps) => {
+    const give = (node: (HTMLDivElement & { __gaveApi?: boolean }) | null) => {
       if (node && !node.__gaveApi) {
         node.__gaveApi = true
-        let scene = []
-        const files = {}
+        let scene: FakeBoardElement[] = []
+        const files: Record<string, FakeBoardFile> = {}
         props.excalidrawAPI?.({
-          updateScene(s) { if (s.elements) scene = [...s.elements] },
+          updateScene(s: { elements?: FakeBoardElement[] }) { if (s.elements) scene = [...s.elements] },
           getSceneElementsIncludingDeleted() { return scene },
-          addFiles(fs) { for (const f of fs) files[f.id] = f },
+          addFiles(fs: FakeBoardFile[]) { for (const f of fs) files[f.id] = f },
           getFiles() { return files },
-        })
+        } as unknown as ExcalidrawImperativeAPI)
       }
     }
     return <div data-testid="excalidraw" data-view-mode={props.viewModeEnabled ? 'true' : 'false'} ref={give} />
   },
 }))
 
-import WhiteboardEditor from '../WhiteboardEditor.jsx'
+import WhiteboardEditor from '../WhiteboardEditor'
 
 beforeAll(() => server.listen({ onUnhandledRequest: 'bypass' }))
 afterEach(() => { server.resetHandlers(); vi.restoreAllMocks() })
