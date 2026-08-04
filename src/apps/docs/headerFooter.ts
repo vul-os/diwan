@@ -29,7 +29,28 @@ import { sanitizeToText } from '../../lib/sanitize'
 
 const MAX_HF_LEN = 500
 
-export const DEFAULT_HEADER_FOOTER = Object.freeze({
+export interface HeaderFooterBand {
+  left: string
+  center: string
+  right: string
+}
+
+export interface HeaderFooterConfig {
+  enabled: boolean
+  header: HeaderFooterBand
+  footer: HeaderFooterBand
+  differentFirstPage: boolean
+  oddEven: boolean
+}
+
+export interface FieldContext {
+  page?: number | string
+  pages?: number | string
+  title?: string
+  date?: string
+}
+
+export const DEFAULT_HEADER_FOOTER: HeaderFooterConfig = Object.freeze({
   enabled: false,
   header: { left: '', center: '', right: '' },
   footer: { left: '', center: '', right: '' },
@@ -37,7 +58,7 @@ export const DEFAULT_HEADER_FOOTER = Object.freeze({
   oddEven: false,
 })
 
-function clampText(v) {
+function clampText(v: unknown): string {
   if (typeof v !== 'string') return ''
   // Strip ALL markup to plain text (defence-in-depth: this region is authored
   // content and must never carry HTML), then bound the length.
@@ -45,18 +66,18 @@ function clampText(v) {
 }
 
 /** Sanitise a single header/footer cell value to bounded plain text. */
-export function sanitizeHeaderText(v) {
+export function sanitizeHeaderText(v: unknown): string {
   return clampText(v)
 }
 
-function normalizeBand(band) {
-  const b = band && typeof band === 'object' ? band : {}
+function normalizeBand(band: unknown): HeaderFooterBand {
+  const b = (band && typeof band === 'object' ? band : {}) as Partial<HeaderFooterBand>
   return { left: clampText(b.left), center: clampText(b.center), right: clampText(b.right) }
 }
 
 /** Validate + normalise an arbitrary (peer/imported) header/footer config. */
-export function normalizeHeaderFooter(input) {
-  const s = input && typeof input === 'object' ? input : {}
+export function normalizeHeaderFooter(input: unknown): HeaderFooterConfig {
+  const s = (input && typeof input === 'object' ? input : {}) as Partial<HeaderFooterConfig>
   return {
     enabled: !!s.enabled,
     header: normalizeBand(s.header),
@@ -67,9 +88,9 @@ export function normalizeHeaderFooter(input) {
 }
 
 /** True if any band cell has content (used to decide whether to render bands). */
-export function hasHeaderFooterContent(cfg) {
+export function hasHeaderFooterContent(cfg: unknown): boolean {
   const c = normalizeHeaderFooter(cfg)
-  const any = (band) => band.left || band.center || band.right
+  const any = (band: HeaderFooterBand) => band.left || band.center || band.right
   return !!(c.enabled && (any(c.header) || any(c.footer)))
 }
 
@@ -79,7 +100,7 @@ export function hasHeaderFooterContent(cfg) {
  * @param {object} ctx         { page, pages, title, date }
  * @returns {string}           text with {{…}} fields substituted
  */
-export function resolveFields(text, ctx = {}) {
+export function resolveFields(text: unknown, ctx: FieldContext = {}): string {
   if (typeof text !== 'string' || !text) return ''
   const page = ctx.page != null ? String(ctx.page) : ''
   const pages = ctx.pages != null ? String(ctx.pages) : ''
@@ -99,9 +120,9 @@ export function resolveFields(text, ctx = {}) {
  * honouring first-page-different and odd/even. Returns the resolved
  * {left,center,right} for header and footer, or empty bands when suppressed.
  */
-export function bandsForPage(cfg, pageNumber, ctx) {
+export function bandsForPage(cfg: unknown, pageNumber: number, ctx?: FieldContext) {
   const c = normalizeHeaderFooter(cfg)
-  const empty = { left: '', center: '', right: '' }
+  const empty: HeaderFooterBand = { left: '', center: '', right: '' }
   if (!c.enabled) return { header: empty, footer: empty }
 
   // First page different: page 1 uses no header/footer (Word's common default
@@ -113,8 +134,8 @@ export function bandsForPage(cfg, pageNumber, ctx) {
 
   // Inject the current page number into the field context so {{page}} resolves
   // even when the caller only supplies title/pages.
-  const pageCtx = { ...ctx, page: pageNumber }
-  const resolveBand = (band) => ({
+  const pageCtx: FieldContext = { ...ctx, page: pageNumber }
+  const resolveBand = (band: HeaderFooterBand): HeaderFooterBand => ({
     left: resolveFields(band.left, pageCtx),
     center: resolveFields(band.center, pageCtx),
     right: resolveFields(band.right, pageCtx),
@@ -122,7 +143,7 @@ export function bandsForPage(cfg, pageNumber, ctx) {
 
   // Odd/even (mirrored): swap left/right on even pages so the outer edge stays
   // consistent in a bound document.
-  const mirror = (band) => (c.oddEven && pageNumber % 2 === 0
+  const mirror = (band: HeaderFooterBand): HeaderFooterBand => (c.oddEven && pageNumber % 2 === 0
     ? { left: band.right, center: band.center, right: band.left }
     : band)
 
