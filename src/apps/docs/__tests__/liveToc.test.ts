@@ -21,15 +21,23 @@ import { saveAs } from 'file-saver'
 
 vi.mock('file-saver', () => ({ saveAs: vi.fn() }))
 
-function makeEditor(content) {
+function makeEditor(content: string): Editor {
   return new Editor({
     extensions: [Document, Paragraph, Text, Heading.configure({ levels: [1, 2, 3] }), TableOfContentsNode],
     content,
   })
 }
 
-let editor
+let editor: Editor | null = null
 afterEach(() => { editor?.destroy(); editor = null; vi.clearAllMocks() })
+
+// A saveAs Blob argument narrowed away from the `Blob | string` union the real
+// file-saver signature allows — this suite only ever hands it a Blob.
+function savedBlob(): Blob {
+  const data = vi.mocked(saveAs).mock.calls[0][0]
+  if (!(data instanceof Blob)) throw new Error('expected saveAs to be called with a Blob')
+  return data
+}
 
 describe('readHeadings', () => {
   it('reads the outline with level, text, slug', () => {
@@ -75,7 +83,7 @@ describe('ToC export', () => {
     editor = makeEditor('<h1>Alpha</h1><h2>Beta</h2>')
     editor.commands.insertTableOfContents()
     exportToHtml(editor, 'doc', {})
-    const blob = saveAs.mock.calls[0][0]
+    const blob = savedBlob()
     const text = await blob.text()
     expect(text).toContain('Table of Contents')
     expect(text).toContain('Alpha')
