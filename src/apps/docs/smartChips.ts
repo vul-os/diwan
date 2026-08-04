@@ -33,13 +33,29 @@
  * attribute, which renders inertly and cannot navigate anywhere off-app.
  */
 
-import { Node, mergeAttributes } from '@tiptap/react'
+import { Node, mergeAttributes, type NodeViewRendererProps } from '@tiptap/react'
+import type { Node as PMNode } from '@tiptap/pm/model'
+import type { EditorState } from '@tiptap/pm/state'
+
+declare module '@tiptap/core' {
+  interface Commands<ReturnType> {
+    smartChip: {
+      insertSmartChip: (attrs?: {
+        chipType?: unknown
+        label?: unknown
+        refId?: unknown
+        refHref?: unknown
+      }) => ReturnType
+    }
+  }
+}
 
 // A chip label is display text; cap it so a hostile import can't stuff a
 // megabyte string into an inline node. 200 chars is far beyond any real label.
 export const MAX_CHIP_LABEL = 200
 
-export const CHIP_TYPES = Object.freeze(['person', 'date', 'file', 'place'])
+export const CHIP_TYPES = Object.freeze(['person', 'date', 'file', 'place'] as const)
+export type ChipType = (typeof CHIP_TYPES)[number]
 
 // File-chip navigation targets are INTERNAL app routes only. A chip may never
 // navigate to an external URL or a javascript:/data: scheme — validate against
@@ -47,12 +63,12 @@ export const CHIP_TYPES = Object.freeze(['person', 'date', 'file', 'place'])
 const SAFE_CHIP_HREF = /^(?:docs|sheets|slides|pdf)\/[A-Za-z0-9_-]+$/
 
 /** True when a file-chip's refHref is a safe internal app route. */
-export function isSafeChipHref(href) {
+export function isSafeChipHref(href: unknown): href is string {
   return typeof href === 'string' && SAFE_CHIP_HREF.test(href)
 }
 
 /** Map a stored file `type` to its in-app route prefix (for a file chip). */
-export function routeForFileType(type) {
+export function routeForFileType(type: unknown): string | null {
   switch (type) {
     case 'doc':
     case 'docs':
@@ -75,15 +91,15 @@ export function routeForFileType(type) {
 
 // The glyph shown before each chip label in the live NodeView. Cosmetic only —
 // it is NOT part of the stored label, never exported, and carries no data.
-const CHIP_GLYPH = { person: '@', date: '📅', file: '📄', place: '📍' }
+const CHIP_GLYPH: Record<ChipType, string> = { person: '@', date: '📅', file: '📄', place: '📍' }
 
-function clampLabel(v) {
+function clampLabel(v: unknown): string {
   const s = typeof v === 'string' ? v : ''
   return s.length > MAX_CHIP_LABEL ? s.slice(0, MAX_CHIP_LABEL) : s
 }
 
-function normType(v) {
-  return CHIP_TYPES.includes(v) ? v : 'place'
+function normType(v: unknown): ChipType {
+  return typeof v === 'string' && (CHIP_TYPES as readonly string[]).includes(v) ? (v as ChipType) : 'place'
 }
 
 /**
@@ -101,13 +117,13 @@ export const SmartChip = Node.create({
     return {
       chipType: {
         default: 'place',
-        parseHTML: (el) => normType(el.getAttribute('data-chip-type')),
-        renderHTML: (attrs) => ({ 'data-chip-type': normType(attrs.chipType) }),
+        parseHTML: (el: HTMLElement) => normType(el.getAttribute('data-chip-type')),
+        renderHTML: (attrs: { chipType?: unknown }) => ({ 'data-chip-type': normType(attrs.chipType) }),
       },
       label: {
         default: '',
         // On import, prefer an explicit data attr, else the element's text.
-        parseHTML: (el) => clampLabel(el.getAttribute('data-chip-label') || el.textContent || ''),
+        parseHTML: (el: HTMLElement) => clampLabel(el.getAttribute('data-chip-label') || el.textContent || ''),
         // The label is NOT emitted as an attribute — it is serialized ONLY as the
         // escaped text-node child in renderHTML(). Emitting it as an attribute too
         // would carry the raw (un-escaped-looking) string in the markup for no
@@ -116,19 +132,20 @@ export const SmartChip = Node.create({
       },
       refId: {
         default: '',
-        parseHTML: (el) => (el.getAttribute('data-chip-ref') || '').slice(0, 256),
-        renderHTML: (attrs) => (attrs.refId ? { 'data-chip-ref': String(attrs.refId).slice(0, 256) } : {}),
+        parseHTML: (el: HTMLElement) => (el.getAttribute('data-chip-ref') || '').slice(0, 256),
+        renderHTML: (attrs: { refId?: unknown }) =>
+          (attrs.refId ? { 'data-chip-ref': String(attrs.refId).slice(0, 256) } : {}),
       },
       refHref: {
         default: '',
         // Only keep an internal, allow-listed route; drop anything else so a
         // hostile import can't smuggle a navigation target through parse.
-        parseHTML: (el) => {
+        parseHTML: (el: HTMLElement) => {
           const h = el.getAttribute('data-chip-href') || ''
           return isSafeChipHref(h) ? h : ''
         },
-        renderHTML: (attrs) =>
-          isSafeChipHref(attrs.refHref) ? { 'data-chip-href': attrs.refHref } : {},
+        renderHTML: (attrs: { refHref?: unknown }) =>
+          (isSafeChipHref(attrs.refHref) ? { 'data-chip-href': attrs.refHref } : {}),
       },
     }
   },
@@ -156,9 +173,9 @@ export const SmartChip = Node.create({
   },
 
   addNodeView() {
-    return ({ node }) => {
+    return ({ node }: NodeViewRendererProps) => {
       const dom = document.createElement('span')
-      const paint = (n) => {
+      const paint = (n: PMNode) => {
         const type = normType(n.attrs.chipType)
         const label = clampLabel(n.attrs.label)
         dom.className = `smart-chip smart-chip-${type}`
@@ -178,7 +195,7 @@ export const SmartChip = Node.create({
       paint(node)
       return {
         dom,
-        update(updated) {
+        update(updated: PMNode) {
           if (updated.type.name !== node.type.name) return false
           paint(updated)
           return true
@@ -191,7 +208,7 @@ export const SmartChip = Node.create({
   addCommands() {
     return {
       insertSmartChip:
-        (attrs = {}) =>
+        (attrs: { chipType?: unknown; label?: unknown; refId?: unknown; refHref?: unknown } = {}) =>
         ({ chain }) => {
           const clean = {
             chipType: normType(attrs.chipType),
@@ -221,6 +238,12 @@ export const SmartChip = Node.create({
 // The query is the run of chip-name characters after the `@`.
 const CHIP_TRIGGER = /(?:^|[\s([{<])@([\p{L}\p{N}._-]*)$/u
 
+export interface ChipTriggerMatch {
+  from: number
+  to: number
+  query: string
+}
+
 /**
  * Detect an active @-chip trigger immediately before the (collapsed) caret.
  * Returns `{ from, to, query }` in absolute document positions, or null.
@@ -230,7 +253,7 @@ const CHIP_TRIGGER = /(?:^|[\s([{<])@([\p{L}\p{N}._-]*)$/u
  * directly before the caret (each of ProseMirror size 1), `from = to - (len+1)`
  * — no fragile block-offset mapping over inline atoms is needed.
  */
-export function detectChipTrigger(state) {
+export function detectChipTrigger(state: EditorState): ChipTriggerMatch | null {
   const sel = state?.selection
   if (!sel || !sel.empty) return null
   const $from = sel.$from
@@ -252,38 +275,61 @@ export function detectChipTrigger(state) {
 // Suggestion building (pure — unit-tested).
 // ---------------------------------------------------------------------------
 
-function includesCI(hay, needle) {
+function includesCI(hay: unknown, needle: unknown): boolean {
   if (!needle) return true
   return String(hay || '').toLowerCase().includes(String(needle).toLowerCase())
 }
 
-function fmtDate(d) {
+function fmtDate(d: Date): string {
   // Locale-independent, stable label: e.g. "Jul 14, 2026".
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
   return `${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`
 }
 
-function isoDate(d) {
-  const p = (n) => String(n).padStart(2, '0')
+function isoDate(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0')
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+}
+
+export interface ChipPersonSource {
+  id: string
+  name?: string
+}
+
+export interface ChipFileSource {
+  id: string
+  name?: string
+  type?: string
+}
+
+export interface ChipSuggestionSources {
+  people: ChipPersonSource[]
+  files: ChipFileSource[]
+  /** injectable clock (tests) */
+  now?: Date
+}
+
+export interface ChipSuggestion {
+  key: string
+  chipType: ChipType
+  label: string
+  refId: string
+  refHref: string
+  hint: string
 }
 
 /**
  * Build the ranked suggestion list for an @-menu query.
- *
- * @param {string} query
- * @param {object} sources
- * @param {Array<{id,name}>}            sources.people
- * @param {Array<{id,name,type}>}       sources.files
- * @param {Date}                        [sources.now]  injectable clock (tests)
- * @returns {Array<{key,chipType,label,refId,refHref,hint}>}
  */
-export function buildChipSuggestions(query, sources = {}) {
+export function buildChipSuggestions(
+  query: string,
+  sources: ChipSuggestionSources = { people: [], files: [] },
+): ChipSuggestion[] {
   const q = (query || '').trim()
   const people = Array.isArray(sources.people) ? sources.people : []
   const files = Array.isArray(sources.files) ? sources.files : []
   const now = sources.now instanceof Date ? sources.now : new Date()
-  const out = []
+  const out: ChipSuggestion[] = []
 
   // People (from the document's collaborators — NOT the whole directory, so an
   // @-menu can never enumerate accounts the user can't already see on this doc).

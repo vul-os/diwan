@@ -16,18 +16,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { Editor } from '@tiptap/react'
 import { detectChipTrigger, buildChipSuggestions } from '../smartChips.js'
-
-// smartChips.js (the SmartChip node's home) is not yet converted to TypeScript,
-// so its addCommands() isn't visible to TipTap's Commands interface yet. This
-// augmentation documents the command this component calls; move it into
-// smartChips.ts when that file is converted.
-declare module '@tiptap/core' {
-  interface Commands<ReturnType> {
-    smartChip: {
-      insertSmartChip: (attrs?: { chipType?: string; label?: string; refId?: string; refHref?: string }) => ReturnType
-    }
-  }
-}
+// insertSmartChip's Commands<> augmentation now lives in smartChips.ts, which
+// this file's editor.chain()...insertSmartChip() call below relies on.
 
 // Mirror the shapes buildChipSuggestions' JSDoc declares for sources.people /
 // sources.files exactly, so passing these props through never needs a cast.
