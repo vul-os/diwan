@@ -19,9 +19,9 @@
  * passes objects down with an onChange(nextObjects, opts) callback.
  */
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import {
-  MIN_OBJECT_SIZE, sortByZ, sanitizeObject,
+  MIN_OBJECT_SIZE, sortByZ, sanitizeObject, type SlideObject,
 } from './slideObjects'
 import ShapeSvg from './ShapeSvg'
 
@@ -30,9 +30,16 @@ const HANDLE = 8               // handle hit size (px)
 const SNAP_PX = 6              // snap threshold in stage px
 const NUDGE = 0.005            // keyboard nudge step (fraction)
 
+interface ResizeHandle {
+  key: string
+  dx: number
+  dy: number
+  cursor: string
+}
+
 // 8 resize handles: corners + edge midpoints. dx/dy are the unit direction the
 // handle pulls (in object-local, unrotated space).
-const HANDLES = [
+const HANDLES: ResizeHandle[] = [
   { key: 'nw', dx: -1, dy: -1, cursor: 'nwse-resize' },
   { key: 'n',  dx: 0,  dy: -1, cursor: 'ns-resize' },
   { key: 'ne', dx: 1,  dy: -1, cursor: 'nesw-resize' },
@@ -42,6 +49,88 @@ const HANDLES = [
   { key: 'sw', dx: -1, dy: 1,  cursor: 'nesw-resize' },
   { key: 'w',  dx: -1, dy: 0,  cursor: 'ew-resize' },
 ]
+
+interface Point {
+  x: number
+  y: number
+}
+
+interface StageSize {
+  w: number
+  h: number
+}
+
+interface Guides {
+  v: number[]
+  h: number[]
+}
+
+interface Marquee {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+interface ObjOrigin {
+  id: string
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+interface MoveDrag {
+  kind: 'move'
+  start: Point
+  moved: boolean
+  editOnClick: string | null
+  origins: ObjOrigin[]
+  ids: string[]
+  last?: SlideObject[]
+}
+
+interface ResizeDrag {
+  kind: 'resize'
+  start: Point
+  handle: ResizeHandle
+  origin: ObjOrigin
+  keepAspect: boolean
+  moved?: boolean
+  last?: SlideObject[]
+  editOnClick?: string | null
+}
+
+interface RotateDrag {
+  kind: 'rotate'
+  cx: number
+  cy: number
+  origin: { id: string; rotation: number }
+  startAngle: number
+  moved?: boolean
+  last?: SlideObject[]
+  editOnClick?: string | null
+}
+
+type DragState = MoveDrag | ResizeDrag | RotateDrag
+
+interface MarqueeDrag {
+  start: Point
+  additive: boolean
+  base: string[]
+}
+
+interface SlideCanvasProps {
+  objects?: SlideObject[]
+  background?: string
+  selectedIds?: string[]
+  onSelect?: (ids: string[]) => void
+  onChange?: (nextObjects: SlideObject[], opts: { commit: boolean }) => void
+  onEditText?: (id: string) => void
+  editable?: boolean
+  className?: string
+  overlay?: ReactNode
+}
 
 export default function SlideCanvas({
   objects,
@@ -53,11 +142,11 @@ export default function SlideCanvas({
   editable = true,
   className = '',
   overlay = null,     // optional node rendered inside the stage (e.g. text editor)
-}) {
-  const stageRef = useRef(null)
-  const [stageSize, setStageSize] = useState({ w: 960, h: 540 })
-  const [guides, setGuides] = useState({ v: [], h: [] })
-  const [marquee, setMarquee] = useState(null) // {x,y,w,h} in fractions or null
+}: SlideCanvasProps) {
+  const stageRef = useRef<HTMLDivElement>(null)
+  const [stageSize, setStageSize] = useState<StageSize>({ w: 960, h: 540 })
+  const [guides, setGuides] = useState<Guides>({ v: [], h: [] })
+  const [marquee, setMarquee] = useState<Marquee | null>(null) // {x,y,w,h} in fractions or null
 
   // ── Measure the stage so px⇄fraction conversion is exact ──────────────────
   useLayoutEffect(() => {
@@ -68,7 +157,7 @@ export default function SlideCanvas({
       if (r.width > 0) setStageSize({ w: r.width, h: r.height })
     }
     measure()
-    let ro
+    let ro: ResizeObserver | undefined
     if (typeof ResizeObserver !== 'undefined') {
       ro = new ResizeObserver(measure)
       ro.observe(el)
@@ -82,7 +171,7 @@ export default function SlideCanvas({
 
   // Convert a pointer event to stage-fraction coords. Guards a missing stage
   // (e.g. a stray listener firing after unmount) by returning null.
-  const toFrac = useCallback((e) => {
+  const toFrac = useCallback((e: { clientX: number; clientY: number }): Point | null => {
     const el = stageRef.current
     if (!el) return null
     const r = el.getBoundingClientRect()
@@ -94,7 +183,7 @@ export default function SlideCanvas({
   }, [])
 
   // ── Drag-move ─────────────────────────────────────────────────────────────
-  const dragRef = useRef(null)
+  const dragRef = useRef<DragState | null>(null)
   // Remove any lingering global drag/marquee listeners on UNMOUNT so a stray
   // pointermove can't fire against a torn-down stage.
   //
@@ -112,7 +201,7 @@ export default function SlideCanvas({
     window.removeEventListener('pointerup', onMarqueeUp)
   }, []) // eslint-disable-line
 
-  const startMove = (e, obj) => {
+  const startMove = (e: React.PointerEvent<HTMLDivElement>, obj: SlideObject) => {
     if (!editable) return
     e.stopPropagation()
     if (!toFrac(e)) return
@@ -131,7 +220,7 @@ export default function SlideCanvas({
       onSelect?.(sel)
       return
     }
-    const start = toFrac(e)
+    const start = toFrac(e)!
     const moving = (objects || []).filter((o) => sel.includes(o.id))
     dragRef.current = {
       kind: 'move', start, moved: false,
@@ -144,7 +233,7 @@ export default function SlideCanvas({
   }
 
   // ── Resize ────────────────────────────────────────────────────────────────
-  const startResize = (e, obj, handle) => {
+  const startResize = (e: React.PointerEvent<HTMLDivElement>, obj: SlideObject, handle: ResizeHandle) => {
     if (!editable) return
     e.stopPropagation()
     const start = toFrac(e)
@@ -159,7 +248,7 @@ export default function SlideCanvas({
   }
 
   // ── Rotate ────────────────────────────────────────────────────────────────
-  const startRotate = (e, obj) => {
+  const startRotate = (e: React.PointerEvent<HTMLDivElement>, obj: SlideObject) => {
     if (!editable) return
     e.stopPropagation()
     if (!stageRef.current) return
@@ -175,7 +264,7 @@ export default function SlideCanvas({
     window.addEventListener('pointerup', onPointerUp)
   }
 
-  const onPointerMove = useCallback((e) => {
+  const onPointerMove = useCallback((e: PointerEvent) => {
     const d = dragRef.current
     if (!d) return
     const cur = toFrac(e)
@@ -246,7 +335,7 @@ export default function SlideCanvas({
       // released (the live commit:false updates are transient React state only;
       // the pointer-up commit:true is what persists). d.last carries the
       // last-rendered geometry, so release now keeps what you dragged.
-      if (d.moved) onChange?.(d.last || objects, { commit: true })
+      if (d.moved) onChange?.((d.last || objects)!, { commit: true })
       else if (d.editOnClick) onEditText?.(d.editOnClick)  // click-again-to-edit
     }
     window.removeEventListener('pointermove', onPointerMove)
@@ -254,10 +343,10 @@ export default function SlideCanvas({
   }, [objects, onChange, onPointerMove, onEditText])
 
   // ── Marquee selection on empty-stage drag ─────────────────────────────────
-  const marqueeRef = useRef(null)
-  const startMarquee = (e) => {
+  const marqueeRef = useRef<MarqueeDrag | null>(null)
+  const startMarquee = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!editable || e.button !== 0) return
-    if (e.target !== stageRef.current && !e.target.classList.contains('vslide-stage-bg')) return
+    if (e.target !== stageRef.current && !(e.target as HTMLElement).classList.contains('vslide-stage-bg')) return
     const start = toFrac(e)
     if (!start) return
     if (!e.shiftKey) onSelect?.([])
@@ -265,7 +354,7 @@ export default function SlideCanvas({
     window.addEventListener('pointermove', onMarqueeMove)
     window.addEventListener('pointerup', onMarqueeUp)
   }
-  const onMarqueeMove = useCallback((e) => {
+  const onMarqueeMove = useCallback((e: PointerEvent) => {
     const m = marqueeRef.current
     if (!m) return
     const cur = toFrac(e)
@@ -290,10 +379,11 @@ export default function SlideCanvas({
   // ── Keyboard: nudge / delete / escape ─────────────────────────────────────
   useEffect(() => {
     if (!editable) return
-    const onKey = (e) => {
+    const onKey = (e: KeyboardEvent) => {
       if (selectedIds.length === 0) return
-      const tag = e.target.tagName
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return
+      const target = e.target as HTMLElement
+      const tag = target.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable) return
       let dx = 0, dy = 0
       const step = e.shiftKey ? NUDGE * 4 : NUDGE
       if (e.key === 'ArrowLeft') dx = -step
@@ -311,7 +401,7 @@ export default function SlideCanvas({
     return () => window.removeEventListener('keydown', onKey, true)
   }, [editable, selectedIds, objects, onChange, onSelect])
 
-  const px = (fracW, fracH) => ({
+  const px = (fracW: number, fracH: number) => ({
     left: `${fracW * 100}%`, top: `${fracH * 100}%`,
   })
 
@@ -478,7 +568,7 @@ export default function SlideCanvas({
 const MAX_CHROME_Z = 200000
 
 /** Render an object's inner content. SECURITY: html is pre-sanitized upstream. */
-function ObjectBody({ obj, stageW }) {
+function ObjectBody({ obj, stageW }: { obj: SlideObject; stageW: number }) {
   if (obj.type === 'text') {
     const alignItems = obj.valign === 'middle' ? 'center' : obj.valign === 'bottom' ? 'flex-end' : 'flex-start'
     return (
@@ -519,7 +609,12 @@ function ObjectBody({ obj, stageW }) {
 // ── Smart-guide + snapping ─────────────────────────────────────────────────
 // Compares the moving object's edges/centre against every other object's
 // edges/centres AND the slide centre; returns a small correction + guide lines.
-function computeSnap(moved, objects, movingIds, stageSize) {
+function computeSnap(
+  moved: { x: number; y: number; w: number; h: number },
+  objects: SlideObject[] | undefined,
+  movingIds: string[],
+  stageSize: StageSize,
+): { dx: number; dy: number; guides: Guides } {
   const snapFracX = SNAP_PX / (stageSize.w || 960)
   const snapFracY = SNAP_PX / (stageSize.h || 540)
   const targetsX = [0.5] // slide vertical centre
@@ -533,7 +628,7 @@ function computeSnap(moved, objects, movingIds, stageSize) {
   const movEdgesY = [moved.y, moved.y + moved.h / 2, moved.y + moved.h]
 
   let bestDx = 0, bestDistX = snapFracX
-  const vGuides = []
+  const vGuides: number[] = []
   for (const me of movEdgesX) {
     for (const t of targetsX) {
       const dist = Math.abs(me - t)
@@ -546,7 +641,7 @@ function computeSnap(moved, objects, movingIds, stageSize) {
     }
   }
   let bestDy = 0, bestDistY = snapFracY
-  const hGuides = []
+  const hGuides: number[] = []
   for (const me of movEdgesY) {
     for (const t of targetsY) {
       const dist = Math.abs(me - t)
