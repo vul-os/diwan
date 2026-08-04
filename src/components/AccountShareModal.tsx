@@ -28,13 +28,39 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { FormEvent } from 'react'
 import {
   UserPlus, Eye, MessageSquare, Pencil, Crown, Trash2, Loader2, Users, Link2,
   Lock, Clock, Copy, Check, KeyRound, ArrowRightLeft, AlertTriangle,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { Modal, Button, Input, Avatar, hueFor, useToast } from './ui'
 import { api } from '../lib/api'
 import { resolveReachableBase, reachableBaseSync } from '../lib/collab/reachableBase.js'
+
+// Minimal shapes of the records the account-share + share-link endpoints
+// resolve to — the api module itself returns `unknown` by design (see
+// src/lib/api.ts), so this documents just what this component reads.
+interface Collaborator {
+  account_id: string
+  role: string
+}
+interface CollaboratorsResponse {
+  collaborators?: Collaborator[]
+}
+interface ShareLink {
+  id: string
+  revoked?: boolean
+  has_password?: boolean
+  expires_at?: string
+}
+interface ShareLinksResponse {
+  links?: ShareLink[]
+}
+interface CreatedShareLink {
+  id?: string
+  token?: string
+}
 
 // Expiry presets offered when minting a link (seconds). 0 = never.
 const EXPIRY_OPTIONS = [
@@ -50,20 +76,20 @@ const EXPIRY_OPTIONS = [
 // link handed to an external viewer targets a reachable URL even when the box is
 // behind NAT and the owner loaded Office over a LAN address; falls back to the
 // current origin (standalone/cloud where the origin is already public).
-function shareLinkUrl(token) {
+function shareLinkUrl(token: string) {
   if (typeof window === 'undefined') return `/view/${token}`
   return `${reachableBaseSync()}/view/${token}`
 }
 
 // The three grantable roles, in ascending privilege. Owner is intentionally not
 // grantable through this dialog.
-const ROLES = [
+const ROLES: { value: string; label: string; hint: string; icon: LucideIcon }[] = [
   { value: 'viewer',    label: 'Viewer',    hint: 'Can view',            icon: Eye },
   { value: 'commenter', label: 'Commenter', hint: 'Can view & comment',  icon: MessageSquare },
   { value: 'editor',    label: 'Editor',    hint: 'Can edit',            icon: Pencil },
 ]
 
-function roleMeta(role) {
+function roleMeta(role: string) {
   return ROLES.find((r) => r.value === role) || { value: role, label: role, hint: '', icon: Eye }
 }
 
@@ -84,31 +110,43 @@ function roleMeta(role) {
  *                              is the one dialog where a user would otherwise
  *                              assume it does. Never omit it silently.
  */
-export default function AccountShareModal({ open, onClose, file, me = '', onSwitchToLink, liveCollabNotice = null }) {
+interface AccountShareModalProps {
+  open: boolean
+  onClose: () => void
+  file?: { id?: string; name?: string } | null
+  me?: string
+  onSwitchToLink?: () => void
+  liveCollabNotice?: string | null
+}
+
+export default function AccountShareModal({ open, onClose, file, me = '', onSwitchToLink, liveCollabNotice = null }: AccountShareModalProps) {
   const { showToast, toast } = useToast()
   const [loading, setLoading] = useState(false)
-  const [collaborators, setCollaborators] = useState([]) // [{ account_id, role }]
+  const [collaborators, setCollaborators] = useState<Collaborator[]>([])
   const [owner, setOwner] = useState('')
   const [email, setEmail] = useState('')
   const [role, setRole] = useState('editor')
   const [busy, setBusy] = useState(false) // an add/change/revoke is in flight
   const [error, setError] = useState('')
 
-  const fileId = file?.id
+  // Callers only mount this dialog against a real file; a missing id would
+  // already have failed identically at the fetch layer pre-migration (a
+  // `/files/undefined/...` request), so this narrows without changing that.
+  const fileId = file?.id as string
 
   const refresh = useCallback(async () => {
     if (!fileId) return
     setLoading(true)
     setError('')
     try {
-      const res = await api.listFileCollaborators(fileId)
+      const res = await api.listFileCollaborators(fileId) as CollaboratorsResponse
       const list = res?.collaborators || []
       const own = list.find((c) => c.role === 'owner')
       setOwner(own?.account_id || '')
       // Show non-owner collaborators in the editable roster.
       setCollaborators(list.filter((c) => c.role !== 'owner'))
     } catch (e) {
-      setError(e.message || 'Could not load collaborators')
+      setError(e instanceof Error ? e.message : 'Could not load collaborators')
     } finally {
       setLoading(false)
     }
@@ -124,7 +162,7 @@ export default function AccountShareModal({ open, onClose, file, me = '', onSwit
   // effective owner so local mode keeps working.
   const isOwner = useMemo(() => !owner || owner === me, [owner, me])
 
-  const addCollaborator = async (e) => {
+  const addCollaborator = async (e?: FormEvent) => {
     e?.preventDefault?.()
     const acct = email.trim()
     if (!acct) return
@@ -140,26 +178,26 @@ export default function AccountShareModal({ open, onClose, file, me = '', onSwit
       await refresh()
       showToast(`Shared with ${acct}`, 'success')
     } catch (err) {
-      setError(err.message || 'Could not share')
+      setError(err instanceof Error ? err.message : 'Could not share')
     } finally {
       setBusy(false)
     }
   }
 
-  const changeRole = async (accountId, nextRole) => {
+  const changeRole = async (accountId: string, nextRole: string) => {
     setBusy(true)
     setError('')
     try {
       await api.shareFile(fileId, accountId, nextRole)
       await refresh()
     } catch (err) {
-      setError(err.message || 'Could not change role')
+      setError(err instanceof Error ? err.message : 'Could not change role')
     } finally {
       setBusy(false)
     }
   }
 
-  const revoke = async (accountId) => {
+  const revoke = async (accountId: string) => {
     setBusy(true)
     setError('')
     try {
@@ -167,7 +205,7 @@ export default function AccountShareModal({ open, onClose, file, me = '', onSwit
       await refresh()
       showToast(`Removed ${accountId}`, 'success')
     } catch (err) {
-      setError(err.message || 'Could not remove access')
+      setError(err instanceof Error ? err.message : 'Could not remove access')
     } finally {
       setBusy(false)
     }
@@ -175,7 +213,7 @@ export default function AccountShareModal({ open, onClose, file, me = '', onSwit
 
   // Transfer ownership to another account. Owner-only; the server demotes the
   // previous owner to editor. Confirmed before firing.
-  const transferOwnership = async (newOwner) => {
+  const transferOwnership = async (newOwner: string) => {
     setBusy(true)
     setError('')
     try {
@@ -183,7 +221,7 @@ export default function AccountShareModal({ open, onClose, file, me = '', onSwit
       await refresh()
       showToast(`Ownership transferred to ${newOwner}`, 'success')
     } catch (err) {
-      setError(err.message || 'Could not transfer ownership')
+      setError(err instanceof Error ? err.message : 'Could not transfer ownership')
     } finally {
       setBusy(false)
     }
@@ -276,7 +314,7 @@ export default function AccountShareModal({ open, onClose, file, me = '', onSwit
                   role={c.role}
                   isMe={c.account_id === me}
                   editable={isOwner && !busy}
-                  onChangeRole={(r) => changeRole(c.account_id, r)}
+                  onChangeRole={(r: string) => changeRole(c.account_id, r)}
                   onRevoke={() => revoke(c.account_id)}
                 />
               ))
@@ -315,7 +353,16 @@ export default function AccountShareModal({ open, onClose, file, me = '', onSwit
 }
 
 // ─── PersonRow ──────────────────────────────────────────────────────────────
-function PersonRow({ accountId, role, isMe, editable, onChangeRole, onRevoke }) {
+interface PersonRowProps {
+  accountId: string
+  role: string
+  isMe: boolean
+  editable: boolean
+  onChangeRole?: (role: string) => void
+  onRevoke?: () => void
+}
+
+function PersonRow({ accountId, role, isMe, editable, onChangeRole, onRevoke }: PersonRowProps) {
   const meta = roleMeta(role)
   const RoleIcon = role === 'owner' ? Crown : meta.icon
   return (
@@ -339,7 +386,7 @@ function PersonRow({ accountId, role, isMe, editable, onChangeRole, onRevoke }) 
           <select
             id={`role-${accountId}`}
             value={role}
-            onChange={(e) => onChangeRole(e.target.value)}
+            onChange={(e) => onChangeRole?.(e.target.value)}
             className="rounded-md border border-line bg-paper text-ink text-2xs px-1.5 py-1 focus:outline-none focus-visible:shadow-focus"
           >
             {ROLES.map((r) => (
@@ -380,24 +427,30 @@ function PersonRow({ accountId, role, isMe, editable, onChangeRole, onRevoke }) 
 // hashes what the visitor presents — and revoke works from the link id, so the
 // owner never needs the token to kill a leaked link. The list says all of this
 // rather than rendering a dead or empty URL.
-function ShareLinksSection({ fileId, onError, showToast }) {
-  const [links, setLinks] = useState([])
+interface ShareLinksSectionProps {
+  fileId: string
+  onError: (msg: string) => void
+  showToast?: (msg: string, kind?: 'info' | 'success' | 'error') => void
+}
+
+function ShareLinksSection({ fileId, onError, showToast }: ShareLinksSectionProps) {
+  const [links, setLinks] = useState<ShareLink[]>([])
   const [loading, setLoading] = useState(false)
   const [minting, setMinting] = useState(false)
   const [password, setPassword] = useState('')
   const [expiry, setExpiry] = useState(0)
-  const [copiedId, setCopiedId] = useState(null)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
   // { [linkId]: absoluteUrl } — populated only by mint(), only for this modal
   // session. Never written to storage: it is the one copy of a live capability.
-  const [mintedUrls, setMintedUrls] = useState({})
+  const [mintedUrls, setMintedUrls] = useState<Record<string, string>>({})
 
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await api.listShareLinks(fileId)
+      const res = await api.listShareLinks(fileId) as ShareLinksResponse
       setLinks(res?.links || [])
     } catch (e) {
-      onError?.(e.message || 'Could not load links')
+      onError?.(e instanceof Error ? e.message : 'Could not load links')
     } finally {
       setLoading(false)
     }
@@ -409,36 +462,38 @@ function ShareLinksSection({ fileId, onError, showToast }) {
     setMinting(true)
     onError?.('')
     try {
-      const created = await api.createShareLink(fileId, { password: password.trim(), expiresInSeconds: expiry })
+      const created = await api.createShareLink(fileId, { password: password.trim(), expiresInSeconds: expiry }) as CreatedShareLink
       // The mint response is the ONLY time the server hands over the token.
       // Hold the built URL here so the owner can copy it before the modal
       // closes; after that it is unrecoverable by design.
       if (created?.id && created?.token) {
-        setMintedUrls((m) => ({ ...m, [created.id]: shareLinkUrl(created.token) }))
+        const id = created.id
+        const token = created.token
+        setMintedUrls((m) => ({ ...m, [id]: shareLinkUrl(token) }))
       }
       setPassword('')
       setExpiry(0)
       await refresh()
       showToast?.('Link created — copy it now, the URL is shown only once', 'success')
     } catch (e) {
-      onError?.(e.message || 'Could not create link')
+      onError?.(e instanceof Error ? e.message : 'Could not create link')
     } finally {
       setMinting(false)
     }
   }
 
-  const revoke = async (linkId) => {
+  const revoke = async (linkId: string) => {
     onError?.('')
     try {
       await api.revokeShareLink(fileId, linkId)
       await refresh()
       showToast?.('Link revoked', 'success')
     } catch (e) {
-      onError?.(e.message || 'Could not revoke link')
+      onError?.(e instanceof Error ? e.message : 'Could not revoke link')
     }
   }
 
-  const copy = async (link) => {
+  const copy = async (link: ShareLink) => {
     const url = mintedUrls[link.id]
     if (!url) return // no URL to copy; the button is not rendered in that case
     try {
@@ -546,7 +601,13 @@ function ShareLinksSection({ fileId, onError, showToast }) {
 // ─── TransferOwnershipSection ────────────────────────────────────────────────
 // Owner-only: hand full ownership to an existing collaborator (or any account),
 // with an explicit confirm. The server demotes the previous owner to editor.
-function TransferOwnershipSection({ collaborators, onTransfer, busy }) {
+interface TransferOwnershipSectionProps {
+  collaborators: Collaborator[]
+  onTransfer: (newOwner: string) => void | Promise<void>
+  busy: boolean
+}
+
+function TransferOwnershipSection({ collaborators, onTransfer, busy }: TransferOwnershipSectionProps) {
   const [target, setTarget] = useState('')
   const [confirming, setConfirming] = useState(false)
 
