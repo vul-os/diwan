@@ -1,5 +1,5 @@
 /**
- * TemplateGallery.jsx — pre-built deck template picker.
+ * TemplateGallery.tsx — pre-built deck template picker.
  *
  * Shows 4 templates (Pitch, Project Plan, Lesson Plan, Quarterly Review).
  * Each template seeds the full deck with preset slides + theme.
@@ -8,12 +8,31 @@
 
 import { useRef, useState } from 'react'
 import { X, FileText, Check } from 'lucide-react'
-import { DECK_TEMPLATES, getTheme } from './themes'
+import { DECK_TEMPLATES, getTheme, type DeckTemplateSlide } from './themes'
 import { useDialogA11y } from '../../components/ui'
 
-export default function TemplateGallery({ onApply, onClose }) {
-  const [selected, setSelected] = useState(null)
-  const dialogRef = useRef(null)
+/** A template slide seeded with a fresh id, independent of the template. */
+interface SeededSlide extends DeckTemplateSlide {
+  id: string
+}
+
+/** The deck-replacement payload TemplateGallery hands to onApply(). */
+interface DeckSeed {
+  themeId: string
+  theme: string
+  transition: string
+  customTheme: null
+  slides: SeededSlide[]
+}
+
+interface TemplateGalleryProps {
+  onApply: (seed: DeckSeed) => void
+  onClose: () => void
+}
+
+export default function TemplateGallery({ onApply, onClose }: TemplateGalleryProps) {
+  const [selected, setSelected] = useState<string | null>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
   useDialogA11y(dialogRef, onClose)
 
   const handleApply = () => {
