@@ -29,13 +29,30 @@
  */
 
 import { useState } from 'react'
+import type { ReactNode } from 'react'
 import { Link2, Copy, Check, Eye, Pencil, Shield, RefreshCw, AlertTriangle } from 'lucide-react'
 import { Modal, Button } from '../../../components/ui'
 
-export default function P2PShareModal({ open, onClose, links, onRotate, roomId, unavailable = false }) {
-  const [copied, setCopied] = useState(null) // 'rw' | 'ro' | null
+export interface P2PShareLinks {
+  rwLink: string
+  roLink: string
+}
 
-  const copy = async (which, value) => {
+export interface P2PShareModalProps {
+  open: boolean
+  onClose?: () => void
+  links: P2PShareLinks | null
+  onRotate?: () => void
+  roomId?: string
+  unavailable?: boolean
+}
+
+type CopiedWhich = 'rw' | 'ro' | null
+
+export default function P2PShareModal({ open, onClose, links, onRotate, roomId, unavailable = false }: P2PShareModalProps) {
+  const [copied, setCopied] = useState<CopiedWhich>(null)
+
+  const copy = async (which: CopiedWhich, value: string) => {
     try {
       await navigator.clipboard.writeText(value)
       setCopied(which)
@@ -125,7 +142,17 @@ export default function P2PShareModal({ open, onClose, links, onRotate, roomId, 
   )
 }
 
-function LinkRow({ icon, label, hint, value, copied, onCopy, tone }) {
+interface LinkRowProps {
+  icon: ReactNode
+  label: string
+  hint: string
+  value: string
+  copied: boolean
+  onCopy: () => void
+  tone: 'accent' | 'muted'
+}
+
+function LinkRow({ icon, label, hint, value, copied, onCopy, tone }: LinkRowProps) {
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-1.5 text-xs font-medium text-ink">
