@@ -17,19 +17,27 @@ import { describe, it, expect, vi } from 'vitest'
 import * as XLSX from 'xlsx'
 import {
   chartsMetaSheet, exportFidelity, exportNeedsConfirm, exportSheetsToXlsx, CHART_META_SHEET,
+  type ExportSheet,
 } from './sheetsExport.js'
 import { workbookToSheets } from './sheetsImport.js'
-import { insertChart, getCharts, makeChart } from './charts.js'
-import { insertPivot } from './pivot.js'
+import { insertChart, getCharts, makeChart, type ChartSheet } from './charts.js'
+import { insertPivot, type PivotSheet } from './pivot.js'
 
 // file-saver is the only side effect in the export path; capture the Blob it is
 // handed so a test can read back the EXACT bytes a user would download.
-const saved = []
+const saved: { blob: Blob; name: string }[] = []
 vi.mock('file-saver', () => ({
-  saveAs: (blob, name) => { saved.push({ blob, name }) },
+  saveAs: (blob: Blob, name: string) => { saved.push({ blob, name }) },
 }))
 
-function wb(cells = {}) {
+// charts.ts / sheetsExport.ts / sheetsImport.ts / pivot.ts each declare their
+// own narrow view of the SAME plain-data FortuneSheet shape (ChartSheet /
+// ExportSheet / ImportSheet / PivotSheet) — no shared base type. Production
+// crosses these boundaries with the same cast-through-unknown helper
+// (SheetsEditor.tsx's `cast<T>`).
+function cast<T>(v: unknown): T { return v as T }
+
+function wb(cells: Record<string, string | number> = {}): ChartSheet[] {
   const celldata = Object.entries(cells).map(([k, v]) => {
     const [r, c] = k.split('_').map(Number)
     return { r, c, v: { v, m: String(v), ct: { fa: 'General', t: typeof v === 'number' ? 'n' : 's' } } }
@@ -46,15 +54,15 @@ const DATA_CELLS = {
 
 describe('chart export metadata', () => {
   it('returns null when there are no charts (no stray sheet emitted)', () => {
-    expect(chartsMetaSheet(wb())).toBeNull()
+    expect(chartsMetaSheet(cast<ExportSheet[]>(wb()))).toBeNull()
   })
 
   it('serialises the FULL chart definition — including the fields that used to be dropped', () => {
     let data = insertChart(wb(), { id: 'c1', type: 'column', range: 'A1:B3', title: 'Rev', options: { legend: false, headerRow: true, headerCol: true } })
     data = insertChart(data, { id: 'c2', type: 'pie', range: 'D1:E4', title: 'Split' })
-    const ws = chartsMetaSheet(data)
+    const ws = chartsMetaSheet(cast<ExportSheet[]>(data))
     expect(ws).toBeTruthy()
-    const rows = XLSX.utils.sheet_to_json(ws, { header: 1 })
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(ws!, { header: 1 })
     expect(rows[0]).toEqual([
       'type', 'range', 'title', 'xAxisLabel', 'yAxisLabel', 'legend', 'headerRow', 'headerCol',
       'y2AxisLabel', 'secondaryAxis', 'bins', 'x', 'y', 'w', 'h', 'id',
@@ -80,14 +88,14 @@ describe('chart export metadata', () => {
       title: '=HYPERLINK("http://evil","click")',
       options: { xAxisLabel: '+SUM(1)', yAxisLabel: '@cmd', legend: true, headerRow: true, headerCol: true },
     })
-    const ws = chartsMetaSheet(data)
-    const rows = XLSX.utils.sheet_to_json(ws, { header: 1 })
+    const ws = chartsMetaSheet(cast<ExportSheet[]>(data))
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(ws!, { header: 1 })
     // Every free-text field is quoted so it renders as a literal glyph, not a formula.
-    expect(rows[1][2].startsWith("'=")).toBe(true)   // title
-    expect(rows[1][3].startsWith("'+")).toBe(true)   // xAxisLabel
-    expect(rows[1][4].startsWith("'@")).toBe(true)   // yAxisLabel
+    expect((rows[1][2] as string).startsWith("'=")).toBe(true)   // title
+    expect((rows[1][3] as string).startsWith("'+")).toBe(true)   // xAxisLabel
+    expect((rows[1][4] as string).startsWith("'@")).toBe(true)   // yAxisLabel
     // And the raw formula string is NOT present verbatim as a leading-= cell.
-    expect(rows[1][2].startsWith('=')).toBe(false)
+    expect((rows[1][2] as string).startsWith('=')).toBe(false)
   })
 })
 
@@ -97,12 +105,12 @@ describe('chart export metadata', () => {
  * bytes back through the real importer, and assert the charts came back.
  */
 describe('xlsx chart ROUND TRIP (export → import restores the charts)', () => {
-  async function roundTrip(data) {
+  async function roundTrip(data: ChartSheet[]) {
     saved.length = 0
-    await exportSheetsToXlsx(data, 'book')
+    await exportSheetsToXlsx(cast<ExportSheet[]>(data), 'book')
     expect(saved).toHaveLength(1)
     const buf = await saved[0].blob.arrayBuffer()
-    return { sheets: workbookToSheets(buf, 'book.xlsx'), buf }
+    return { sheets: cast<ChartSheet[]>(workbookToSheets(buf, 'book.xlsx')), buf }
   }
 
   it('restores every chart exactly — type, range, title, options, position, size', async () => {
@@ -160,7 +168,7 @@ describe('xlsx chart ROUND TRIP (export → import restores the charts)', () => 
     const JSZip = (await import('jszip')).default
     const zip = await JSZip.loadAsync(buf)
     expect(Object.keys(zip.files)).toContain('xl/charts/chart1.xml')
-    const chartXml = await zip.file('xl/charts/chart1.xml').async('string')
+    const chartXml = await zip.file('xl/charts/chart1.xml')!.async('string')
     expect(chartXml).toContain('<c:barChart>')
     expect(chartXml).toContain("'Sheet1'!$B$2:$B$4")   // live, recalculating reference
   })
@@ -177,7 +185,7 @@ describe('xlsx chart ROUND TRIP (export → import restores the charts)', () => 
     const buf = XLSX.write(book, { bookType: 'xlsx', type: 'array' })
 
     const sheets = workbookToSheets(buf, 'hostile.xlsx')
-    const [c] = getCharts(sheets)
+    const [c] = getCharts(cast<ChartSheet[]>(sheets))
     expect(c.type).toBe('column')                     // unknown type → clamped default
     expect(c.options.bins).toBeLessThanOrEqual(50)    // bin count clamped
     expect(Number.isFinite(c.x) && Number.isFinite(c.y)).toBe(true)
@@ -192,17 +200,17 @@ describe('xlsx chart ROUND TRIP (export → import restores the charts)', () => 
     XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['hello', 'world'], [1, 2]]), CHART_META_SHEET)
     const buf = XLSX.write(book, { bookType: 'xlsx', type: 'array' })
     const sheets = workbookToSheets(buf, 'other.xlsx')
-    expect(getCharts(sheets)).toHaveLength(0)
+    expect(getCharts(cast<ChartSheet[]>(sheets))).toHaveLength(0)
     // Not our schema → it stays a normal worksheet rather than vanishing.
     expect(sheets.map((s) => s.name)).toEqual(['Sheet1', CHART_META_SHEET])
   })
 })
 
 describe('exportFidelity — the user gets told BEFORE anything is lost', () => {
-  const withCharts = () => {
+  const withCharts = (): ExportSheet[] => {
     let d = insertChart(wb(DATA_CELLS), { id: 'c1', type: 'column', range: 'A1:C4', title: 'Rev' })
     d = insertChart(d, { id: 'c2', type: 'histogram', range: 'B1:B4', title: 'Spread' })
-    return d
+    return cast<ExportSheet[]>(d)
   }
 
   it('xlsx: charts embed natively; the histogram declares its caveat', () => {
@@ -232,15 +240,15 @@ describe('exportFidelity — the user gets told BEFORE anything is lost', () => 
 
   it('an unsupported chart type is reported as LOST, not silently swallowed', () => {
     const data = [{ ...wb(DATA_CELLS)[0], charts: [{ id: 'x', type: 'evil', range: 'A1:B2', options: {} }] }]
-    const r = exportFidelity(data, 'xlsx')
+    const r = exportFidelity(cast<ExportSheet[]>(data), 'xlsx')
     expect(r.native).toBe(0)
     expect(r.lost).toHaveLength(1)
     expect(r.lost[0].note).toMatch(/no Excel equivalent/i)
   })
 
   it('live pivots are reported as not-exported, with the workaround', () => {
-    const data = insertPivot(wb(DATA_CELLS), { range: 'A1:C4', rowField: 'Quarter', valueField: 'Revenue' })
-    const r = exportFidelity(data, 'xlsx')
+    const data = insertPivot(cast<PivotSheet[]>(wb(DATA_CELLS)), { range: 'A1:C4', rowField: 'Quarter', valueField: 'Revenue' })
+    const r = exportFidelity(cast<ExportSheet[]>(data), 'xlsx')
     expect(r.pivots).toBe(1)
     expect(r.notes.join(' ')).toMatch(/not exported/i)
     expect(r.notes.join(' ')).toMatch(/static sheet/i)
@@ -257,12 +265,12 @@ describe('exportFidelity — the user gets told BEFORE anything is lost', () => 
   })
 
   it('exportNeedsConfirm: silent for a plain workbook, but never when something is at stake', () => {
-    expect(exportNeedsConfirm(wb(DATA_CELLS), 'xlsx')).toBe(false)   // nothing to say → no friction
-    expect(exportNeedsConfirm(wb(DATA_CELLS), 'csv')).toBe(false)
+    expect(exportNeedsConfirm(cast<ExportSheet[]>(wb(DATA_CELLS)), 'xlsx')).toBe(false)   // nothing to say → no friction
+    expect(exportNeedsConfirm(cast<ExportSheet[]>(wb(DATA_CELLS)), 'csv')).toBe(false)
     expect(exportNeedsConfirm(withCharts(), 'xlsx')).toBe(true)      // histogram caveat
     expect(exportNeedsConfirm(withCharts(), 'ods')).toBe(true)       // charts cannot embed
     expect(exportNeedsConfirm(withCharts(), 'csv')).toBe(true)
-    const plainChart = insertChart(wb(DATA_CELLS), { id: 'c1', type: 'column', range: 'A1:C4' })
+    const plainChart = cast<ExportSheet[]>(insertChart(wb(DATA_CELLS), { id: 'c1', type: 'column', range: 'A1:C4' }))
     expect(exportNeedsConfirm(plainChart, 'ods')).toBe(true)         // still a loss in ods
     expect(exportNeedsConfirm(plainChart, 'xlsx-server')).toBe(true) // server path drops charts
     expect(exportNeedsConfirm(plainChart, 'xlsx')).toBe(false)       // fully embeddable
@@ -279,7 +287,7 @@ describe('exportSheetsToXlsx — reports what it actually did', () => {
       ],
     }]
     saved.length = 0
-    const res = await exportSheetsToXlsx(data, 'book')
+    const res = await exportSheetsToXlsx(cast<ExportSheet[]>(data), 'book')
     expect(res.embedded).toEqual(['ok'])
     expect(res.skipped).toEqual([{ id: 'bad', type: 'evil', reason: 'no Excel equivalent' }])
     expect(saved[0].name).toBe('book.xlsx')
