@@ -29,7 +29,7 @@ import { slideImportLossItems } from './importNotes'
 import { buildNotesPrintHtml } from './notesPrint'
 import SlideCanvas from './SlideCanvas.jsx'
 import ObjectTextEditor from './ObjectTextEditor.jsx'
-import ArrangeToolbar from './ArrangeToolbar.jsx'
+import ArrangeToolbar from './ArrangeToolbar'
 import {
   ensureObjects, sanitizeObjects, newObjectId, flowContentFromObjects, sortByZ,
 } from './slideObjects'

@@ -15,10 +15,23 @@ import {
   AlignHorizontalDistributeCenter, AlignVerticalDistributeCenter,
 } from 'lucide-react'
 import { IconButton, Tooltip } from '../../components/ui'
+import type { AlignEdge, DistributeAxis } from './slideArrange'
+
+type ArrangeAction =
+  | 'bringToFront' | 'bringForward' | 'sendBackward' | 'sendToBack'
+  | 'group' | 'ungroup' | 'align' | 'distribute'
+
+interface ArrangeToolbarProps {
+  count: number
+  canGroup: boolean
+  canUngroup: boolean
+  onArrange: (action: ArrangeAction, arg?: AlignEdge | DistributeAxis) => void
+  onDelete: () => void
+}
 
 export default function ArrangeToolbar({
   count, canGroup, canUngroup, onArrange, onDelete,
-}) {
+}: ArrangeToolbarProps) {
   const Sep = () => <span className="toolbar-divider" />
   const multi = count > 1
   const canDistribute = count >= 3
