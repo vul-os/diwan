@@ -29,16 +29,29 @@ const SNIPPETS = [
   { label: 'Greek', latex: '\\alpha + \\beta = \\gamma' },
 ]
 
+export interface EquationEditorSubmitArgs {
+  latex: string
+  display: boolean
+}
+
+export interface EquationEditorProps {
+  open: boolean
+  initialLatex?: string
+  initialDisplay?: boolean
+  onSubmit?: (args: EquationEditorSubmitArgs) => void
+  onClose?: () => void
+}
+
 export default function EquationEditor({
   open,
   initialLatex = '',
   initialDisplay = false,
   onSubmit,
   onClose,
-}) {
+}: EquationEditorProps) {
   const [latex, setLatex] = useState(initialLatex)
   const [display, setDisplay] = useState(initialDisplay)
-  const taRef = useRef(null)
+  const taRef = useRef<HTMLTextAreaElement>(null)
 
   // Reset local state whenever the dialog is (re)opened for a different node.
   useEffect(() => {
@@ -55,7 +68,7 @@ export default function EquationEditor({
     [latex, display],
   )
 
-  const insertSnippet = (snippet) => {
+  const insertSnippet = (snippet: string) => {
     const ta = taRef.current
     if (!ta) { setLatex((v) => v + snippet); return }
     const start = ta.selectionStart ?? latex.length
