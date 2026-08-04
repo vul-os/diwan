@@ -3,22 +3,24 @@ import {
   Document, Packer, Paragraph, TextRun, HeadingLevel,
   Table, TableRow, TableCell, WidthType, BorderStyle, ImageRun,
   Header, Footer, PageNumber, AlignmentType, ExternalHyperlink,
+  type IRunOptions, type ISectionOptions, type FileChild, type ParagraphChild,
 } from 'docx'
 import TurndownService from 'turndown'
+import type { Editor, JSONContent } from '@tiptap/react'
 import { sanitizeDocHtml } from '../../lib/sanitize'
 import {
   computeFootnoteOrder, collectFootnoteRefIds, numberFootnotesInHtml,
 } from './footnotes.js'
 import { renderEquationHtml } from './equation.js'
 import { pageSetupToCssAtPage, normalizePageSetup, PAGE_SIZES } from './pageSetup.js'
-import { normalizeHeaderFooter, resolveFields } from './headerFooter.js'
+import { normalizeHeaderFooter, resolveFields, type HeaderFooterBand, type HeaderFooterConfig, type FieldContext } from './headerFooter.js'
 import { stripXmlInvalidChars } from '../../lib/xmlText.js'
 
 // DATA-INTEGRITY: every string that becomes <w:t> text must have XML-1.0-illegal
 // control chars (VT/FF/NUL/…) removed first — the docx library does NOT strip
 // them, so Word would reject/"repair" the exported .docx. Wrap TextRun so ALL run
 // text flows through the strip; callers keep passing raw node text. See xmlText.js.
-function xr(opts) {
+function xr(opts: string | IRunOptions): TextRun {
   if (typeof opts === 'string') return new TextRun(stripXmlInvalidChars(opts))
   if (opts && typeof opts.text === 'string') {
     return new TextRun({ ...opts, text: stripXmlInvalidChars(opts.text) })
@@ -32,7 +34,7 @@ function xr(opts) {
 // equation.js renderHTML). We render KaTeX (trust:false — no href/script can be
 // produced) into those shells so an exported .html file shows real equations,
 // then the whole body is sanitised as the trust boundary.
-function renderMathInHtml(html) {
+function renderMathInHtml(html: string): string {
   if (typeof html !== 'string' || !html.includes('data-latex')) return html
   if (typeof DOMParser === 'undefined') return html
   try {
@@ -49,8 +51,13 @@ function renderMathInHtml(html) {
   }
 }
 
+export interface ExportOptions {
+  pageSetup?: unknown
+  headerFooter?: unknown
+}
+
 // HTML
-export function exportToHtml(editor, filename, opts = {}) {
+export function exportToHtml(editor: Editor, filename: string, opts: ExportOptions = {}): void {
   // Bake sequential footnote numbers into the markup (getHTML() alone omits
   // them — they live in an editor decoration, not the document), render math
   // (P4), then sanitise. Order: number footnotes → render KaTeX → sanitise, so
@@ -107,12 +114,18 @@ ${body}
   saveAs(new Blob([html], { type: 'text/html;charset=utf-8' }), `${filename}.html`)
 }
 
+export interface HeadingOutlineEntry {
+  level: number
+  text: string
+  slug: string
+}
+
 // P5: bake the live heading outline into each empty ToC shell for export. The
 // live ToC node renders via a NodeView (not in getHTML()), so a cold export
 // carries only an empty `<div data-toc>`. We fill it with the current outline as
 // escaped-text anchors so the exported file shows the ToC. Runs BEFORE the
 // sanitiser (the anchors + text are benign; the sanitiser still vets them).
-function renderTocInHtml(html, headings) {
+function renderTocInHtml(html: string, headings: HeadingOutlineEntry[]): string {
   if (typeof html !== 'string' || !html.includes('data-toc')) return html
   if (typeof DOMParser === 'undefined') return html
   try {
@@ -140,19 +153,19 @@ function renderTocInHtml(html, headings) {
 }
 
 // Read headings from doc JSON (export doesn't have a live editor state).
-function readHeadingsForExport(json) {
-  const out = []
-  const slugify = (t) => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
-  const textOf = (node) => {
+function readHeadingsForExport(json: JSONContent): HeadingOutlineEntry[] {
+  const out: HeadingOutlineEntry[] = []
+  const slugify = (t: unknown) => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+  const textOf = (node: JSONContent): string => {
     let s = ''
-    const walk = (n) => {
+    const walk = (n: JSONContent) => {
       if (n.type === 'text') s += n.text || ''
       ;(n.content || []).forEach(walk)
     }
     walk(node)
     return s
   }
-  const walk = (n) => {
+  const walk = (n: JSONContent) => {
     if (n.type === 'heading') {
       const text = textOf(n)
       out.push({ level: n.attrs?.level || 1, text, slug: slugify(text) })
@@ -167,26 +180,26 @@ function readHeadingsForExport(json) {
 // text — these are plain strings, not markup). Defence-in-depth: the body is
 // sanitised separately; this keeps a title/header from breaking the document
 // structure or smuggling markup into <title>/@page running elements.
-function escapeHtml(s) {
+function escapeHtml(s: unknown): string {
   return String(s ?? '').replace(/[&<>"']/g, (c) => (
-    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string
   ))
 }
 
 // Build @page running-element CSS for headers/footers. {{page}}/{{pages}} map to
 // CSS `counter(page)` / `counter(pages)` so the print engine fills real numbers;
 // {{title}}/{{date}} are resolved to static (escaped) text at export time.
-function hfToPrintCss(hf, filename) {
+function hfToPrintCss(hf: HeaderFooterConfig, filename: string): { headerCss: string; footerCss: string } {
   if (!hf.enabled) return { headerCss: '', footerCss: '' }
   const now = new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
-  const cellContent = (text) => {
+  const cellContent = (text: string): string => {
     if (!text) return '""'
     // Split on our field tokens, mapping page/pages to counters and quoting the
     // literal (escaped) segments. Result is a CSS `content` value list.
-    const parts = []
+    const parts: string[] = []
     const re = /\{\{\s*(page|pages|title|date)\s*\}\}/gi
     let last = 0
-    let m
+    let m: RegExpExecArray | null
     while ((m = re.exec(text))) {
       const lit = text.slice(last, m.index)
       if (lit) parts.push(`"${cssStr(lit)}"`)
@@ -201,10 +214,10 @@ function hfToPrintCss(hf, filename) {
     if (tail) parts.push(`"${cssStr(tail)}"`)
     return parts.length ? parts.join(' ') : '""'
   }
-  const band = (band, region) => {
-    const rules = []
-    const map = { left: `${region}-left`, center: `${region}-center`, right: `${region}-right` }
-    for (const cell of ['left', 'center', 'right']) {
+  const band = (band: HeaderFooterBand, region: string): string => {
+    const rules: string[] = []
+    const map: Record<'left' | 'center' | 'right', string> = { left: `${region}-left`, center: `${region}-center`, right: `${region}-right` }
+    for (const cell of ['left', 'center', 'right'] as const) {
       if (band[cell]) rules.push(`@${map[cell]} { content: ${cellContent(band[cell])}; font-family: Georgia, serif; font-size: 10pt; color: #555; }`)
     }
     return rules.join('\n  ')
@@ -222,7 +235,7 @@ function hfToPrintCss(hf, filename) {
 // a value like `</style><script>…` would break out of the stylesheet and inject
 // live script into the exported file. CSS unicode escapes \3c /\3e render as the
 // literal characters in `content:` but can never form an HTML tag.
-function cssStr(s) {
+function cssStr(s: unknown): string {
   return String(s ?? '')
     .replace(/\\/g, '\\\\')
     .replace(/"/g, '\\"')
@@ -232,7 +245,7 @@ function cssStr(s) {
 }
 
 // Markdown
-export function exportToMarkdown(editor, filename) {
+export function exportToMarkdown(editor: Editor, filename: string): void {
   const html = sanitizeDocHtml(numberFootnotesInHtml(editor.getHTML()))
   const td = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' })
   // GFM table support: turndown drops <table> by default. Add a minimal rule so
@@ -248,19 +261,19 @@ export function exportToMarkdown(editor, filename) {
 // Convert an HTML <table> DOM node to a GFM pipe-table string. Best-effort:
 // flattens each cell to its text, uses the first row as the header, and ignores
 // colspan/rowspan (Markdown pipe-tables can't express spans).
-function htmlTableToMarkdown(tableNode) {
+function htmlTableToMarkdown(tableNode: HTMLElement): string {
   const rows = Array.from(tableNode.querySelectorAll('tr'))
   if (rows.length === 0) return ''
-  const cellText = (cell) => (cell.textContent || '').replace(/\s+/g, ' ').trim().replace(/\|/g, '\\|')
-  const toCells = (tr) => Array.from(tr.querySelectorAll('th,td')).map(cellText)
+  const cellText = (cell: Element): string => (cell.textContent || '').replace(/\s+/g, ' ').trim().replace(/\|/g, '\\|')
+  const toCells = (tr: Element): string[] => Array.from(tr.querySelectorAll('th,td')).map(cellText)
   const header = toCells(rows[0])
   const width = header.length || 1
-  const pad = (cells) => {
+  const pad = (cells: string[]): string[] => {
     const c = cells.slice(0, width)
     while (c.length < width) c.push('')
     return c
   }
-  const lines = []
+  const lines: string[] = []
   lines.push('| ' + pad(header).join(' | ') + ' |')
   lines.push('| ' + Array(width).fill('---').join(' | ') + ' |')
   for (let i = 1; i < rows.length; i++) {
@@ -270,19 +283,25 @@ function htmlTableToMarkdown(tableNode) {
 }
 
 // PDF (browser print)
-export function exportToPdf(filename) {
+export function exportToPdf(filename: string): void {
   const old = document.title
   document.title = filename
   window.print()
   document.title = old
 }
 
+/** computeFootnoteOrder's Map, carrying the heading outline alongside it (see
+ *  exportToDocx below) — avoids threading a second param through every node fn. */
+interface FootnoteOrderMap extends Map<string, number> {
+  _tocHeadings?: HeadingOutlineEntry[]
+}
+
 // DOCX
-export async function exportToDocx(editor, filename, opts = {}) {
+export async function exportToDocx(editor: Editor, filename: string, opts: ExportOptions = {}): Promise<void> {
   const json = editor.getJSON()
   // Derive the same sequential footnote numbering the editor shows so exported
   // refs/items read 1, 2, 3… (the numbers are decoration-only in the doc JSON).
-  const fnOrder = computeFootnoteOrder(collectFootnoteRefIds(json))
+  const fnOrder: FootnoteOrderMap = computeFootnoteOrder(collectFootnoteRefIds(json))
   // P5: carry the heading outline alongside fnOrder so the tableOfContents node
   // case can render it (avoids threading a second param through every node fn).
   try { fnOrder._tocHeadings = readHeadingsForExport(json) } catch { /* noop */ }
@@ -312,12 +331,16 @@ export async function exportToDocx(editor, filename, opts = {}) {
   // {{page}}/{{pages}}. Field tokens resolve to docx PageNumber children so Word
   // fills live page numbers; {{title}}/{{date}} resolve to static text here.
   const hf = normalizeHeaderFooter(opts.headerFooter)
-  const section = { properties: { page }, children }
+  // Built as a single literal (rather than assigned onto `section` after the
+  // fact) because ISectionOptions' headers/footers fields are readonly.
+  let headers: ISectionOptions['headers']
+  let footers: ISectionOptions['footers']
   if (hf.enabled) {
-    const ctx = { title: filename }
-    if (bandHasContent(hf.header)) section.headers = { default: new Header({ children: [bandParagraph(hf.header, ctx)] }) }
-    if (bandHasContent(hf.footer)) section.footers = { default: new Footer({ children: [bandParagraph(hf.footer, ctx)] }) }
+    const ctx: FieldContext = { title: filename }
+    if (bandHasContent(hf.header)) headers = { default: new Header({ children: [bandParagraph(hf.header, ctx)] }) }
+    if (bandHasContent(hf.footer)) footers = { default: new Footer({ children: [bandParagraph(hf.footer, ctx)] }) }
   }
+  const section: ISectionOptions = { properties: { page }, children, headers, footers }
 
   const doc = new Document({
     styles: { default: { document: { run: { font: 'Calibri', size: 24 } } } },
@@ -327,7 +350,7 @@ export async function exportToDocx(editor, filename, opts = {}) {
   saveAs(blob, `${filename}.docx`)
 }
 
-function bandHasContent(band) {
+function bandHasContent(band: HeaderFooterBand | null | undefined): boolean {
   return !!(band && (band.left || band.center || band.right))
 }
 
@@ -335,9 +358,9 @@ function bandHasContent(band) {
 // flush-left, center centered, right flush-right — approximated with tab stops
 // so a three-cell band reads correctly in Word. Field tokens become live docx
 // runs ({{page}}/{{pages}} → PageNumber) or resolved text.
-function bandParagraph(band, ctx) {
-  const runsFor = (text) => fieldTextToRuns(text, ctx)
-  const children = []
+function bandParagraph(band: HeaderFooterBand, ctx: FieldContext): Paragraph {
+  const runsFor = (text: string) => fieldTextToRuns(text, ctx)
+  const children: ParagraphChild[] = []
   // Left cell.
   children.push(...runsFor(band.left))
   children.push(xr({ text: '\t' }))
@@ -358,12 +381,12 @@ function bandParagraph(band, ctx) {
 
 // Convert a header/footer cell string into docx runs, mapping {{page}}/{{pages}}
 // to live PageNumber fields and {{title}}/{{date}} to static resolved text.
-function fieldTextToRuns(text, ctx) {
+function fieldTextToRuns(text: string, ctx: FieldContext): TextRun[] {
   if (typeof text !== 'string' || !text) return [xr('')]
-  const runs = []
+  const runs: TextRun[] = []
   const re = /\{\{\s*(page|pages|title|date)\s*\}\}/gi
   let last = 0
-  let m
+  let m: RegExpExecArray | null
   while ((m = re.exec(text))) {
     const lit = text.slice(last, m.index)
     if (lit) runs.push(xr({ text: lit }))
@@ -378,8 +401,8 @@ function fieldTextToRuns(text, ctx) {
   return runs.length ? runs : [xr('')]
 }
 
-async function nodesToDocx(nodes, fnOrder) {
-  const out = []
+async function nodesToDocx(nodes: JSONContent[], fnOrder?: FootnoteOrderMap): Promise<FileChild[]> {
+  const out: FileChild[] = []
   for (const node of nodes) {
     out.push(...(await nodeToDocx(node, fnOrder)))
   }
@@ -387,9 +410,9 @@ async function nodesToDocx(nodes, fnOrder) {
 }
 
 // Recursively flatten nested bullet/ordered lists with indentation levels
-async function listToDocx(listNode, depth) {
+async function listToDocx(listNode: JSONContent, depth: number): Promise<FileChild[]> {
   const isOrdered = listNode.type === 'orderedList'
-  const items = []
+  const items: FileChild[] = []
   for (const item of listNode.content || []) {
     // item is a listItem; its content may be paragraphs and/or nested lists
     for (const child of item.content || []) {
@@ -415,14 +438,14 @@ async function listToDocx(listNode, depth) {
   return items
 }
 
-const HEADING_MAP = {
+const HEADING_MAP: Record<number, (typeof HeadingLevel)[keyof typeof HeadingLevel]> = {
   1: HeadingLevel.HEADING_1,
   2: HeadingLevel.HEADING_2,
   3: HeadingLevel.HEADING_3,
   4: HeadingLevel.HEADING_4,
 }
 
-async function nodeToDocx(node, fnOrder) {
+async function nodeToDocx(node: JSONContent, fnOrder?: FootnoteOrderMap): Promise<FileChild[]> {
   switch (node.type) {
     case 'paragraph':
       return [new Paragraph({ children: inlineNodes(node.content || [], fnOrder) })]
@@ -458,7 +481,7 @@ async function nodeToDocx(node, fnOrder) {
       // URLs — docx embeds raw bytes and we can't synchronously fetch a remote
       // image at export time, so a remote <img> is dropped from the DOCX (it
       // still round-trips through HTML export; see DOCX-fidelity note in memory).
-      const src = node.attrs?.src || ''
+      const src: string = node.attrs?.src || ''
       const m = /^data:(image\/(?:png|jpe?g|gif|webp));base64,(.*)$/is.exec(src)
       if (m) {
         try {
@@ -473,7 +496,13 @@ async function nodeToDocx(node, fnOrder) {
           const width = pxWidth ? Math.min(parseInt(pxWidth[1], 10), 600) : 400
           const height = Math.round(width * 0.75)
           const docxType = ext === 'jpeg' ? 'jpg' : ext
-          return [new Paragraph({ children: [new ImageRun({ data: buffer, transformation: { width, height }, type: docxType })] })]
+          // NOTE (pre-existing, not fixed here): the data: URI regex above also
+          // matches image/webp, but docx's ImageRun only accepts
+          // jpg/png/gif/bmp — a webp source produces this cast's value at
+          // runtime ("webp"), which is not one of those four and was already
+          // an invalid `type` for docx before this file was typed.
+          const docxImageType = docxType as 'jpg' | 'png' | 'gif' | 'bmp'
+          return [new Paragraph({ children: [new ImageRun({ data: buffer, transformation: { width, height }, type: docxImageType })] })]
         } catch { return [] }
       }
       return []
@@ -483,7 +512,7 @@ async function nodeToDocx(node, fnOrder) {
       // paragraphs (indented by level). Word users can regenerate a field-based
       // ToC; this gives a readable static outline that matches the editor.
       const headings = fnOrder?._tocHeadings || []
-      const out = [new Paragraph({ children: [xr({ text: 'Table of Contents', bold: true })] })]
+      const out: FileChild[] = [new Paragraph({ children: [xr({ text: 'Table of Contents', bold: true })] })]
       for (const h of headings) {
         out.push(new Paragraph({
           indent: { left: (h.level - 1) * 360 },
@@ -507,7 +536,7 @@ async function nodeToDocx(node, fnOrder) {
     case 'footnotesList': {
       // Render the footnotes section: a rule, then one numbered paragraph per
       // footnote item (number derived from the ref order in the body).
-      const out = [new Paragraph({ border: { top: { style: BorderStyle.SINGLE, size: 1, color: 'AAAAAA' } } })]
+      const out: FileChild[] = [new Paragraph({ border: { top: { style: BorderStyle.SINGLE, size: 1, color: 'AAAAAA' } } })]
       for (const item of node.content || []) {
         if (item.type !== 'footnoteItem') continue
         const num = fnOrder?.get(item.attrs?.id)
@@ -530,8 +559,8 @@ async function nodeToDocx(node, fnOrder) {
   }
 }
 
-export function inlineNodes(nodes, fnOrder) {
-  return nodes.map((node) => {
+export function inlineNodes(nodes: JSONContent[], fnOrder?: FootnoteOrderMap): ParagraphChild[] {
+  return nodes.map((node): ParagraphChild => {
     if (node.type === 'footnoteRef') {
       const num = fnOrder?.get(node.attrs?.id)
       return xr({ text: num ? String(num) : '*', superScript: true })
@@ -547,22 +576,22 @@ export function inlineNodes(nodes, fnOrder) {
     // becomes its label text (docx has no in-app link target); person/date/place
     // become their label. Coloured to read as a chip.
     if (node.type === 'smartChip') {
-      const label = (node.attrs?.label || '').slice(0, 200)
+      const label: string = (node.attrs?.label || '').slice(0, 200)
       if (!label) return xr('')
       return xr({ text: label, color: '3730A3', bold: true })
     }
     if (node.type !== 'text') return xr('')
     const marks = node.marks || []
-    const hasMark = (type) => marks.some((m) => m.type === type)
-    const markAttr = (type, attr) => marks.find((m) => m.type === type)?.attrs?.[attr]
+    const hasMark = (type: string) => marks.some((m) => m.type === type)
+    const markAttr = (type: string, attr: string) => marks.find((m) => m.type === type)?.attrs?.[attr]
     const color = markAttr('color', 'color')?.replace('#', '')
     // Font size / family live on the textStyle mark (see lib/tiptap/fontStyle.js).
     const rawSize = markAttr('textStyle', 'fontSize')
     const sizePt = rawSize ? parseFloat(rawSize) : NaN
     const rawFamily = markAttr('textStyle', 'fontFamily')
     // docx wants a single font name, not a CSS stack — take the first, unquoted.
-    const font = rawFamily
-      ? rawFamily.split(',')[0].trim().replace(/^['"]|['"]$/g, '')
+    const font: string | undefined = rawFamily
+      ? String(rawFamily).split(',')[0].trim().replace(/^['"]|['"]$/g, '')
       : undefined
     // DATA-INTEGRITY: a `link` mark carries the hyperlink href. Previously
     // inlineNodes handled no link case, so the anchor TEXT survived to .docx but
