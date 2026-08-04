@@ -14,8 +14,16 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Image as ImageIcon, Video, Square, Circle as CircleIcon, ArrowRight, X, Upload } from 'lucide-react'
+import type { Editor } from '@tiptap/react'
 
-const SHAPES = [
+interface ShapeDef {
+  id: string
+  label: string
+  icon: typeof Square
+  html: (fill: string, stroke: string) => string
+}
+
+const SHAPES: ShapeDef[] = [
   {
     id: 'rect',
     label: 'Rectangle',
@@ -36,7 +44,7 @@ const SHAPES = [
   },
 ]
 
-function parseVideoUrl(url) {
+function parseVideoUrl(url: string): string | null {
   // YouTube
   const ytMatch = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/)
   if (ytMatch) {
@@ -61,25 +69,35 @@ function parseVideoUrl(url) {
   return null
 }
 
-export default function InsertPanel({ editor, onInsert, api: apiProp }) {
-  const imgInput = useRef(null)
+interface InsertApi {
+  uploadImage: (file: Blob) => Promise<unknown>
+}
+
+interface InsertPanelProps {
+  editor?: Editor | null
+  onInsert?: (html: string) => void
+  api: InsertApi
+}
+
+export default function InsertPanel({ editor, onInsert, api: apiProp }: InsertPanelProps) {
+  const imgInput = useRef<HTMLInputElement>(null)
   const [videoUrl, setVideoUrl] = useState('')
   const [videoErr, setVideoErr] = useState('')
   const [shapeFill, setShapeFill] = useState('#7c6af7')
   const [shapeStroke, setShapeStroke] = useState('#5b4dd0')
   const [showVideo, setShowVideo] = useState(false)
   const [showShape, setShowShape] = useState(false)
-  const rootRef = useRef(null)
+  const rootRef = useRef<HTMLDivElement>(null)
 
   // Close the video/shape popovers on Escape or an outside click, matching the
   // shared <Menu> dismissal behaviour.
   useEffect(() => {
     if (!showVideo && !showShape) return
-    const onKey = (e) => {
+    const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { e.stopPropagation(); setShowVideo(false); setShowShape(false) }
     }
-    const onDown = (e) => {
-      if (rootRef.current && !rootRef.current.contains(e.target)) {
+    const onDown = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
         setShowVideo(false); setShowShape(false)
       }
     }
@@ -91,7 +109,7 @@ export default function InsertPanel({ editor, onInsert, api: apiProp }) {
     }
   }, [showVideo, showShape])
 
-  const insertHtml = (html) => {
+  const insertHtml = (html: string) => {
     if (editor) {
       editor.chain().focus().insertContent(html).run()
     } else {
@@ -99,11 +117,11 @@ export default function InsertPanel({ editor, onInsert, api: apiProp }) {
     }
   }
 
-  const handleImageUpload = async (e) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     try {
-      const { url } = await apiProp.uploadImage(file)
+      const { url } = await apiProp.uploadImage(file) as { url: string }
       insertHtml(`<img src="${url}" alt="slide image" style="max-width:100%;" />`)
     } catch {
       const reader = new FileReader()
@@ -128,7 +146,7 @@ export default function InsertPanel({ editor, onInsert, api: apiProp }) {
     setShowVideo(false)
   }
 
-  const handleShapeInsert = (shape) => {
+  const handleShapeInsert = (shape: ShapeDef) => {
     insertHtml(shape.html(shapeFill, shapeStroke))
     setShowShape(false)
   }
