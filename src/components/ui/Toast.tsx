@@ -14,18 +14,20 @@
 
 import { useCallback, useRef, useState } from 'react'
 
-const toneCn = {
+type ToastTone = 'info' | 'success' | 'error'
+
+const toneCn: Record<ToastTone, string> = {
   info:    'border-line text-ink',
   success: 'border-accent-tint-2 text-ink',
   error:   'border-danger text-ink',
 }
 
 export function useToast() {
-  const [msg, setMsg] = useState(null)
-  const [tone, setTone] = useState('info')
-  const timer = useRef(null)
+  const [msg, setMsg] = useState<string | null>(null)
+  const [tone, setTone] = useState<ToastTone>('info')
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
-  const showToast = useCallback((text, t = 'info') => {
+  const showToast = useCallback((text: string, t: ToastTone = 'info') => {
     setMsg(text)
     setTone(t)
     clearTimeout(timer.current)
