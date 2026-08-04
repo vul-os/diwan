@@ -8,7 +8,15 @@ import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import PresenceBar from '../PresenceBar'
 
-const peer = (accountId, displayName, extra = {}) => ({
+interface RosterPeer {
+  accountId: string
+  displayName: string
+  color: string
+  online: boolean
+  [key: string]: unknown
+}
+
+const peer = (accountId: string, displayName: string, extra: Partial<RosterPeer> = {}): RosterPeer => ({
   accountId, displayName, color: '#0f6a6c', online: true, ...extra,
 })
 

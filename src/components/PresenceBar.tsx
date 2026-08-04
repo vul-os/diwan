@@ -10,15 +10,27 @@
  *   roster  — array from usePresence().roster
  *             each entry: { accountId, displayName, color, online, isSelf?, isGuest? }
  *   max     — max avatars before "+N" overflow (default 5)
- *
- * JSX only — no .tsx.
  */
 
 import { useState } from 'react'
 import { STATUS_ONLINE, STATUS_AWAY, STATUS_DND, STATUS_IN_CALL } from '../lib/collab/webrtc/presence.js'
+import type { PresenceStatus } from '../lib/collab/webrtc/presence.js'
+
+/** A roster entry as PresenceBar actually consumes it — isSelf/status/etc are
+ *  optional across the board (callers pass a mix of local + remote shapes). */
+export interface PresencePeer {
+  accountId: string
+  displayName: string
+  color: string
+  online: boolean
+  status?: PresenceStatus
+  statusText?: string
+  isGuest?: boolean
+  isSelf?: boolean
+}
 
 // ─── Status dot tokens (warm-signal palette, not generic Tailwind greens) ─────
-const STATUS_DOT_STYLE = {
+const STATUS_DOT_STYLE: Record<PresenceStatus, { bg: string; label: string }> = {
   [STATUS_ONLINE]:  { bg: 'var(--signal-success)', label: 'Online'          },
   [STATUS_AWAY]:    { bg: 'var(--signal-warning)', label: 'Away'            },
   [STATUS_DND]:     { bg: 'var(--signal-error)',   label: 'Do not disturb' },
@@ -34,7 +46,13 @@ const STATUS_DOT_STYLE = {
  *   size     — diameter in px (default 9)
  *   className — extra classes
  */
-export function PresenceDot({ status = STATUS_ONLINE, size = 9, className = '' }) {
+interface PresenceDotProps {
+  status?: PresenceStatus
+  size?: number
+  className?: string
+}
+
+export function PresenceDot({ status = STATUS_ONLINE, size = 9, className = '' }: PresenceDotProps) {
   const style = STATUS_DOT_STYLE[status] || STATUS_DOT_STYLE[STATUS_ONLINE]
   return (
     <span
@@ -55,10 +73,17 @@ export function PresenceDot({ status = STATUS_ONLINE, size = 9, className = '' }
 /**
  * StatusPicker — dropdown to change your own presence status + custom text.
  */
-export function StatusPicker({ currentStatus, currentText = '', onStatusChange, onClose }) {
+interface StatusPickerProps {
+  currentStatus: PresenceStatus
+  currentText?: string
+  onStatusChange: (status: PresenceStatus, text: string) => void
+  onClose: () => void
+}
+
+export function StatusPicker({ currentStatus, currentText = '', onStatusChange, onClose }: StatusPickerProps) {
   const [text, setText] = useState(currentText)
 
-  const options = [
+  const options: { value: PresenceStatus; label: string }[] = [
     { value: STATUS_ONLINE,  label: 'Online'         },
     { value: STATUS_AWAY,    label: 'Away'            },
     { value: STATUS_DND,     label: 'Do not disturb' },
@@ -121,7 +146,7 @@ export function StatusPicker({ currentStatus, currentText = '', onStatusChange, 
 }
 
 // ─── Initials helper ──────────────────────────────────────────────────────────
-function initials(name) {
+function initials(name?: string): string {
   if (!name) return '?'
   const parts = name.trim().split(/\s+/)
   if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase()
@@ -129,7 +154,12 @@ function initials(name) {
 }
 
 // ─── Avatar ───────────────────────────────────────────────────────────────────
-function Avatar({ peer, size = 32 }) {
+interface AvatarProps {
+  peer: PresencePeer
+  size?: number
+}
+
+function Avatar({ peer, size = 32 }: AvatarProps) {
   const [showTooltip, setShowTooltip] = useState(false)
   const label = peer.isSelf ? `${peer.displayName} (you)` : peer.displayName
 
@@ -201,7 +231,13 @@ function Avatar({ peer, size = 32 }) {
 /**
  * PresenceBar — avatar strip for a session's presence roster.
  */
-export default function PresenceBar({ roster = [], max = 5, className = '' }) {
+interface PresenceBarProps {
+  roster?: PresencePeer[]
+  max?: number
+  className?: string
+}
+
+export default function PresenceBar({ roster = [], max = 5, className = '' }: PresenceBarProps) {
   if (!roster || roster.length === 0) return null
 
   const visible  = roster.slice(0, max)
