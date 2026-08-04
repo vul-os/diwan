@@ -10,11 +10,19 @@ import {
   makeColorScale, getColorScales, insertColorScale, updateColorScale, deleteColorScale,
   clampColorScales, computeColorScale, computeAllColorScales, colorScaleSignature,
   safeColor, parseBounds, CS_KINDS, toNativeConditionFormat, buildNativeConditionFormat,
+  type CSSheet, type CSCellEntry, type ColorScaleRule, type PaintBg, type PaintBar,
+  type NativeConditionFormat,
 } from './colorScales.js'
 
-function sheetFrom(cells) {
+// A couple of fixtures below deliberately never pass through makeColorScale
+// (the render-boundary re-clamp under test), so they don't structurally match
+// ColorScaleRule; cast through unknown at those call sites, same as
+// colorScaleRules.test.ts.
+function cast<T>(v: unknown): T { return v as T }
+
+function sheetFrom(cells: Record<string, number>): CSSheet & { celldata: CSCellEntry[] } {
   // cells: { "r_c": number }
-  const celldata = Object.entries(cells).map(([k, v]) => {
+  const celldata: CSCellEntry[] = Object.entries(cells).map(([k, v]) => {
     const [r, c] = k.split('_').map(Number)
     return { r, c, v: { v, m: String(v), ct: { fa: 'General', t: 'n' } } }
   })
@@ -68,9 +76,9 @@ describe('computeColorScale — 2-colour scale', () => {
     const sheet = sheetFrom({ '0_0': 0, '1_0': 5, '2_0': 10 })
     const rule = makeColorScale({ kind: 'colorScale2', range: 'A1:A3', min: '#000000', max: '#ffffff' })
     const m = computeColorScale(rule, sheet)
-    expect(m['0_0'].bg).toBe('rgb(0, 0, 0)')       // min value → min colour
-    expect(m['2_0'].bg).toBe('rgb(255, 255, 255)') // max value → max colour
-    expect(m['1_0'].bg).toBe('rgb(128, 128, 128)') // midpoint → interpolated
+    expect(cast<PaintBg>(m['0_0']).bg).toBe('rgb(0, 0, 0)')       // min value → min colour
+    expect(cast<PaintBg>(m['2_0']).bg).toBe('rgb(255, 255, 255)') // max value → max colour
+    expect(cast<PaintBg>(m['1_0']).bg).toBe('rgb(128, 128, 128)') // midpoint → interpolated
   })
 })
 
@@ -79,9 +87,9 @@ describe('computeColorScale — 3-colour scale', () => {
     const sheet = sheetFrom({ '0_0': 0, '1_0': 5, '2_0': 10 })
     const rule = makeColorScale({ kind: 'colorScale3', range: 'A1:A3', min: '#000000', mid: '#808080', max: '#ffffff' })
     const m = computeColorScale(rule, sheet)
-    expect(m['0_0'].bg).toBe('rgb(0, 0, 0)')
-    expect(m['1_0'].bg).toBe('rgb(128, 128, 128)') // exactly the mid colour at the midpoint
-    expect(m['2_0'].bg).toBe('rgb(255, 255, 255)')
+    expect(cast<PaintBg>(m['0_0']).bg).toBe('rgb(0, 0, 0)')
+    expect(cast<PaintBg>(m['1_0']).bg).toBe('rgb(128, 128, 128)') // exactly the mid colour at the midpoint
+    expect(cast<PaintBg>(m['2_0']).bg).toBe('rgb(255, 255, 255)')
   })
 })
 
@@ -90,18 +98,18 @@ describe('computeColorScale — data bar', () => {
     const sheet = sheetFrom({ '0_0': 0, '1_0': 50, '2_0': 100 })
     const rule = makeColorScale({ kind: 'dataBar', range: 'A1:A3', barColor: '#638ec6' })
     const m = computeColorScale(rule, sheet)
-    expect(m['0_0'].bar.pct).toBe(0)
-    expect(m['1_0'].bar.pct).toBe(0.5)
-    expect(m['2_0'].bar.pct).toBe(1)
-    expect(m['2_0'].bar.color).toBe('#638ec6')
-    expect(m['1_0'].bar.negative).toBe(false)
+    expect(cast<PaintBar>(m['0_0']).bar.pct).toBe(0)
+    expect(cast<PaintBar>(m['1_0']).bar.pct).toBe(0.5)
+    expect(cast<PaintBar>(m['2_0']).bar.pct).toBe(1)
+    expect(cast<PaintBar>(m['2_0']).bar.color).toBe('#638ec6')
+    expect(cast<PaintBar>(m['1_0']).bar.negative).toBe(false)
   })
   it('negative values flagged for left-painting', () => {
     const sheet = sheetFrom({ '0_0': -10, '1_0': 10 })
     const m = computeColorScale(makeColorScale({ kind: 'dataBar', range: 'A1:A2' }), sheet)
-    expect(m['0_0'].bar.negative).toBe(true)
-    expect(m['0_0'].bar.pct).toBe(1)
-    expect(m['1_0'].bar.negative).toBe(false)
+    expect(cast<PaintBar>(m['0_0']).bar.negative).toBe(true)
+    expect(cast<PaintBar>(m['0_0']).bar.pct).toBe(1)
+    expect(cast<PaintBar>(m['1_0']).bar.negative).toBe(false)
   })
 })
 
@@ -118,15 +126,15 @@ describe('percent + boundary correctness', () => {
     }
     const m = computeColorScale(makeColorScale({ kind: 'dataBar', range: 'A1:A3' }), sheet)
     // 0.5 / 0.8 / 1.0 against scale 1.0 → 0.5 / 0.8 / 1.0 (percent read correctly)
-    expect(m['0_0'].bar.pct).toBeCloseTo(0.5, 5)
-    expect(m['2_0'].bar.pct).toBe(1)
+    expect(cast<PaintBar>(m['0_0']).bar.pct).toBeCloseTo(0.5, 5)
+    expect(cast<PaintBar>(m['2_0']).bar.pct).toBe(1)
   })
 
   it('native bands do not overlap on a boundary value (half-open)', () => {
     const sheet = sheetFrom({ '0_0': 0, '1_0': 6, '2_0': 12 }) // 12-wide domain, 12 bands
-    const native = toNativeConditionFormat(makeColorScale({ kind: 'colorScale2', range: 'A1:A3' }), sheet)
+    const native = toNativeConditionFormat(makeColorScale({ kind: 'colorScale2', range: 'A1:A3' }), sheet, undefined)
     // Count how many bands contain exactly the boundary value 6.
-    const hit = native.filter((r) => 6 >= r.conditionValue[0] && 6 <= r.conditionValue[1])
+    const hit = native.filter((r) => 6 >= Number(r.conditionValue[0]) && 6 <= Number(r.conditionValue[1]))
     expect(hit.length).toBe(1) // exactly one band claims the boundary value
   })
 })
@@ -139,7 +147,7 @@ describe('edge cases', () => {
   it('all-equal values do not divide by zero', () => {
     const sheet = sheetFrom({ '0_0': 7, '1_0': 7 })
     const m = computeColorScale(makeColorScale({ kind: 'colorScale2', range: 'A1:A2', min: '#000000', max: '#ffffff' }), sheet)
-    expect(m['0_0'].bg).toBe('#000000') // min colour when max===min (no NaN)
+    expect(cast<PaintBg>(m['0_0']).bg).toBe('#000000') // min colour when max===min (no NaN)
   })
 })
 
@@ -164,13 +172,15 @@ describe('computeAllColorScales', () => {
       makeColorScale({ kind: 'dataBar', range: 'A1' }),
     ]
     const m = computeAllColorScales(rules, sheet)
-    expect(m['0_0'].bar).toBeTruthy() // dataBar (later) wins
+    expect(cast<PaintBar>(m['0_0']).bar).toBeTruthy() // dataBar (later) wins
   })
 })
 
 describe('clampColorScales — defensive load clamp', () => {
   it('re-clamps corrupt local rules', () => {
-    const data = [{ ...sheetFrom({ '0_0': 1 }), colorScales: [{ id: 'x', kind: 'HACK', min: 'evil', range: 'a1' }] }]
+    // Corrupt local record, never went through makeColorScale — the exact gap
+    // clampColorScales re-clamps.
+    const data = [{ ...sheetFrom({ '0_0': 1 }), colorScales: cast<ColorScaleRule[]>([{ id: 'x', kind: 'HACK', min: 'evil', range: 'a1' }]) }]
     const clamped = clampColorScales(data)
     expect(getColorScales(clamped)[0].kind).toBe('colorScale2')
     expect(getColorScales(clamped)[0].min).toMatch(/^#/)
@@ -189,7 +199,7 @@ describe('toNativeConditionFormat — canvas rendering via FS-native band rules'
   it('emits between rules spanning the value domain with valid hex colours', () => {
     const sheet = sheetFrom({ '0_0': 0, '1_0': 50, '2_0': 100 })
     const rule = makeColorScale({ kind: 'colorScale2', range: 'A1:A3', min: '#000000', max: '#ffffff' })
-    const native = toNativeConditionFormat(rule, sheet)
+    const native = toNativeConditionFormat(rule, sheet, undefined)
     expect(native.length).toBeGreaterThan(1)
     for (const n of native) {
       expect(n.conditionName).toBe('between')
@@ -206,13 +216,13 @@ describe('toNativeConditionFormat — canvas rendering via FS-native band rules'
 
   it('data bars become an intensity ramp of the bar colour', () => {
     const sheet = sheetFrom({ '0_0': 1, '1_0': 10 })
-    const native = toNativeConditionFormat(makeColorScale({ kind: 'dataBar', range: 'A1:A2', barColor: '#638ec6' }), sheet)
+    const native = toNativeConditionFormat(makeColorScale({ kind: 'dataBar', range: 'A1:A2', barColor: '#638ec6' }), sheet, undefined)
     expect(native.length).toBeGreaterThan(1)
     expect(native.every((n) => /^#[0-9a-f]{6}$/.test(n.format.cellColor))).toBe(true)
   })
 
   it('returns [] for a range with no numeric values', () => {
-    expect(toNativeConditionFormat(makeColorScale({ range: 'A1:A3' }), sheetFrom({}))).toEqual([])
+    expect(toNativeConditionFormat(makeColorScale({ range: 'A1:A3' }), sheetFrom({}), undefined)).toEqual([])
   })
 })
 
@@ -221,9 +231,11 @@ describe('buildNativeConditionFormat — merges user rules + derived bands', () 
     const sheet = {
       ...sheetFrom({ '0_0': 1, '1_0': 2, '2_0': 3 }),
       colorScales: [makeColorScale({ kind: 'colorScale2', range: 'A1:A3' })],
-      luckysheet_conditionformat_save: [{ conditionName: 'greaterThan', conditionValue: [5], format: { cellColor: '#ff0000' } }],
+      // A simplified user rule -- buildNativeConditionFormat only reads
+      // __fromColorScale off it here, not the full native shape.
+      luckysheet_conditionformat_save: cast<NativeConditionFormat[]>([{ conditionName: 'greaterThan', conditionValue: [5], format: { cellColor: '#ff0000' } }]),
     }
-    const merged = buildNativeConditionFormat(sheet)
+    const merged = buildNativeConditionFormat(sheet, undefined)
     const derived = merged.filter((r) => r.__fromColorScale)
     const user = merged.filter((r) => !r.__fromColorScale)
     expect(derived.length).toBeGreaterThan(0)
@@ -236,9 +248,9 @@ describe('buildNativeConditionFormat — merges user rules + derived bands', () 
       ...sheetFrom({ '0_0': 1, '1_0': 2 }),
       colorScales: [makeColorScale({ kind: 'dataBar', range: 'A1:A2' })],
       // A stale injected rule must be dropped, not treated as a user rule.
-      luckysheet_conditionformat_save: [{ __fromColorScale: true, conditionName: 'between', conditionValue: [0, 1], format: { cellColor: '#111111' } }],
+      luckysheet_conditionformat_save: cast<NativeConditionFormat[]>([{ __fromColorScale: true, conditionName: 'between', conditionValue: [0, 1], format: { cellColor: '#111111' } }]),
     }
-    const merged = buildNativeConditionFormat(sheet)
+    const merged = buildNativeConditionFormat(sheet, undefined)
     expect(merged.filter((r) => !r.__fromColorScale)).toHaveLength(0)
   })
 })
