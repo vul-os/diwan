@@ -15,16 +15,31 @@
  * the live headings — never persisted, never synced — so it can't diverge.
  */
 
-import { Node, mergeAttributes } from '@tiptap/react'
+import { Node, mergeAttributes, type NodeViewRendererProps } from '@tiptap/react'
 import { Plugin, PluginKey } from '@tiptap/pm/state'
+import type { Node as PMNode } from '@tiptap/pm/model'
 
-function slugify(text) {
+declare module '@tiptap/core' {
+  interface Commands<ReturnType> {
+    tableOfContents: {
+      insertTableOfContents: () => ReturnType
+    }
+  }
+}
+
+export interface TocHeadingEntry {
+  level: number
+  text: string
+  slug: string
+}
+
+function slugify(text: string): string {
   return String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
 }
 
 /** Read the current heading outline from a ProseMirror doc. */
-export function readHeadings(doc) {
-  const headings = []
+export function readHeadings(doc: PMNode): TocHeadingEntry[] {
+  const headings: TocHeadingEntry[] = []
   doc.descendants((node) => {
     if (node.type.name === 'heading') {
       const text = node.textContent
@@ -38,7 +53,7 @@ export function readHeadings(doc) {
 // Paint the ToC list into the NodeView DOM from the live headings. Text is set
 // via textContent (never innerHTML) so heading text can carry no markup into the
 // ToC — it's inert text + an anchor.
-function paintToc(listEl, headings) {
+function paintToc(listEl: HTMLElement, headings: TocHeadingEntry[]): void {
   listEl.textContent = ''
   if (headings.length === 0) {
     const empty = document.createElement('p')
@@ -79,7 +94,7 @@ export const TableOfContentsNode = Node.create({
   },
 
   addNodeView() {
-    return ({ editor }) => {
+    return ({ editor }: NodeViewRendererProps) => {
       const dom = document.createElement('div')
       dom.className = 'toc-block'
       dom.setAttribute('data-toc', 'true')
@@ -96,13 +111,14 @@ export const TableOfContentsNode = Node.create({
       render()
 
       // Click an entry → scroll to that heading (best-effort, matches the slug).
-      dom.addEventListener('click', (e) => {
-        const a = e.target.closest?.('a.toc-entry')
+      dom.addEventListener('click', (e: MouseEvent) => {
+        const target = e.target as Element | null
+        const a = target?.closest('a.toc-entry')
         if (!a) return
         e.preventDefault()
         const slug = (a.getAttribute('href') || '').replace(/^#/, '')
         try {
-          let targetPos = null
+          let targetPos: number | null = null
           editor.state.doc.descendants((node, pos) => {
             if (targetPos == null && node.type.name === 'heading' && slugify(node.textContent) === slug) {
               targetPos = pos
@@ -110,7 +126,7 @@ export const TableOfContentsNode = Node.create({
             return targetPos == null
           })
           if (targetPos != null) {
-            const domAt = editor.view.nodeDOM(targetPos)
+            const domAt = editor.view.nodeDOM(targetPos) as Element | null
             if (domAt && domAt.scrollIntoView) domAt.scrollIntoView({ behavior: 'smooth', block: 'start' })
           }
         } catch { /* non-fatal */ }
