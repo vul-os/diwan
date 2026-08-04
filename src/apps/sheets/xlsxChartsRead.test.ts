@@ -10,15 +10,15 @@
  * they never charted) would be a worse bug than the silent drop we set out to fix.
  */
 import { describe, it, expect } from 'vitest'
-import { parseRef, chartTypeOf, rangeFromSeries, geometryOf } from './xlsxChartsRead.js'
+import { parseRef, chartTypeOf, rangeFromSeries, geometryOf, type ParsedRef } from './xlsxChartsRead.js'
 import {
   makeImportNotes, hasImportLoss, combineImportNotes, importLossSummary,
   getImportNotes, setImportNotes, mergeImportNotes,
 } from './importNotes.js'
 
 // A tiny XML → element helper so the type tests read like the markup they parse.
-const el = (xml) => new DOMParser().parseFromString(xml, 'text/xml').documentElement
-const groups = (...xmls) => xmls.map(el)
+const el = (xml: string): Element => new DOMParser().parseFromString(xml, 'text/xml').documentElement
+const groups = (...xmls: string[]): Element[] => xmls.map(el)
 
 describe('parseRef', () => {
   it('reads a plain range', () => {
@@ -28,8 +28,8 @@ describe('parseRef', () => {
     expect(parseRef('Sales!$B$1')).toEqual({ sheet: 'Sales', r0: 0, r1: 0, c0: 1, c1: 1 })
   })
   it('reads a quoted sheet name with spaces and an escaped quote', () => {
-    expect(parseRef("'My Sheet'!$A$1:$C$3").sheet).toBe('My Sheet')
-    expect(parseRef("'It''s'!$A$1").sheet).toBe("It's")
+    expect(parseRef("'My Sheet'!$A$1:$C$3")!.sheet).toBe('My Sheet')
+    expect(parseRef("'It''s'!$A$1")!.sheet).toBe("It's")
   })
   it('handles multi-letter columns', () => {
     expect(parseRef('S!$AA$1:$AB$2')).toMatchObject({ c0: 26, c1: 27 })
@@ -48,7 +48,7 @@ describe('parseRef', () => {
 })
 
 describe('chartTypeOf', () => {
-  const bar = (dir, grouping) =>
+  const bar = (dir: string, grouping: string) =>
     `<barChart xmlns="x"><barDir val="${dir}"/><grouping val="${grouping}"/><ser/></barChart>`
 
   it('maps the bar/column family, including stacking', () => {
@@ -88,7 +88,7 @@ describe('chartTypeOf', () => {
 })
 
 describe('rangeFromSeries — folding cell references back into one contiguous range', () => {
-  const ref = (sheet, r0, c0, r1, c1) => ({ sheet, r0, c0, r1, c1 })
+  const ref = (sheet: string, r0: number, c0: number, r1: number, c1: number): ParsedRef => ({ sheet, r0, c0, r1, c1 })
 
   it('categories + one series, with a header row', () => {
     const series = [{
@@ -192,7 +192,7 @@ describe('importNotes — the record of what an import could not bring in', () =
       pivots: -5,
       charts: [{ title: 'x'.repeat(500), reason: 'y'.repeat(500) }, { title: 42, reason: null }],
       filename: 'f.xlsx',
-    })
+    })!
     expect(notes.pivots).toBe(0)
     expect(notes.charts[0].title).toHaveLength(160)
     expect(notes.charts[0].reason).toHaveLength(160)
@@ -202,26 +202,26 @@ describe('importNotes — the record of what an import could not bring in', () =
 
   it('bounds the list a hostile file could grow', () => {
     const many = Array.from({ length: 500 }, (_, i) => ({ title: `c${i}`, reason: 'nope' }))
-    expect(makeImportNotes({ charts: many }).charts).toHaveLength(20)
+    expect(makeImportNotes({ charts: many })!.charts).toHaveLength(20)
   })
 
   it('survives the FortuneSheet normalisation that drops app-owned fields', () => {
     const notes = makeImportNotes({ pivots: 2, charts: [], filename: 'a.xlsx' })
     const data = setImportNotes([{ name: 'S', celldata: [] }], notes)
-    expect(getImportNotes(data).pivots).toBe(2)
+    expect(getImportNotes(data)!.pivots).toBe(2)
 
     // FortuneSheet re-emits sheets WITHOUT sheet.importNotes — exactly what happens
     // on the first keystroke after an import. Without the merge, the export warning
     // would vanish precisely when the user is about to overwrite their file.
     const normalised = [{ name: 'S', celldata: [{ r: 0, c: 0, v: { v: 1 } }] }]
     expect(getImportNotes(normalised)).toBeNull()
-    expect(getImportNotes(mergeImportNotes(normalised, notes)).pivots).toBe(2)
+    expect(getImportNotes(mergeImportNotes(normalised, notes))!.pivots).toBe(2)
   })
 
   it('combines the losses of several imports into one workbook', () => {
     const a = makeImportNotes({ pivots: 1, charts: [{ title: 'A', reason: 'r' }], filename: 'a.xlsx' })
     const b = makeImportNotes({ pivots: 2, charts: [{ title: 'B', reason: 'r' }], filename: 'b.xlsx' })
-    const c = combineImportNotes(a, b)
+    const c = combineImportNotes(a, b)!
     expect(c.pivots).toBe(3)
     expect(c.charts.map((x) => x.title)).toEqual(['A', 'B'])
     expect(c.filename).toBeUndefined()                           // no single file to blame
