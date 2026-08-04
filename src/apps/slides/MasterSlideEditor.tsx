@@ -14,12 +14,18 @@
 
 import { useRef, useState } from 'react'
 import { X, Layout } from 'lucide-react'
-import { MASTER_LAYOUTS } from './themes'
+import { MASTER_LAYOUTS, type MasterLayout } from './themes'
 import { useDialogA11y } from '../../components/ui'
 
 const ALIGN_OPTIONS = ['left', 'center', 'right']
 
-function MasterCard({ master, active, onClick }) {
+interface MasterCardProps {
+  master: MasterLayout
+  active: boolean
+  onClick: () => void
+}
+
+function MasterCard({ master, active, onClick }: MasterCardProps) {
   return (
     <button
       type="button"
@@ -40,23 +46,31 @@ function MasterCard({ master, active, onClick }) {
   )
 }
 
-export default function MasterSlideEditor({ masters, onSave, onClose }) {
+type MasterKey = 'titleY' | 'titleAlign' | 'bodyY' | 'bodyAlign' | 'footerText' | 'showLogo'
+
+interface MasterSlideEditorProps {
+  masters?: Partial<MasterLayout>[]
+  onSave: (masters: MasterLayout[]) => void
+  onClose: () => void
+}
+
+export default function MasterSlideEditor({ masters, onSave, onClose }: MasterSlideEditorProps) {
   // Merge defaults with any saved overrides.
-  const initialMasters = MASTER_LAYOUTS.map((def) => {
+  const initialMasters: MasterLayout[] = MASTER_LAYOUTS.map((def) => {
     const saved = (masters || []).find((m) => m.id === def.id)
     return saved ? { ...def, ...saved } : { ...def }
   })
 
-  const [localMasters, setLocalMasters] = useState(initialMasters)
+  const [localMasters, setLocalMasters] = useState<MasterLayout[]>(initialMasters)
   const [activeMasterId, setActiveMasterId] = useState(initialMasters[0].id)
-  const dialogRef = useRef(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
   useDialogA11y(dialogRef, onClose)
 
   const active = localMasters.find((m) => m.id === activeMasterId)
 
-  const updateActive = (key, value) => {
+  const updateActive = (key: MasterKey, value: string | boolean) => {
     setLocalMasters((prev) =>
-      prev.map((m) => m.id === activeMasterId ? { ...m, [key]: value } : m)
+      prev.map((m) => m.id === activeMasterId ? ({ ...m, [key]: value } as MasterLayout) : m)
     )
   }
 
