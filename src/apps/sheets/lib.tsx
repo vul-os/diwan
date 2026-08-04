@@ -1,5 +1,5 @@
 /**
- * src/apps/sheets/lib.jsx — @vulos/office-client sheets library entry
+ * src/apps/sheets/lib.tsx — @vulos/office-client sheets library entry
  *
  * Exports <SheetsApp /> — the Sheets editor as a single embeddable React component.
  *
@@ -11,10 +11,29 @@
  *   initialDocID   {string}    — pre-open a specific sheet on mount
  */
 
-import { Suspense, lazy } from 'react'
+import { Suspense, lazy, type ComponentType, type LazyExoticComponent } from 'react'
 import { MemoryRouter, Routes, Route, Navigate } from 'react-router-dom'
 
-const SheetsEditor = lazy(() => import('./SheetsEditor.jsx'))
+export interface SheetsAppProps {
+  apiBase?: string
+  theme?: string
+  onSignOut?: () => void
+  onNotification?: (title: string, body: string, priority?: unknown) => void
+  initialDocID?: string
+}
+
+/** SheetsEditor.jsx is not yet converted and (per its own signature) currently
+ * takes no props at all — apiBase/onNotification/onSignOut below are passed but
+ * silently ignored by it today, same as before this file was converted. This
+ * local cast documents the prop contract lib.tsx wants without changing that
+ * runtime behavior; it should be dropped once SheetsEditor is converted and
+ * actually reads these. */
+interface SheetsEditorProps {
+  apiBase?: string
+  onNotification?: (title: string, body: string, priority?: unknown) => void
+  onSignOut?: () => void
+}
+const SheetsEditor = lazy(() => import('./SheetsEditor.jsx')) as unknown as LazyExoticComponent<ComponentType<SheetsEditorProps>>
 
 export function SheetsApp({
   apiBase = '',
@@ -22,7 +41,7 @@ export function SheetsApp({
   onSignOut,
   onNotification,
   initialDocID,
-}) {
+}: SheetsAppProps) {
   const initialPath = initialDocID ? `/sheets/${initialDocID}` : '/sheets'
   return (
     <div data-theme={theme} style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
