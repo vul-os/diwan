@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, type ReactNode } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import * as pdfjsLib from 'pdfjs-dist'
-import { PDFDocument, rgb, StandardFonts, degrees } from 'pdf-lib'
+import type { PDFDocumentProxy } from 'pdfjs-dist'
+import { PDFDocument, rgb, StandardFonts, degrees, type PDFPage } from 'pdf-lib'
 import SignaturePad from 'signature_pad'
 import {
   ArrowLeft, Download, ZoomIn, ZoomOut, Maximize2,
@@ -11,12 +12,98 @@ import {
   Upload, RotateCw, FilePlus, Trash, FileSignature,
 } from 'lucide-react'
 import { Button, IconButton, Tabs, Topbar, Tooltip } from '../../components/ui'
-import { extractFields, fieldsToAnnotations } from './formFields'
+import { extractFields, fieldsToAnnotations, type FormField } from './formFields'
 // SOVEREIGNTY: cursive signature fonts vendored locally via @fontsource
 // (self-hosted woff2) instead of an @import from fonts.googleapis.com at
 // runtime — no user-IP leak to Google, stays air-gappable. Same fonts.
 import '@fontsource/dancing-script/700.css'
 import '@fontsource/pinyon-script/400.css'
+
+/** A single free-hand drawn point (canvas pixel space). */
+interface DrawPoint {
+  x: number
+  y: number
+}
+
+/** A free-hand drawn stroke, kept per display-page-slot in drawPathsRef. */
+interface DrawPath {
+  id: string
+  points: DrawPoint[]
+  color: string
+  size: number
+}
+
+/** A text-box annotation (also the shape produced by AcroForm field-fill seeds). */
+interface TextAnnotation {
+  id: string
+  type: 'text'
+  pageIndex: number
+  x: number
+  y: number
+  content: string
+  fontSize: number
+  fontFamily: string
+  color: string
+  bold: boolean
+  italic: boolean
+  underline: boolean
+  editing?: boolean
+  fieldName?: string
+  fromForm?: boolean
+  checkbox?: boolean
+}
+
+/** A placed-signature-image annotation. */
+interface SignatureAnnotation {
+  id: string
+  type: 'signature'
+  pageIndex: number
+  x: number
+  y: number
+  width: number
+  height: number
+  imageData: string
+}
+
+type Annotation = TextAnnotation | SignatureAnnotation
+
+/** A patch applied to whichever annotation `updateAnn` is called for — never
+ * sets `id`/`type`/`pageIndex`, so those are intentionally excluded. */
+type AnnotationPatch =
+  Partial<Omit<TextAnnotation, 'id' | 'type' | 'pageIndex'>>
+  & Partial<Omit<SignatureAnnotation, 'id' | 'type' | 'pageIndex'>>
+
+/** A signature saved to the user's local library (localStorage). */
+interface SavedSig {
+  id: string
+  imageData: string
+}
+
+interface TextDefaults {
+  fontSize: number
+  fontFamily: string
+  color: string
+  bold: boolean
+  italic: boolean
+  underline: boolean
+}
+
+interface DragState {
+  active: boolean
+  annId?: string
+  startX?: number
+  startY?: number
+  origX?: number
+  origY?: number
+  moved?: boolean
+}
+
+interface ResizeStart {
+  mx?: number
+  my?: number
+  w?: number
+  h?: number
+}
 
 /*
  * PDFEditor — single-user PDF editor with annotate / sign / page operations.
@@ -36,11 +123,11 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url
 ).href
 
-function genId() {
+function genId(): string {
   return Math.random().toString(36).slice(2, 11)
 }
 
-function hexToRgb01(hex) {
+function hexToRgb01(hex: string): { r: number; g: number; b: number } {
   const r = parseInt(hex.slice(1, 3), 16) / 255
   const g = parseInt(hex.slice(3, 5), 16) / 255
   const b = parseInt(hex.slice(5, 7), 16) / 255
@@ -52,9 +139,11 @@ const TOOLS = {
   TEXT: 'text',
   SIGNATURE: 'signature',
   DRAW: 'draw',
-}
+} as const
 
-const CURSORS = {
+type Tool = typeof TOOLS[keyof typeof TOOLS]
+
+const CURSORS: Record<Tool, string> = {
   select: 'default',
   text: 'text',
   signature: 'crosshair',
@@ -64,13 +153,22 @@ const CURSORS = {
 // Annotation outline colour — warm ink, not bright blue.
 const ANNOT_INK = '#1a1916'
 
-export default function PDFEditor() {
+interface PDFEditorProps {
+  apiBase?: string
+  onSignOut?: () => void
+  onNotification?: (title: string, body: string, priority?: string) => void
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- props accepted
+// for interface parity with <PDFApp/>'s callers; this single-user editor does
+// not yet use them (pre-existing — noted, not fixed, during the TS conversion).
+export default function PDFEditor(_props: PDFEditorProps) {
   const navigate = useNavigate()
   const location = useLocation()
 
   // PDF state
-  const [pdfArrayBuffer, setPdfArrayBuffer] = useState(null)
-  const [pdfJsDoc, setPdfJsDoc] = useState(null)
+  const [pdfArrayBuffer, setPdfArrayBuffer] = useState<ArrayBuffer | null>(null)
+  const [pdfJsDoc, setPdfJsDoc] = useState<PDFDocumentProxy | null>(null)
   const [totalPages, setTotalPages] = useState(0)
   const [currentPage, setCurrentPage] = useState(1)
   const [zoom, setZoom] = useState(1.0)
@@ -78,15 +176,15 @@ export default function PDFEditor() {
   const [loadingPdf, setLoadingPdf] = useState(false)
 
   // Page operations state
-  const [pageOrder, setPageOrder] = useState([])
-  const [pageRotations, setPageRotations] = useState({})
-  const blankPageBuffers = useRef({})
-  const [thumbDragSrc, setThumbDragSrc] = useState(null)
-  const insertFileInputRef = useRef(null)
+  const [pageOrder, setPageOrder] = useState<number[]>([])
+  const [pageRotations, setPageRotations] = useState<Record<string, number>>({})
+  const blankPageBuffers = useRef<Record<string, ArrayBuffer>>({})
+  const [thumbDragSrc, setThumbDragSrc] = useState<number | null>(null)
+  const insertFileInputRef = useRef<HTMLInputElement>(null)
 
   // Tool state
-  const [activeTool, setActiveTool] = useState(TOOLS.SELECT)
-  const [textDefaults, setTextDefaults] = useState({
+  const [activeTool, setActiveTool] = useState<Tool>(TOOLS.SELECT)
+  const [textDefaults, setTextDefaults] = useState<TextDefaults>({
     fontSize: 14,
     fontFamily: 'Helvetica',
     color: ANNOT_INK,
@@ -96,17 +194,17 @@ export default function PDFEditor() {
   })
 
   // Annotations: { [pageNum]: [annotation, ...] }
-  const [annotations, setAnnotations] = useState({})
-  const [selectedId, setSelectedId] = useState(null)
+  const [annotations, setAnnotations] = useState<Record<string, Annotation[]>>({})
+  const [selectedId, setSelectedId] = useState<string | null>(null)
 
   // AcroForm (interactive form) field detection — DocuSign/Adobe "fill forms".
   // formFieldsByPage: { [displaySlot]: fieldDescriptor[] } detected via pdf.js.
-  const [formFieldsByPage, setFormFieldsByPage] = useState({})
-  const [filledPages, setFilledPages] = useState({})
+  const [formFieldsByPage, setFormFieldsByPage] = useState<Record<string, FormField[]>>({})
+  const [filledPages, setFilledPages] = useState<Record<string, boolean>>({})
 
   // Signatures
-  const [savedSigs, setSavedSigs] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('vulos_pdf_sigs') || '[]') }
+  const [savedSigs, setSavedSigs] = useState<SavedSig[]>(() => {
+    try { return JSON.parse(localStorage.getItem('vulos_pdf_sigs') || '[]') as SavedSig[] }
     catch { return [] }
   })
 
@@ -118,28 +216,28 @@ export default function PDFEditor() {
   const [sigFont, setSigFont] = useState('Dancing Script')
   const [typedName, setTypedName] = useState('')
   const [saveToLib, setSaveToLib] = useState(true)
-  const [toast, setToast] = useState(null)
+  const [toast, setToast] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
 
   // Draw state
   const [isDrawing, setIsDrawing] = useState(false)
-  const drawPathsRef = useRef({})
-  const currentDrawPoints = useRef([])
+  const drawPathsRef = useRef<Record<string, DrawPath[]>>({})
+  const currentDrawPoints = useRef<DrawPoint[]>([])
 
   // Refs
-  const pageCanvasRef = useRef(null)
-  const drawCanvasRef = useRef(null)
-  const annotLayerRef = useRef(null)
-  const canvasAreaRef = useRef(null)
-  const sigCanvasRef = useRef(null)
-  const sigPadRef = useRef(null)
-  const pendingSigPos = useRef(null)
-  const dragState = useRef({ active: false })
-  const thumbnailRefs = useRef({})
-  const fileInputRef = useRef(null)
+  const pageCanvasRef = useRef<HTMLCanvasElement>(null)
+  const drawCanvasRef = useRef<HTMLCanvasElement>(null)
+  const annotLayerRef = useRef<HTMLDivElement>(null)
+  const canvasAreaRef = useRef<HTMLDivElement>(null)
+  const sigCanvasRef = useRef<HTMLCanvasElement>(null)
+  const sigPadRef = useRef<SignaturePad | null>(null)
+  const pendingSigPos = useRef<{ x: number; y: number } | null>(null)
+  const dragState = useRef<DragState>({ active: false })
+  const thumbnailRefs = useRef<Record<string, HTMLCanvasElement>>({})
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // ─── Toast ───────────────────────────────────────────────
-  const showToast = useCallback((msg) => {
+  const showToast = useCallback((msg: string) => {
     setToast(msg)
     setTimeout(() => setToast(null), 2800)
   }, [])
@@ -150,7 +248,7 @@ export default function PDFEditor() {
   }, [savedSigs])
 
   // ─── Load PDF ─────────────────────────────────────────────
-  const loadPDF = useCallback(async (file) => {
+  const loadPDF = useCallback(async (file: File | null | undefined) => {
     if (!file || file.type !== 'application/pdf') {
       showToast('Please provide a valid PDF file')
       return
@@ -173,13 +271,13 @@ export default function PDFEditor() {
       setFilledPages({})
       showToast('PDF loaded')
     } catch (e) {
-      showToast('Error loading PDF: ' + e.message)
+      showToast('Error loading PDF: ' + (e as Error).message)
     } finally {
       setLoadingPdf(false)
     }
   }, [showToast])
 
-  const loadPDFFromUrl = useCallback(async (url, name) => {
+  const loadPDFFromUrl = useCallback(async (url: string, name?: string) => {
     setLoadingPdf(true)
     try {
       const res = await fetch(url)
@@ -199,7 +297,7 @@ export default function PDFEditor() {
       setFilledPages({})
       showToast('PDF loaded')
     } catch (e) {
-      showToast('Error loading PDF: ' + e.message)
+      showToast('Error loading PDF: ' + (e as Error).message)
     } finally {
       setLoadingPdf(false)
     }
@@ -211,12 +309,12 @@ export default function PDFEditor() {
     if (pending) {
       sessionStorage.removeItem('pendingPDF')
       try {
-        const { name, url, data } = JSON.parse(pending)
+        const { name, url, data } = JSON.parse(pending) as { name?: string; url?: string; data?: string }
         if (url) {
           loadPDFFromUrl(url, name)
         } else if (data) {
           const bytes = Uint8Array.from(atob(data), c => c.charCodeAt(0))
-          const file = new File([bytes], name, { type: 'application/pdf' })
+          const file = new File([bytes], name as string, { type: 'application/pdf' })
           loadPDF(file)
         }
       } catch (e) {
@@ -224,15 +322,15 @@ export default function PDFEditor() {
       }
       return
     }
-    const { localFileUrl, localFileName } = location.state || {}
+    const { localFileUrl, localFileName } = (location.state as { localFileUrl?: string; localFileName?: string } | null) || {}
     if (localFileUrl) loadPDFFromUrl(localFileUrl, localFileName)
   }, [])
 
-  const handleFileInput = (e) => {
-    if (e.target.files[0]) loadPDF(e.target.files[0])
+  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files![0]) loadPDF(e.target.files![0])
   }
 
-  const handleDrop = (e) => {
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     setDragOver(false)
     const file = e.dataTransfer.files[0]
@@ -240,7 +338,7 @@ export default function PDFEditor() {
   }
 
   // ─── Render Page ──────────────────────────────────────────
-  const renderPage = useCallback(async (displaySlot, scale) => {
+  const renderPage = useCallback(async (displaySlot: number, scale: number) => {
     if (!pdfJsDoc) return
     const canvas = pageCanvasRef.current
     const drawCanvas = drawCanvasRef.current
@@ -260,7 +358,7 @@ export default function PDFEditor() {
       drawCanvas.height = viewport.height
     }
 
-    const ctx = canvas.getContext('2d')
+    const ctx = canvas.getContext('2d')!
     await page.render({ canvasContext: ctx, viewport }).promise
 
     redrawPaths(displaySlot, drawCanvas)
@@ -286,7 +384,7 @@ export default function PDFEditor() {
     if (!pdfJsDoc || pageOrder.length === 0) { setFormFieldsByPage({}); return }
     let cancelled = false
     ;(async () => {
-      const byPage = {}
+      const byPage: Record<string, FormField[]> = {}
       for (let slot = 1; slot <= pageOrder.length; slot++) {
         const orig = pageOrder[slot - 1]
         if (!orig || orig < 1) continue // blank / inserted page has no AcroForm
@@ -323,20 +421,20 @@ export default function PDFEditor() {
       setActiveTool(TOOLS.SELECT)
       showToast(`Added ${seeds.length} fillable field${seeds.length === 1 ? '' : 's'}`)
     } catch (e) {
-      showToast('Could not read form fields: ' + e.message)
+      showToast('Could not read form fields: ' + (e as Error).message)
     }
   }, [formFieldsByPage, currentPage, pdfJsDoc, pageOrder, zoom, filledPages, showToast])
 
   const currentPageFieldCount = (formFieldsByPage[currentPage] || []).length
 
-  const renderThumbnail = async (displaySlot) => {
+  const renderThumbnail = async (displaySlot: number) => {
     const canvas = thumbnailRefs.current[displaySlot]
     if (!canvas || !pdfJsDoc) return
     const origPageNum = pageOrder[displaySlot - 1]
     if (!origPageNum || origPageNum < 1) {
       canvas.width = 100
       canvas.height = 130
-      const ctx = canvas.getContext('2d')
+      const ctx = canvas.getContext('2d')!
       ctx.fillStyle = '#ffffff'
       ctx.fillRect(0, 0, 100, 130)
       ctx.strokeStyle = '#ece5da'
@@ -349,15 +447,15 @@ export default function PDFEditor() {
       const vp = page.getViewport({ scale: 0.22, rotation: (page.rotate + extraRot) % 360 })
       canvas.width = vp.width
       canvas.height = vp.height
-      const ctx = canvas.getContext('2d')
+      const ctx = canvas.getContext('2d')!
       await page.render({ canvasContext: ctx, viewport: vp }).promise
     } catch {}
   }
 
   // ─── Page operations ─────────────────────────────────────
 
-  const remapPageData = (oldOrder, newOrder) => {
-    const slotMap = {}
+  const remapPageData = (oldOrder: number[], newOrder: number[]) => {
+    const slotMap: Record<string, number> = {}
     oldOrder.forEach((origPage, oldIdx) => {
       const newIdx = newOrder.indexOf(origPage)
       if (newIdx !== -1) {
@@ -366,7 +464,7 @@ export default function PDFEditor() {
     })
 
     setAnnotations(prev => {
-      const next = {}
+      const next: Record<string, Annotation[]> = {}
       for (const [slot, anns] of Object.entries(prev)) {
         const newSlot = slotMap[parseInt(slot)]
         if (newSlot != null) {
@@ -377,7 +475,7 @@ export default function PDFEditor() {
     })
 
     setPageRotations(prev => {
-      const next = {}
+      const next: Record<string, number> = {}
       for (const [slot, rot] of Object.entries(prev)) {
         const newSlot = slotMap[parseInt(slot)]
         if (newSlot != null) next[newSlot] = rot
@@ -386,7 +484,7 @@ export default function PDFEditor() {
     })
 
     const oldPaths = { ...drawPathsRef.current }
-    const newPaths = {}
+    const newPaths: Record<string, DrawPath[]> = {}
     for (const [slot, paths] of Object.entries(oldPaths)) {
       const newSlot = slotMap[parseInt(slot)]
       if (newSlot != null) newPaths[newSlot] = paths
@@ -394,7 +492,7 @@ export default function PDFEditor() {
     drawPathsRef.current = newPaths
   }
 
-  const reorderPages = (fromSlot, toSlot) => {
+  const reorderPages = (fromSlot: number, toSlot: number) => {
     if (fromSlot === toSlot || !pdfJsDoc) return
     const oldOrder = [...pageOrder]
     const newOrder = [...pageOrder]
@@ -410,14 +508,14 @@ export default function PDFEditor() {
     })
   }
 
-  const deletePageSlot = (displaySlot) => {
+  const deletePageSlot = (displaySlot: number) => {
     if (!pdfJsDoc || pageOrder.length <= 1) {
       showToast('Cannot delete the only page')
       return
     }
     const oldOrder = [...pageOrder]
     const newOrder = oldOrder.filter((_, i) => i !== displaySlot - 1)
-    const slotMap = {}
+    const slotMap: Record<string, number> = {}
     oldOrder.forEach((origPage, oldIdx) => {
       if (oldIdx === displaySlot - 1) return
       const newIdx = newOrder.indexOf(origPage)
@@ -425,7 +523,7 @@ export default function PDFEditor() {
     })
 
     setAnnotations(prev => {
-      const next = {}
+      const next: Record<string, Annotation[]> = {}
       for (const [slot, anns] of Object.entries(prev)) {
         const newSlot = slotMap[parseInt(slot)]
         if (newSlot != null) next[newSlot] = anns.map(a => ({ ...a, pageIndex: newSlot }))
@@ -434,7 +532,7 @@ export default function PDFEditor() {
     })
 
     setPageRotations(prev => {
-      const next = {}
+      const next: Record<string, number> = {}
       for (const [slot, rot] of Object.entries(prev)) {
         const newSlot = slotMap[parseInt(slot)]
         if (newSlot != null) next[newSlot] = rot
@@ -443,7 +541,7 @@ export default function PDFEditor() {
     })
 
     const oldPaths = { ...drawPathsRef.current }
-    const newPaths = {}
+    const newPaths: Record<string, DrawPath[]> = {}
     for (const [slot, paths] of Object.entries(oldPaths)) {
       const newSlot = slotMap[parseInt(slot)]
       if (newSlot != null) newPaths[newSlot] = paths
@@ -460,7 +558,7 @@ export default function PDFEditor() {
     showToast('Page deleted')
   }
 
-  const rotatePage = (displaySlot, by = 90) => {
+  const rotatePage = (displaySlot: number, by = 90) => {
     if (!pdfJsDoc) return
     setPageRotations(prev => ({
       ...prev,
@@ -468,20 +566,20 @@ export default function PDFEditor() {
     }))
   }
 
-  const insertBlankPage = async (afterSlot) => {
+  const insertBlankPage = async (afterSlot: number) => {
     if (!pdfJsDoc) return
     const blankId = -(Date.now())
     const blankDoc = await PDFDocument.create()
     blankDoc.addPage([612, 792])
     const blankBytes = await blankDoc.save()
-    blankPageBuffers.current[blankId] = blankBytes.buffer.slice(0)
+    blankPageBuffers.current[blankId] = blankBytes.buffer.slice(0) as ArrayBuffer
 
     const newOrder = [...pageOrder]
     newOrder.splice(afterSlot, 0, blankId)
 
     const oldOrder = [...pageOrder]
     const oldLen = oldOrder.length
-    const slotMap = {}
+    const slotMap: Record<string, number> = {}
     for (let i = 0; i < oldLen; i++) {
       const oldSlot = i + 1
       const newSlot = oldSlot <= afterSlot ? oldSlot : oldSlot + 1
@@ -489,7 +587,7 @@ export default function PDFEditor() {
     }
 
     setAnnotations(prev => {
-      const next = {}
+      const next: Record<string, Annotation[]> = {}
       for (const [slot, anns] of Object.entries(prev)) {
         const newSlot = slotMap[parseInt(slot)]
         if (newSlot != null) next[newSlot] = anns.map(a => ({ ...a, pageIndex: newSlot }))
@@ -498,7 +596,7 @@ export default function PDFEditor() {
     })
 
     setPageRotations(prev => {
-      const next = {}
+      const next: Record<string, number> = {}
       for (const [slot, rot] of Object.entries(prev)) {
         const newSlot = slotMap[parseInt(slot)]
         if (newSlot != null) next[newSlot] = rot
@@ -507,7 +605,7 @@ export default function PDFEditor() {
     })
 
     const oldPaths = { ...drawPathsRef.current }
-    const newPaths = {}
+    const newPaths: Record<string, DrawPath[]> = {}
     for (const [slot, paths] of Object.entries(oldPaths)) {
       const newSlot = slotMap[parseInt(slot)]
       if (newSlot != null) newPaths[newSlot] = paths
@@ -520,21 +618,21 @@ export default function PDFEditor() {
     showToast('Blank page inserted')
   }
 
-  const insertPDFPage = async (file, afterSlot) => {
+  const insertPDFPage = async (file: File | null | undefined, afterSlot: number) => {
     if (!file || file.type !== 'application/pdf') return
     try {
       const buf = await file.arrayBuffer()
       const importedDoc = await pdfjsLib.getDocument({ data: buf.slice() }).promise
       if (importedDoc.numPages < 1) return
 
-      const baseDoc = await PDFDocument.load(pdfArrayBuffer)
+      const baseDoc = await PDFDocument.load(pdfArrayBuffer!)
       const srcDoc = await PDFDocument.load(buf)
       const [importedPage] = await baseDoc.copyPages(srcDoc, [0])
 
       const newOrigPageNum = baseDoc.getPageCount() + 1
       baseDoc.addPage(importedPage)
       const newBuf = await baseDoc.save()
-      const newBufCopy = newBuf.buffer.slice(0)
+      const newBufCopy = newBuf.buffer.slice(0) as ArrayBuffer
 
       const newDoc = await pdfjsLib.getDocument({ data: newBuf.slice() }).promise
 
@@ -542,7 +640,7 @@ export default function PDFEditor() {
       const newOrder = [...pageOrder]
       newOrder.splice(afterSlot, 0, newOrigPageNum)
 
-      const slotMap = {}
+      const slotMap: Record<string, number> = {}
       for (let i = 0; i < oldOrder.length; i++) {
         const oldSlot = i + 1
         const newSlot = oldSlot <= afterSlot ? oldSlot : oldSlot + 1
@@ -550,7 +648,7 @@ export default function PDFEditor() {
       }
 
       setAnnotations(prev => {
-        const next = {}
+        const next: Record<string, Annotation[]> = {}
         for (const [slot, anns] of Object.entries(prev)) {
           const ns = slotMap[parseInt(slot)]
           if (ns != null) next[ns] = anns.map(a => ({ ...a, pageIndex: ns }))
@@ -559,7 +657,7 @@ export default function PDFEditor() {
       })
 
       setPageRotations(prev => {
-        const next = {}
+        const next: Record<string, number> = {}
         for (const [slot, rot] of Object.entries(prev)) {
           const ns = slotMap[parseInt(slot)]
           if (ns != null) next[ns] = rot
@@ -568,7 +666,7 @@ export default function PDFEditor() {
       })
 
       const oldPaths = { ...drawPathsRef.current }
-      const newPaths = {}
+      const newPaths: Record<string, DrawPath[]> = {}
       for (const [slot, paths] of Object.entries(oldPaths)) {
         const ns = slotMap[parseInt(slot)]
         if (ns != null) newPaths[ns] = paths
@@ -582,15 +680,15 @@ export default function PDFEditor() {
       setCurrentPage(afterSlot + 1)
       showToast('Page inserted from PDF')
     } catch (e) {
-      showToast('Error inserting page: ' + e.message)
+      showToast('Error inserting page: ' + (e as Error).message)
     }
   }
 
   // ─── Draw paths ───────────────────────────────────────────
-  const redrawPaths = (pageNum, canvas) => {
+  const redrawPaths = (pageNum: number, canvas: HTMLCanvasElement | null) => {
     const c = canvas || drawCanvasRef.current
     if (!c) return
-    const ctx = c.getContext('2d')
+    const ctx = c.getContext('2d')!
     ctx.clearRect(0, 0, c.width, c.height)
     const paths = drawPathsRef.current[pageNum] || []
     paths.forEach(({ points, color, size }) => {
@@ -606,25 +704,25 @@ export default function PDFEditor() {
     })
   }
 
-  const getCanvasPoint = (e, canvas) => {
+  const getCanvasPoint = (e: { clientX: number; clientY: number }, canvas: HTMLCanvasElement): DrawPoint => {
     const rect = canvas.getBoundingClientRect()
     return { x: e.clientX - rect.left, y: e.clientY - rect.top }
   }
 
-  const onDrawStart = (e) => {
+  const onDrawStart = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (activeTool !== TOOLS.DRAW) return
     setIsDrawing(true)
-    const pt = getCanvasPoint(e, drawCanvasRef.current)
+    const pt = getCanvasPoint(e, drawCanvasRef.current!)
     currentDrawPoints.current = [pt]
     e.preventDefault()
   }
 
-  const onDrawMove = (e) => {
+  const onDrawMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!isDrawing || activeTool !== TOOLS.DRAW) return
-    const pt = getCanvasPoint(e, drawCanvasRef.current)
+    const pt = getCanvasPoint(e, drawCanvasRef.current!)
     currentDrawPoints.current.push(pt)
-    const ctx = drawCanvasRef.current.getContext('2d')
-    ctx.clearRect(0, 0, drawCanvasRef.current.width, drawCanvasRef.current.height)
+    const ctx = drawCanvasRef.current!.getContext('2d')!
+    ctx.clearRect(0, 0, drawCanvasRef.current!.width, drawCanvasRef.current!.height)
     ;(drawPathsRef.current[currentPage] || []).forEach(({ points, color, size }) => {
       if (points.length < 2) return
       ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = size
@@ -663,26 +761,26 @@ export default function PDFEditor() {
   }
 
   // ─── Annotations ──────────────────────────────────────────
-  const getPageAnns = (page) => annotations[page] || []
+  const getPageAnns = (page: number): Annotation[] => annotations[page] || []
 
-  const addAnn = (ann) => {
+  const addAnn = (ann: Annotation) => {
     setAnnotations(prev => ({
       ...prev,
       [ann.pageIndex]: [...(prev[ann.pageIndex] || []), ann],
     }))
   }
 
-  const updateAnn = (id, changes) => {
+  const updateAnn = (id: string, changes: AnnotationPatch) => {
     setAnnotations(prev => {
       const next = { ...prev }
       for (const key of Object.keys(next)) {
-        next[key] = next[key].map(a => a.id === id ? { ...a, ...changes } : a)
+        next[key] = next[key].map(a => a.id === id ? ({ ...a, ...changes } as Annotation) : a)
       }
       return next
     })
   }
 
-  const deleteAnn = (id) => {
+  const deleteAnn = (id: string) => {
     setAnnotations(prev => {
       const next = { ...prev }
       for (const key of Object.keys(next)) {
@@ -693,7 +791,7 @@ export default function PDFEditor() {
     if (selectedId === id) setSelectedId(null)
   }
 
-  const findAnn = (id) => {
+  const findAnn = (id: string): Annotation | null => {
     for (const anns of Object.values(annotations)) {
       const a = anns.find(a => a.id === id)
       if (a) return a
@@ -704,10 +802,10 @@ export default function PDFEditor() {
   const selectedAnn = selectedId ? findAnn(selectedId) : null
 
   // ─── Canvas interactions ──────────────────────────────────
-  const handleCanvasClick = (e) => {
+  const handleCanvasClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!pdfJsDoc) return
     if (dragState.current.moved) return
-    const rect = pageCanvasRef.current.getBoundingClientRect()
+    const rect = pageCanvasRef.current!.getBoundingClientRect()
     const x = e.clientX - rect.left
     const y = e.clientY - rect.top
 
@@ -735,7 +833,7 @@ export default function PDFEditor() {
   }
 
   // ─── Annotation drag ─────────────────────────────────────
-  const onAnnMouseDown = (e, ann) => {
+  const onAnnMouseDown = (e: React.MouseEvent<HTMLDivElement>, ann: Annotation) => {
     if (activeTool !== TOOLS.SELECT) return
     e.stopPropagation()
     setSelectedId(ann.id)
@@ -748,13 +846,13 @@ export default function PDFEditor() {
       origY: ann.y,
       moved: false,
     }
-    const onMove = (me) => {
-      const dx = me.clientX - dragState.current.startX
-      const dy = me.clientY - dragState.current.startY
+    const onMove = (me: MouseEvent) => {
+      const dx = me.clientX - dragState.current.startX!
+      const dy = me.clientY - dragState.current.startY!
       if (Math.abs(dx) + Math.abs(dy) > 2) dragState.current.moved = true
-      updateAnn(dragState.current.annId, {
-        x: dragState.current.origX + dx,
-        y: dragState.current.origY + dy,
+      updateAnn(dragState.current.annId!, {
+        x: dragState.current.origX! + dx,
+        y: dragState.current.origY! + dy,
       })
     }
     const onUp = () => {
@@ -793,10 +891,10 @@ export default function PDFEditor() {
     setTypedName('')
   }
 
-  const renderTypedSig = async (text, font) => {
-    return new Promise(resolve => {
+  const renderTypedSig = async (text: string, font: string): Promise<string> => {
+    return new Promise<string>(resolve => {
       const c = document.createElement('canvas')
-      const ctx = c.getContext('2d')
+      const ctx = c.getContext('2d')!
       c.width = 600; c.height = 120
       ctx.font = `64px '${font}'`
       ctx.fillStyle = ANNOT_INK
@@ -815,7 +913,7 @@ export default function PDFEditor() {
       if (maxX > minX) {
         const out = document.createElement('canvas')
         out.width = maxX - minX + 24; out.height = maxY - minY + 16
-        out.getContext('2d').drawImage(c, minX - 12, minY - 8, out.width, out.height, 0, 0, out.width, out.height)
+        out.getContext('2d')!.drawImage(c, minX - 12, minY - 8, out.width, out.height, 0, 0, out.width, out.height)
         resolve(out.toDataURL('image/png'))
       } else {
         resolve(c.toDataURL('image/png'))
@@ -824,7 +922,7 @@ export default function PDFEditor() {
   }
 
   const applySig = async () => {
-    let imageData = null
+    let imageData: string | null = null
     if (sigTab === 'draw') {
       if (!sigPadRef.current || sigPadRef.current.isEmpty()) {
         showToast('Please draw your signature first')
@@ -848,7 +946,7 @@ export default function PDFEditor() {
     closeSigModal()
   }
 
-  const placeSig = (imageData, x, y) => {
+  const placeSig = (imageData: string, x: number, y: number) => {
     addAnn({
       id: genId(),
       type: 'signature',
@@ -863,13 +961,13 @@ export default function PDFEditor() {
   }
 
   // ─── Zoom ─────────────────────────────────────────────────
-  const changeZoom = (delta) => {
+  const changeZoom = (delta: number) => {
     setZoom(z => Math.round(Math.min(3, Math.max(0.25, z + delta)) * 10) / 10)
   }
 
   const fitPage = async () => {
     if (!pdfJsDoc) return
-    const area = canvasAreaRef.current
+    const area = canvasAreaRef.current!
     const page = await pdfJsDoc.getPage(currentPage)
     const vp = page.getViewport({ scale: 1 })
     const sw = (area.clientWidth - 80) / vp.width
@@ -878,7 +976,7 @@ export default function PDFEditor() {
   }
 
   // ─── Navigate pages ───────────────────────────────────────
-  const goToPage = (n) => {
+  const goToPage = (n: number) => {
     if (n < 1 || n > totalPages) return
     setCurrentPage(n)
     setSelectedId(null)
@@ -886,9 +984,9 @@ export default function PDFEditor() {
 
   // ─── Keyboard shortcuts ───────────────────────────────────
   useEffect(() => {
-    const onKey = (e) => {
+    const onKey = (e: KeyboardEvent) => {
       const tag = document.activeElement?.tagName
-      if (['INPUT', 'TEXTAREA'].includes(tag) || document.activeElement?.contentEditable === 'true') return
+      if (['INPUT', 'TEXTAREA'].includes(tag as string) || (document.activeElement as HTMLElement | null)?.contentEditable === 'true') return
       switch (e.key) {
         case 'v': case 'V': setActiveTool(TOOLS.SELECT); break
         case 't': case 'T': setActiveTool(TOOLS.TEXT); break
@@ -924,7 +1022,7 @@ export default function PDFEditor() {
 
       for (let displaySlot = 1; displaySlot <= effectiveOrder.length; displaySlot++) {
         const origPageNum = effectiveOrder[displaySlot - 1]
-        let outPage
+        let outPage: PDFPage
 
         if (origPageNum < 1) {
           const blankBuf = blankPageBuffers.current[origPageNum]
@@ -992,7 +1090,7 @@ export default function PDFEditor() {
         if (paths?.length) {
           const tmp = document.createElement('canvas')
           tmp.width = cW; tmp.height = cH
-          const ctx = tmp.getContext('2d')
+          const ctx = tmp.getContext('2d')!
           paths.forEach(({ points, color, size }) => {
             if (points.length < 2) return
             ctx.beginPath(); ctx.strokeStyle = color; ctx.lineWidth = size
@@ -1011,7 +1109,7 @@ export default function PDFEditor() {
       }
 
       const bytes = await outDoc.save()
-      const blob = new Blob([bytes], { type: 'application/pdf' })
+      const blob = new Blob([bytes as BlobPart], { type: 'application/pdf' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
@@ -1020,13 +1118,13 @@ export default function PDFEditor() {
       URL.revokeObjectURL(url)
       showToast('PDF downloaded')
     } catch (e) {
-      showToast('Save error: ' + e.message)
+      showToast('Save error: ' + (e as Error).message)
       console.error(e)
     }
   }
 
   // ─── Total annotations count ──────────────────────────────
-  const totalAnns = Object.values(annotations).reduce((s, a) => s + a.filter(x => x.type === 'signature' || x.content?.trim()).length, 0)
+  const totalAnns = Object.values(annotations).reduce((s, a) => s + a.filter(x => x.type === 'signature' || (x.type === 'text' && x.content?.trim())).length, 0)
     + Object.values(drawPathsRef.current).reduce((s, p) => s + p.length, 0)
 
   const textActive = activeTool === TOOLS.TEXT || (selectedAnn?.type === 'text')
@@ -1195,11 +1293,11 @@ export default function PDFEditor() {
             <option value="Georgia">Georgia</option>
           </select>
 
-          {[
+          {([
             { key: 'bold',      icon: Bold,          label: 'Bold' },
             { key: 'italic',    icon: Italic,        label: 'Italic' },
             { key: 'underline', icon: UnderlineIcon, label: 'Underline' },
-          ].map(({ key, icon: Icon, label }) => (
+          ] as const).map(({ key, icon: Icon, label }) => (
             <Tooltip key={key} label={label}>
               <IconButton
                 size="sm"
@@ -1692,7 +1790,7 @@ export default function PDFEditor() {
                       onClick={() => {
                         sigPadRef.current?.clear()
                         const el = document.getElementById('sig-hint')
-                        if (el) el.style.opacity = 1
+                        if (el) el.style.opacity = 1 as unknown as string
                       }}
                     >
                       Clear
@@ -1772,7 +1870,7 @@ export default function PDFEditor() {
         accept=".pdf"
         className="hidden"
         onChange={e => {
-          const f = e.target.files[0]
+          const f = e.target.files![0]
           if (f) insertPDFPage(f, currentPage)
           e.target.value = ''
         }}
@@ -1794,11 +1892,21 @@ export default function PDFEditor() {
 }
 
 // ─── Annotation Element ────────────────────────────────────
-function AnnotationElement({ ann, selected, activeTool, onMouseDown, onDelete, onUpdate, onSelect }) {
-  const textRef = useRef(null)
-  const [editing, setEditing] = useState(ann.editing || false)
+interface AnnotationElementProps {
+  ann: Annotation
+  selected: boolean
+  activeTool: string
+  onMouseDown: (e: React.MouseEvent<HTMLDivElement>, ann: Annotation) => void
+  onDelete: () => void
+  onUpdate: (changes: AnnotationPatch) => void
+  onSelect: () => void
+}
+
+function AnnotationElement({ ann, selected, activeTool, onMouseDown, onDelete, onUpdate, onSelect }: AnnotationElementProps) {
+  const textRef = useRef<HTMLSpanElement>(null)
+  const [editing, setEditing] = useState(ann.type === 'text' && (ann.editing || false))
   const [, setResizing] = useState(false)
-  const resizeStart = useRef({})
+  const resizeStart = useRef<ResizeStart>({})
 
   useEffect(() => {
     if (editing && textRef.current) {
@@ -1811,13 +1919,13 @@ function AnnotationElement({ ann, selected, activeTool, onMouseDown, onDelete, o
     }
   }, [editing])
 
-  const handleMouseDown = (e) => {
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if (activeTool !== 'select') return
     onSelect()
     onMouseDown(e, ann)
   }
 
-  const handleDblClick = (e) => {
+  const handleDblClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (ann.type !== 'text') return
     e.stopPropagation()
     setEditing(true)
@@ -1831,19 +1939,20 @@ function AnnotationElement({ ann, selected, activeTool, onMouseDown, onDelete, o
     if (!content.trim()) onDelete()
   }
 
-  const handleKeyDown = (e) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLSpanElement>) => {
     if (e.key === 'Escape') { e.preventDefault(); textRef.current?.blur() }
     e.stopPropagation()
   }
 
-  const onResizeDown = (e) => {
+  const onResizeDown = (e: React.MouseEvent<HTMLDivElement>) => {
     e.stopPropagation(); e.preventDefault()
-    resizeStart.current = { mx: e.clientX, my: e.clientY, w: ann.width, h: ann.height }
+    const sigAnn = ann as SignatureAnnotation
+    resizeStart.current = { mx: e.clientX, my: e.clientY, w: sigAnn.width, h: sigAnn.height }
     setResizing(true)
-    const onMove = (me) => {
+    const onMove = (me: MouseEvent) => {
       onUpdate({
-        width: Math.max(50, resizeStart.current.w + me.clientX - resizeStart.current.mx),
-        height: Math.max(20, resizeStart.current.h + me.clientY - resizeStart.current.my),
+        width: Math.max(50, resizeStart.current.w! + me.clientX - resizeStart.current.mx!),
+        height: Math.max(20, resizeStart.current.h! + me.clientY - resizeStart.current.my!),
       })
     }
     const onUp = () => {
@@ -1954,7 +2063,7 @@ function AnnotationElement({ ann, selected, activeTool, onMouseDown, onDelete, o
   return null
 }
 
-function PanelRow({ label, children }) {
+function PanelRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex items-center gap-2">
       <span className="text-2xs text-ink-faint w-12 flex-shrink-0 tracking-tightish">
