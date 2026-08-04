@@ -4,7 +4,7 @@
 import { describe, it, expect } from 'vitest'
 import JSZip from 'jszip'
 import { pptxToSlides, odpToSlides } from '../slidesImport.js'
-import { sanitizeObjects } from '../slideObjects.js'
+import { sanitizeObjects } from '../slideObjects'
 
 const RASTER = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])
 

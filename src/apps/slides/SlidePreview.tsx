@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { X } from 'lucide-react'
+import type Reveal from 'reveal.js'
 // SOVEREIGNTY: reveal.js core + theme CSS are served from the locally-bundled
 // npm package (self-hosted), NOT fetched from cdnjs.cloudflare.com at runtime.
 // A self-host product must never depend on a third-party CDN for its assets.
@@ -7,8 +8,8 @@ import 'reveal.js/dist/reveal.css'
 // All reveal themes bundled as local asset URLs; picked by name below.
 const REVEAL_THEMES = import.meta.glob('/node_modules/reveal.js/dist/theme/*.css', {
   query: '?url', import: 'default', eager: true,
-})
-function revealThemeUrl(name) {
+}) as Record<string, string>
+function revealThemeUrl(name: string | null | undefined): string {
   const key = `/node_modules/reveal.js/dist/theme/${name || 'black'}.css`
   return REVEAL_THEMES[key] || REVEAL_THEMES['/node_modules/reveal.js/dist/theme/black.css']
 }
@@ -16,9 +17,23 @@ function revealThemeUrl(name) {
 // tags, strips anything that could execute code (<script>, on* handlers,
 // javascript: URLs, <iframe>).
 import { sanitizeSlideHtml as sanitize } from '../../lib/sanitize'
-import { ensureObjects, sortByZ } from './slideObjects'
+import { ensureObjects, sortByZ, type SlideLike } from './slideObjects'
 import ShapeSvg from './ShapeSvg'
-import { playAnimationsOn } from './slideAnimations'
+import { playAnimationsOn, type SlideAnimation } from './slideAnimations'
+
+interface PreviewSlide extends SlideLike {
+  id: string
+  background?: string
+  transition?: string
+  notes?: string
+  animations?: SlideAnimation[]
+}
+
+interface PreviewData {
+  slides: PreviewSlide[]
+  transition?: string
+  theme?: string
+}
 
 /**
  * SlidePreview — full-screen reveal.js presentation overlay.
@@ -32,34 +47,34 @@ import { playAnimationsOn } from './slideAnimations'
  * design-system retint is intentionally light-touch. Background stays
  * pitch-black so reveal themes render correctly.
  */
-export default function SlidePreview({ data, onClose }) {
-  const containerRef = useRef(null)
-  const deckRef = useRef(null)
-  const animCleanupRef = useRef(null)
+export default function SlidePreview({ data, onClose }: { data: PreviewData; onClose: () => void }) {
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const deckRef = useRef<Reveal.Api | null>(null)
+  const animCleanupRef = useRef<(() => void) | null>(null)
 
   // Precompute objects per slide so render + animation playback agree.
   const slides = data.slides.map((s) => ({ ...s, _objects: ensureObjects(s) }))
 
   useEffect(() => {
     if (!containerRef.current) return
-    let deck = null
+    let deck: Reveal.Api | null = null
 
     // Play the animations for the section that just became active.
-    const playForSection = (sectionEl) => {
+    const playForSection = (sectionEl: HTMLElement | null | undefined) => {
       if (animCleanupRef.current) { animCleanupRef.current(); animCleanupRef.current = null }
       const idx = Number(sectionEl?.dataset?.slideIndex)
       const slide = Number.isFinite(idx) ? slides[idx] : null
       if (!slide) return
       const els = sortByZ(slide._objects)
-        .map((o) => sectionEl.querySelector(`[data-object-id="${o.id}"]`))
-        .filter(Boolean)
+        .map((o) => sectionEl!.querySelector<HTMLElement>(`[data-object-id="${o.id}"]`))
+        .filter((el): el is HTMLElement => Boolean(el))
       animCleanupRef.current = playAnimationsOn(els, slide.animations || [])
     }
 
-    import('reveal.js').then(({ default: Reveal }) => {
-      deck = new Reveal(containerRef.current, {
+    import('reveal.js').then(({ default: RevealCtor }) => {
+      deck = new RevealCtor(containerRef.current as HTMLElement, {
         embedded: true,
-        transition: data.transition || 'slide',
+        transition: (data.transition || 'slide') as Reveal.Options['transition'],
         margin: 0.04,
         controls: true,
         progress: true,
@@ -72,8 +87,8 @@ export default function SlidePreview({ data, onClose }) {
       deck.initialize().then(() => {
         deckRef.current = deck
         // First slide.
-        playForSection(deck.getCurrentSlide?.())
-        deck.on('slidechanged', (ev) => playForSection(ev.currentSlide))
+        playForSection(deck!.getCurrentSlide?.())
+        deck!.on('slidechanged', (ev) => playForSection((ev as Event & { currentSlide?: HTMLElement }).currentSlide))
       })
     })
 
@@ -84,18 +99,18 @@ export default function SlidePreview({ data, onClose }) {
   }, [data]) // eslint-disable-line
 
   useEffect(() => {
-    const handler = (e) => { if (e.key === 'Escape') onClose() }
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [onClose])
 
   // Restore focus to whatever was focused before the presentation opened.
-  const priorFocusRef = useRef(null)
+  const priorFocusRef = useRef<Element | null>(null)
   useEffect(() => {
     priorFocusRef.current = document.activeElement
     return () => {
       const el = priorFocusRef.current
-      if (el && typeof el.focus === 'function') el.focus()
+      if (el && typeof (el as HTMLElement).focus === 'function') (el as HTMLElement).focus()
     }
   }, [])
 
@@ -151,8 +166,8 @@ export default function SlidePreview({ data, onClose }) {
                       zIndex: obj.z || 1,
                       display: 'flex',
                       flexDirection: 'column',
-                      justifyContent: obj.valign === 'middle' ? 'center' : obj.valign === 'bottom' ? 'flex-end' : 'flex-start',
-                      textAlign: obj.align || 'left',
+                      justifyContent: ('valign' in obj && obj.valign === 'middle') ? 'center' : ('valign' in obj && obj.valign === 'bottom') ? 'flex-end' : 'flex-start',
+                      textAlign: ('align' in obj ? obj.align : undefined) || 'left',
                       overflow: 'hidden',
                     }}
                   >
