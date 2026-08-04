@@ -18,15 +18,21 @@ import { render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
+// Minimal shape of the plain-data sheet the mocked Workbook is handed — a
+// deliberately small local slice, not the real (large, mostly-required)
+// FortuneSheet Sheet type, since this mock replaces the whole module.
+type MockCell = { r: number; c: number; v?: { v?: string | number } }
+type MockSheet = { celldata?: MockCell[] }
+
 // Records the `data` each Workbook MOUNT was given — never prop updates.
-const mounts = []
+const mounts: (MockSheet[] | undefined)[] = []
 
 vi.mock('@fortune-sheet/react', () => ({
   // Faithful stand-in for FortuneSheet's UNCONTROLLED grid: it snapshots `data`
   // at mount (useState initialiser) and ignores every later change to the prop.
   // Without that, the mock would happily re-render on the new data and the test
   // would pass against the very bug it exists to catch.
-  Workbook: ({ data }) => {
+  Workbook: ({ data }: { data?: MockSheet[] }) => {
     const [mountData] = useState(data)
     if (!mounts.includes(mountData)) mounts.push(mountData)
     const cells = (mountData?.[0]?.celldata || []).map((c) => c?.v?.v).filter(Boolean)
