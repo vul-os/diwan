@@ -20,20 +20,22 @@ vi.mock('../../lib/api', () => ({
 import { api } from '../../lib/api'
 import { useNotificationsStore } from '../notificationsStore'
 
+const listNotifications = vi.mocked(api.listNotifications)
+
 beforeEach(() => {
-  Object.values(api).forEach((fn) => fn.mockReset?.())
+  Object.values(api).forEach((fn) => vi.mocked(fn).mockReset?.())
   useNotificationsStore.setState({ items: [], loading: false })
 })
 
 describe('fetch coerces to an array (shell-crash regression)', () => {
   it('a normal array response is stored as-is', async () => {
-    api.listNotifications.mockResolvedValueOnce([{ id: 'n1', read: false }])
+    listNotifications.mockResolvedValueOnce([{ id: 'n1', read: false }])
     await useNotificationsStore.getState().fetch()
     expect(useNotificationsStore.getState().items).toHaveLength(1)
   })
 
   it('an object ({}) response coerces to [] — never poisons items', async () => {
-    api.listNotifications.mockResolvedValueOnce({})
+    listNotifications.mockResolvedValueOnce({})
     await useNotificationsStore.getState().fetch()
     const { items } = useNotificationsStore.getState()
     expect(Array.isArray(items)).toBe(true)
@@ -43,14 +45,14 @@ describe('fetch coerces to an array (shell-crash regression)', () => {
   })
 
   it('a null response coerces to []', async () => {
-    api.listNotifications.mockResolvedValueOnce(null)
+    listNotifications.mockResolvedValueOnce(null)
     await useNotificationsStore.getState().fetch()
     expect(useNotificationsStore.getState().items).toEqual([])
   })
 
   it('a rejected fetch leaves items an array and clears loading', async () => {
-    api.listNotifications.mockRejectedValueOnce(new Error('network'))
-    useNotificationsStore.setState({ items: [{ id: 'keep', read: true }] })
+    listNotifications.mockRejectedValueOnce(new Error('network'))
+    useNotificationsStore.setState({ items: [{ id: 'keep', read: true, created_at: '' }] })
     await useNotificationsStore.getState().fetch()
     const s = useNotificationsStore.getState()
     expect(Array.isArray(s.items)).toBe(true)
@@ -60,7 +62,7 @@ describe('fetch coerces to an array (shell-crash regression)', () => {
 
 describe('unreadCount', () => {
   it('counts only unread items', async () => {
-    api.listNotifications.mockResolvedValueOnce([
+    listNotifications.mockResolvedValueOnce([
       { id: 'a', read: false }, { id: 'b', read: true }, { id: 'c', read: false },
     ])
     await useNotificationsStore.getState().fetch()
