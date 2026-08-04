@@ -27,7 +27,9 @@ describe('parseRange', () => {
   })
 
   it('null → fallback', () => {
-    expect(parseRange(null)).toEqual([{ row: [0, 99], column: [0, 25] }])
+    // parseRange's runtime `!text` guard handles null defensively even though
+    // its declared type is `string`; exercise that guard via a cast, not a type hole.
+    expect(parseRange(null as unknown as string)).toEqual([{ row: [0, 99], column: [0, 25] }])
   })
 
   it('single cell B2 → row [1,1] col [1,1]', () => {
