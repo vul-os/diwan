@@ -34,8 +34,9 @@ import REVEAL_JS_URL from 'reveal.js/dist/reveal.js?url'
 const PRESENTER_REVEAL_THEMES = import.meta.glob(
   '/node_modules/reveal.js/dist/theme/*.css',
   { query: '?url', import: 'default', eager: true },
-)
-function presenterThemeUrl(name) {
+) as Record<string, string>
+
+function presenterThemeUrl(name: string | undefined): string {
   const key = `/node_modules/reveal.js/dist/theme/${name || 'black'}.css`
   return PRESENTER_REVEAL_THEMES[key] ||
     PRESENTER_REVEAL_THEMES['/node_modules/reveal.js/dist/theme/black.css']
@@ -51,7 +52,7 @@ function presenterThemeUrl(name) {
 // \uXXXX makes the payload inert while remaining valid JSON the browser parses
 // back to the original characters. Fail-closed for EVERY field regardless of any
 // per-field sanitisation.
-function scriptSafeJson(value) {
+function scriptSafeJson(value: unknown): string {
   return JSON.stringify(value)
     .replace(/</g, '\\u003c')
     .replace(/>/g, '\\u003e')
@@ -60,8 +61,17 @@ function scriptSafeJson(value) {
     .replace(/\u2029/g, '\\u2029')
 }
 
+/** The minimal slide shape the presenter window renders. */
+export interface PresenterSlide {
+  id: string
+  title?: string
+  content?: string
+  notes?: string
+  background?: string
+}
+
 // The presenter window HTML is injected as a blob URL so we stay same-origin.
-export function buildPresenterHTML(slides, activeIdx, themeId) {
+export function buildPresenterHTML(slides: PresenterSlide[], activeIdx: number, themeId: string): string {
   const slidesJson = scriptSafeJson(slides.map((s) => ({
     id: s.id,
     title: s.title || '',
@@ -328,14 +338,21 @@ export function buildPresenterHTML(slides, activeIdx, themeId) {
 </html>`
 }
 
+/** The subset of slidesData this hook reads to open a presenter window. */
+export interface PresenterSlidesData {
+  slides?: PresenterSlide[]
+  customTheme?: { revealTheme?: string } | null
+  themeId?: string
+}
+
 /**
  * Hook: usePresenterView
  * Call openPresenter() to open the presenter window.
  * Returns { openPresenter, syncSlide }.
  */
-export function usePresenterView(slidesData) {
-  const presenterWindowRef = useRef(null)
-  const channelRef = useRef(null)
+export function usePresenterView(slidesData: PresenterSlidesData | null | undefined) {
+  const presenterWindowRef = useRef<Window | null>(null)
+  const channelRef = useRef<BroadcastChannel | null>(null)
 
   useEffect(() => {
     try {
@@ -348,14 +365,14 @@ export function usePresenterView(slidesData) {
     }
   }, [])
 
-  const syncSlide = useCallback((idx) => {
+  const syncSlide = useCallback((idx: number) => {
     try {
       channelRef.current?.postMessage({ type: 'slide-change', idx, source: 'editor' })
       localStorage.setItem('vulos-presenter-idx', String(idx))
     } catch { /* ignore */ }
   }, [])
 
-  const openPresenter = useCallback((activeIdx) => {
+  const openPresenter = useCallback((activeIdx?: number) => {
     const slides = slidesData?.slides || []
     const themeId = slidesData?.customTheme?.revealTheme || slidesData?.themeId || 'black'
     const html = buildPresenterHTML(slides, activeIdx || 0, themeId)
