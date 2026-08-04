@@ -1,5 +1,5 @@
 /**
- * src/apps/sheets/formulaFunctions.js  (WAVE-63 — comprehensive formulas)
+ * src/apps/sheets/formulaFunctions.ts  (WAVE-63 — comprehensive formulas)
  *
  * High-value spreadsheet functions that @formulajs/formulajs (the engine
  * Fortune-Sheet's formula-parser falls back to) does NOT ship: XLOOKUP,
@@ -39,6 +39,12 @@
  * so it cannot smuggle execution.
  */
 
+/** A single resolved cell/literal value, as the parser hands it to a function. */
+export type CellScalar = string | number | boolean | null | undefined
+
+/** The parser's `params` shape: a scalar, or a (possibly nested/2-D) range array. */
+export type FormulaArg = CellScalar | FormulaArg[]
+
 // ── low-level value helpers ──────────────────────────────────────────────────
 
 /** Standard spreadsheet error strings (mirror formula-parser / formulajs). */
@@ -53,7 +59,7 @@ export const ERR = {
 const ERR_SET = new Set(Object.values(ERR))
 
 /** Is v one of the spreadsheet error sentinels? (so we propagate, not swallow) */
-export function isErr(v) {
+export function isErr(v: unknown): boolean {
   return typeof v === 'string' && ERR_SET.has(v)
 }
 
@@ -61,7 +67,7 @@ export function isErr(v) {
  * flatten — turn any argument (scalar, 1-D, or 2-D range array) into a flat
  * list of scalar values, row-major. Ranges from the parser are `[[..],[..]]`.
  */
-export function flatten(arg, out = []) {
+export function flatten(arg: FormulaArg, out: CellScalar[] = []): CellScalar[] {
   if (Array.isArray(arg)) {
     for (const v of arg) flatten(v, out)
   } else {
@@ -71,7 +77,7 @@ export function flatten(arg, out = []) {
 }
 
 /** Coerce to a boolean the spreadsheet way (numbers: 0=false; strings TRUE/FALSE). */
-export function toBool(v) {
+export function toBool(v: unknown): boolean {
   if (typeof v === 'boolean') return v
   if (typeof v === 'number') return v !== 0
   if (typeof v === 'string') {
@@ -85,7 +91,7 @@ export function toBool(v) {
 }
 
 /** Loose scalar equality used by lookup/match (number-aware, case-insensitive). */
-export function looseEqual(a, b) {
+export function looseEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true
   const an = Number(a), bn = Number(b)
   if (isFinite(an) && isFinite(bn) && String(a).trim() !== '' && String(b).trim() !== '') {
@@ -96,12 +102,12 @@ export function looseEqual(a, b) {
 }
 
 /** Escape a string for safe use as a literal inside a RegExp. */
-function escapeRe(s) {
+function escapeRe(s: unknown): string {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 /** Numeric coercion; returns NaN when not a finite number. */
-function num(v) {
+function num(v: unknown): number {
   if (typeof v === 'number') return v
   if (typeof v === 'string' && v.trim() !== '') {
     const n = Number(v)
@@ -111,7 +117,7 @@ function num(v) {
 }
 
 /** Compare two scalars for SORT/XMATCH (numbers before strings; case-insensitive). */
-export function compareScalar(a, b) {
+export function compareScalar(a: unknown, b: unknown): number {
   const an = num(a), bn = num(b)
   const aNum = !Number.isNaN(an), bNum = !Number.isNaN(bn)
   if (aNum && bNum) return an - bn
@@ -124,13 +130,13 @@ export function compareScalar(a, b) {
 // ── TEXTJOIN(delimiter, ignore_empty, ...text) ──────────────────────────────
 // Joins all text arguments (and ranges) with a delimiter, optionally skipping
 // empty values. Excel/Sheets semantics.
-export function TEXTJOIN(params) {
+export function TEXTJOIN(params: FormulaArg[]): CellScalar {
   if (!Array.isArray(params) || params.length < 2) return ERR.NA
   const [delimiter, ignoreEmptyRaw, ...rest] = params
   const delim = delimiter == null ? '' : String(delimiter)
   const ignoreEmpty = toBool(ignoreEmptyRaw)
   const vals = flatten(rest)
-  const out = []
+  const out: string[] = []
   for (const v of vals) {
     if (isErr(v)) return v
     const s = v == null ? '' : String(v)
@@ -142,12 +148,12 @@ export function TEXTJOIN(params) {
 
 // ── IFS(cond1, val1, cond2, val2, ...) ──────────────────────────────────────
 // Returns the value for the first TRUE condition. #N/A if none match.
-export function IFS(params) {
+export function IFS(params: FormulaArg[]): CellScalar {
   if (!Array.isArray(params) || params.length < 2) return ERR.NA
   for (let i = 0; i + 1 < params.length; i += 2) {
     const cond = params[i]
-    if (isErr(cond)) return cond
-    if (toBool(cond)) return params[i + 1]
+    if (isErr(cond)) return cond as unknown as CellScalar
+    if (toBool(cond)) return params[i + 1] as CellScalar
   }
   return ERR.NA
 }
@@ -155,17 +161,17 @@ export function IFS(params) {
 // ── SWITCH(expr, case1, val1, [case2, val2, ...], [default]) ────────────────
 // Matches expr against each case; returns matching value or the optional
 // trailing default. #N/A if no match and no default.
-export function SWITCH(params) {
+export function SWITCH(params: FormulaArg[]): CellScalar {
   if (!Array.isArray(params) || params.length < 3) return ERR.NA
   const expr = params[0]
-  if (isErr(expr)) return expr
+  if (isErr(expr)) return expr as unknown as CellScalar
   const rest = params.slice(1)
   let i = 0
   for (; i + 1 < rest.length; i += 2) {
-    if (looseEqual(expr, rest[i])) return rest[i + 1]
+    if (looseEqual(expr, rest[i])) return rest[i + 1] as CellScalar
   }
   // A trailing lone argument is the default.
-  if (i < rest.length) return rest[i]
+  if (i < rest.length) return rest[i] as CellScalar
   return ERR.NA
 }
 
@@ -173,10 +179,10 @@ export function SWITCH(params) {
 // A modern lookup: searches lookup_array for lookup and returns the aligned
 // value from return_array. match_mode: 0 exact (default), -1 exact-or-next
 // -smaller, 1 exact-or-next-larger. Falls back to if_not_found (or #N/A).
-export function XLOOKUP(params) {
+export function XLOOKUP(params: FormulaArg[]): CellScalar {
   if (!Array.isArray(params) || params.length < 3) return ERR.NA
   const [lookup, lookupArrRaw, returnArrRaw, ifNotFound, matchModeRaw] = params
-  if (isErr(lookup)) return lookup
+  if (isErr(lookup)) return lookup as unknown as CellScalar
   const lookupArr = flatten(lookupArrRaw)
   // DATA-INTEGRITY: index the return array BY ROW, not by flattened offset. When
   // the return range is 2-D (multiple columns), a single flatten() interleaves
@@ -192,10 +198,10 @@ export function XLOOKUP(params) {
   // data with no signal — validate up front and fail loud.
   if (lookupArr.length !== returnRows.length) return ERR.VALUE
 
-  const pick = (i) => {
+  const pick = (i: number): CellScalar => {
     const row = returnRows[i]
     if (i < 0 || i >= returnRows.length) return ERR.REF
-    return Array.isArray(row) ? (row.length ? row[0] : ERR.REF) : row
+    return Array.isArray(row) ? (row.length ? row[0] as CellScalar : ERR.REF) : row
   }
 
   // Exact match first (always).
@@ -221,14 +227,14 @@ export function XLOOKUP(params) {
       if (best >= 0) return pick(best)
     }
   }
-  return ifNotFound !== undefined ? ifNotFound : ERR.NA
+  return ifNotFound !== undefined ? (ifNotFound as CellScalar) : ERR.NA
 }
 
 // Normalise a range argument into an array of ROWS. A 2-D range arrives as an
 // array of row arrays; a 1-D column/row arrives as a flat array (each element is
 // its own row); a scalar becomes a single one-row list. Used by XLOOKUP so a
 // multi-column return range is aligned by row, not by flattened cell offset.
-function toRows(arg) {
+function toRows(arg: FormulaArg): FormulaArg[] {
   if (!Array.isArray(arg)) return [arg]
   if (arg.length === 0) return []
   return arg.map((r) => (Array.isArray(r) ? r : r))
@@ -237,10 +243,10 @@ function toRows(arg) {
 // ── XMATCH(lookup, lookup_array, [match_mode]) ──────────────────────────────
 // Returns the 1-based position of lookup within lookup_array. match_mode as
 // XLOOKUP. #N/A when not found.
-export function XMATCH(params) {
+export function XMATCH(params: FormulaArg[]): CellScalar {
   if (!Array.isArray(params) || params.length < 2) return ERR.NA
   const [lookup, lookupArrRaw, matchModeRaw] = params
-  if (isErr(lookup)) return lookup
+  if (isErr(lookup)) return lookup as unknown as CellScalar
   const lookupArr = flatten(lookupArrRaw)
   const matchMode = Number(matchModeRaw) || 0
   for (let i = 0; i < lookupArr.length; i++) {
@@ -272,16 +278,16 @@ export function XMATCH(params) {
 // omitted from CUSTOM_FUNCTIONS (it cleanly reports #NAME? like any unknown
 // function) and listed in the deferred set. The pure helper below is kept only
 // as documentation of the intended semantics; it is not wired to the engine.
-export function LET(params) {
+export function LET(params: FormulaArg[]): CellScalar {
   if (!Array.isArray(params) || params.length < 3) return ERR.NA
   const calc = params[params.length - 1]
-  const bindings = new Map()
+  const bindings = new Map<string, FormulaArg>()
   for (let i = 0; i + 1 < params.length - 1; i += 2) {
     const name = params[i]
     if (typeof name === 'string') bindings.set(name, params[i + 1])
   }
-  if (typeof calc === 'string' && bindings.has(calc)) return bindings.get(calc)
-  return calc
+  if (typeof calc === 'string' && bindings.has(calc)) return bindings.get(calc) as CellScalar
+  return calc as CellScalar
 }
 
 // ── FILTER(array, include, [if_empty]) ──────────────────────────────────────
@@ -289,7 +295,7 @@ export function LET(params) {
 // result: a single kept value returns as a scalar; multiple kept values return
 // a comma-joined string (visible, non-crashing) — honest about the no-spill
 // limitation. `include` is a same-length mask (range of truthy/0).
-export function FILTER(params) {
+export function FILTER(params: FormulaArg[]): CellScalar {
   if (!Array.isArray(params) || params.length < 2) return ERR.NA
   const [arrayRaw, includeRaw, ifEmpty] = params
   const arr = flatten(arrayRaw)
@@ -300,7 +306,7 @@ export function FILTER(params) {
   // (FILTER({1;2;3}, {1;1}) returned "1, 2", losing row 3) — a silent data loss.
   // Fail loud with #VALUE! on any length mismatch instead of quietly truncating.
   if (arr.length !== mask.length) return ERR.VALUE
-  const kept = []
+  const kept: CellScalar[] = []
   for (let i = 0; i < arr.length; i++) {
     const m = mask[i]
     // An error in the INCLUDE mask propagates (Excel semantics) — and must not be
@@ -315,7 +321,7 @@ export function FILTER(params) {
     if (isErr(arr[i])) return arr[i]
     kept.push(arr[i])
   }
-  if (kept.length === 0) return ifEmpty !== undefined ? ifEmpty : ERR.NA
+  if (kept.length === 0) return ifEmpty !== undefined ? (ifEmpty as CellScalar) : ERR.NA
   if (kept.length === 1) return kept[0]
   return kept.join(', ')
 }
@@ -325,7 +331,7 @@ export function FILTER(params) {
 // (default) / -1 desc. Returns a scalar when one value, else a comma-joined
 // string (no spill). sort_index is accepted for signature parity but a
 // flattened 1-D list has a single column.
-export function SORT(params) {
+export function SORT(params: FormulaArg[]): CellScalar {
   if (!Array.isArray(params) || params.length < 1) return ERR.NA
   const [arrayRaw, , sortOrderRaw] = params
   const arr = flatten(arrayRaw).filter((v) => v !== '' && v != null)
@@ -341,11 +347,11 @@ export function SORT(params) {
 // Scalar-safe UNIQUE. formulajs ships a UNIQUE but it treats its varargs
 // differently (each arg a value); ours accepts a range and de-dupes preserving
 // first-seen order. Single value → scalar; else comma-joined (no spill).
-export function UNIQUE(params) {
+export function UNIQUE(params: FormulaArg[]): CellScalar {
   if (!Array.isArray(params) || params.length < 1) return ERR.NA
   const arr = flatten(params[0]).filter((v) => v !== '' && v != null)
-  const seen = new Set()
-  const out = []
+  const seen = new Set<string>()
+  const out: CellScalar[] = []
   for (const v of arr) {
     if (isErr(v)) return v
     const key = typeof v === 'string' ? v.toLowerCase() : String(v)
@@ -366,11 +372,11 @@ export function UNIQUE(params) {
 
 // Index of the Nth (1-based) occurrence of delim in text, honoring case mode and
 // negative n (from the end). Returns -1 when there is no such occurrence.
-function nthIndexOf(text, delim, n, insensitive) {
+function nthIndexOf(text: string, delim: string, n: number, insensitive: boolean): number {
   if (delim === '') return -1
   const hay = insensitive ? text.toLowerCase() : text
   const needle = insensitive ? delim.toLowerCase() : delim
-  const positions = []
+  const positions: number[] = []
   let from = 0
   for (;;) {
     const i = hay.indexOf(needle, from)
@@ -384,33 +390,33 @@ function nthIndexOf(text, delim, n, insensitive) {
   return positions[idx]
 }
 
-function textBeforeAfter(params, after) {
+function textBeforeAfter(params: FormulaArg[], after: boolean): CellScalar {
   if (!Array.isArray(params) || params.length < 2) return ERR.NA
   const [textRaw, delimRaw, instRaw, modeRaw, , ifNotFound] = params
-  if (isErr(textRaw)) return textRaw
-  if (isErr(delimRaw)) return delimRaw
+  if (isErr(textRaw)) return textRaw as unknown as CellScalar
+  if (isErr(delimRaw)) return delimRaw as unknown as CellScalar
   const text = textRaw == null ? '' : String(textRaw)
   const delim = delimRaw == null ? '' : String(delimRaw)
   const n = instRaw === undefined || instRaw === '' ? 1 : Math.trunc(Number(instRaw))
   if (!Number.isFinite(n) || n === 0) return ERR.VALUE
   const insensitive = Number(modeRaw) === 1
   const at = nthIndexOf(text, delim, n, insensitive)
-  if (at < 0) return ifNotFound !== undefined ? ifNotFound : ERR.NA
+  if (at < 0) return ifNotFound !== undefined ? (ifNotFound as CellScalar) : ERR.NA
   return after ? text.slice(at + delim.length) : text.slice(0, at)
 }
 
-export function TEXTBEFORE(params) { return textBeforeAfter(params, false) }
-export function TEXTAFTER(params) { return textBeforeAfter(params, true) }
+export function TEXTBEFORE(params: FormulaArg[]): CellScalar { return textBeforeAfter(params, false) }
+export function TEXTAFTER(params: FormulaArg[]): CellScalar { return textBeforeAfter(params, true) }
 
 // ── TEXTSPLIT(text, col_delimiter, [row_delimiter], [ignore_empty]) ──────────
 // Excel dynamic-array split. Fortune-Sheet has no spill, so — like FILTER/SORT —
 // a single field returns as a scalar and multiple fields return comma-joined
 // (honest about the no-spill limitation). col_delimiter may be a single string or
 // a range/array of strings (any of them splits). ignore_empty drops empty fields.
-export function TEXTSPLIT(params) {
+export function TEXTSPLIT(params: FormulaArg[]): CellScalar {
   if (!Array.isArray(params) || params.length < 2) return ERR.NA
   const [textRaw, colDelimRaw, rowDelimRaw, ignoreEmptyRaw] = params
-  if (isErr(textRaw)) return textRaw
+  if (isErr(textRaw)) return textRaw as unknown as CellScalar
   const text = textRaw == null ? '' : String(textRaw)
   const delims = [...flatten(colDelimRaw), ...flatten(rowDelimRaw)]
     .filter((d) => d != null && d !== '')
@@ -431,7 +437,7 @@ export function TEXTSPLIT(params) {
 // many return comma-joined. The total count is bounded so a hostile SEQUENCE
 // (1e9, …) cannot allocate an enormous string.
 const MAX_SEQUENCE = 10000
-export function SEQUENCE(params) {
+export function SEQUENCE(params: FormulaArg[]): CellScalar {
   if (!Array.isArray(params) || params.length < 1) return ERR.NA
   const rows = Math.trunc(Number(params[0]))
   const cols = params[1] === undefined || params[1] === '' ? 1 : Math.trunc(Number(params[1]))
@@ -441,7 +447,7 @@ export function SEQUENCE(params) {
   if (!Number.isFinite(start) || !Number.isFinite(step)) return ERR.VALUE
   const total = rows * cols
   if (total > MAX_SEQUENCE) return ERR.NUM
-  const out = []
+  const out: number[] = []
   for (let i = 0; i < total; i++) out.push(start + i * step)
   if (out.length === 1) return out[0]
   return out.join(', ')
@@ -451,7 +457,7 @@ export function SEQUENCE(params) {
 // Sort `array` by the aligned values of `by_array` (1 asc / -1 desc). Scalar-safe
 // like SORT: one value → scalar, many → comma-joined. A length mismatch fails loud
 // with #VALUE! rather than silently dropping/misaligning rows.
-export function SORTBY(params) {
+export function SORTBY(params: FormulaArg[]): CellScalar {
   if (!Array.isArray(params) || params.length < 2) return ERR.NA
   const arr = flatten(params[0])
   const by = flatten(params[1])
@@ -473,7 +479,7 @@ export function SORTBY(params) {
 // NOTE: LET is intentionally absent — Fortune-Sheet's eager grammar makes it
 // non-functional at the engine level (see the LET comment above). Registering it
 // would falsely advertise support while still returning #NAME?.
-export const CUSTOM_FUNCTIONS = {
+export const CUSTOM_FUNCTIONS: Record<string, (params: FormulaArg[]) => CellScalar> = {
   TEXTJOIN,
   IFS,
   SWITCH,
@@ -491,6 +497,18 @@ export const CUSTOM_FUNCTIONS = {
   SORTBY,
 }
 
+export type CustomFormula = (params: FormulaArg[]) => CellScalar
+
+export interface FormulaParserPrototype {
+  getFunction?: (name: string) => CustomFormula | undefined
+  __vulosCustomFormulasInstalled?: boolean
+  [key: string]: unknown
+}
+
+export interface FormulaParserClass {
+  prototype: FormulaParserPrototype
+}
+
 /**
  * installCustomFormulas — idempotently wrap the formula-parser Parser so every
  * instance the core constructs resolves our custom functions. Safe to call many
@@ -502,12 +520,12 @@ export const CUSTOM_FUNCTIONS = {
  * to it; only otherwise do we answer for names in CUSTOM_FUNCTIONS. Built-in
  * formulajs functions still resolve through the untouched fall-through path.
  */
-export function installCustomFormulas(ParserClass) {
+export function installCustomFormulas(ParserClass: FormulaParserClass | null | undefined): boolean {
   if (!ParserClass || !ParserClass.prototype) return false
   const proto = ParserClass.prototype
   if (proto.__vulosCustomFormulasInstalled) return true
   const original = proto.getFunction
-  proto.getFunction = function patchedGetFunction(name) {
+  proto.getFunction = function patchedGetFunction(this: unknown, name: string) {
     const own = original ? original.call(this, name) : undefined
     if (own) return own
     const up = typeof name === 'string' ? name.toUpperCase() : ''
