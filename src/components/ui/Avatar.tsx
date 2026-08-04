@@ -16,6 +16,12 @@
  * when wrapped by a titled control.
  */
 
+import type { CSSProperties, HTMLAttributes } from 'react'
+
+// Style objects here set a `--avatar-bg` custom property that index.css reads;
+// CSSProperties has no index signature for custom props, so widen locally.
+type AvatarStyle = CSSProperties & { '--avatar-bg': string }
+
 // A small, calm palette tuned for the near-black chrome — legible, no glow.
 // Mirrors the per-app tints so presence colours feel part of the same system.
 const HUES = [
@@ -42,6 +48,14 @@ function initials(name = '') {
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
 }
 
+interface AvatarProps extends HTMLAttributes<HTMLSpanElement> {
+  name?: string
+  color?: string
+  size?: number
+  title?: string
+  className?: string
+}
+
 export default function Avatar({
   name = '',
   color,
@@ -50,13 +64,13 @@ export default function Avatar({
   className = '',
   'aria-hidden': ariaHidden,
   ...rest
-}) {
+}: AvatarProps) {
   const bg = color || hueFor(name || title || '')
   const fontSize = Math.max(8, Math.round(size * 0.42))
   return (
     <span
       className={`avatar-chip ${className}`.trim()}
-      style={{ width: size, height: size, fontSize, '--avatar-bg': bg }}
+      style={{ width: size, height: size, fontSize, '--avatar-bg': bg } as AvatarStyle}
       title={title || name || undefined}
       aria-hidden={ariaHidden}
       {...rest}
@@ -66,7 +80,22 @@ export default function Avatar({
   )
 }
 
-export function AvatarStack({ people = [], max = 4, size = 22, className = '' }) {
+export interface AvatarStackPerson {
+  id?: string
+  accountId?: string
+  name?: string
+  displayName?: string
+  color?: string
+}
+
+interface AvatarStackProps {
+  people?: AvatarStackPerson[]
+  max?: number
+  size?: number
+  className?: string
+}
+
+export function AvatarStack({ people = [], max = 4, size = 22, className = '' }: AvatarStackProps) {
   if (!people.length) return null
   const shown = people.slice(0, max)
   const overflow = people.length - shown.length
@@ -95,7 +124,7 @@ export function AvatarStack({ people = [], max = 4, size = 22, className = '' })
             fontSize: Math.max(8, Math.round(size * 0.4)),
             '--avatar-bg': 'var(--bg-elevated)',
             color: 'var(--ink-muted)',
-          }}
+          } as AvatarStyle}
         >
           +{overflow}
         </span>
