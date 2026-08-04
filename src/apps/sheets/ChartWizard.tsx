@@ -1,5 +1,5 @@
 /**
- * src/apps/sheets/ChartWizard.jsx  (WAVE-54, rewritten)
+ * src/apps/sheets/ChartWizard.tsx  (WAVE-54, rewritten)
  *
  * Chart editor dialog for Sheets. Produces a PLAIN-DATA chart descriptor
  * (see charts.js) that is stored on the sheet as `sheet.charts`, CRDT-synced,
@@ -23,12 +23,23 @@ import { Button, IconButton, useDialogA11y } from '../../components/ui'
 import {
   CHART_TYPE_GROUPS, makeChart, insertChart, updateChart, stackModeOf,
   HISTOGRAM_BINS_MIN, HISTOGRAM_BINS_MAX, HISTOGRAM_BINS_DEFAULT,
+  type Chart, type ChartSheet,
 } from './charts.js'
+
+interface SelectionRect { r0: number; r1: number; c0: number; c1: number }
+
+export interface ChartWizardProps {
+  data: ChartSheet[]
+  chart?: Chart | null
+  selectionRect?: SelectionRect | null
+  onClose: () => void
+  onChange: (data: ChartSheet[]) => void
+}
 
 // Per-type guidance shown under the picker. A chart type that reads its range in
 // a non-obvious way (scatter/bubble/histogram) MUST say so, or the user just
 // sees a wrong-looking chart and no explanation.
-const TYPE_HINT = {
+const TYPE_HINT: Record<string, string> = {
   scatter:   'Scatter plots the 1st column as X and the 2nd as Y. Turn off “First column = labels”.',
   bubble:    'Bubble plots three numeric columns as X, Y and bubble size. Turn off “First column = labels”.',
   histogram: 'Histogram bins the FIRST numeric column into buckets and plots how often values fall in each.',
@@ -44,22 +55,22 @@ const TYPE_HINT = {
  * selectionToRange — turn the editor's tracked selection rect (0-indexed
  * inclusive {r0,r1,c0,c1}) into A1 text. Returns '' when no usable selection.
  */
-export function selectionToRange(sel) {
+export function selectionToRange(sel: SelectionRect | null | undefined): string {
   if (!sel) return ''
   const { r0, r1, c0, c1 } = sel
   if ([r0, r1, c0, c1].some((n) => typeof n !== 'number' || n < 0)) return ''
-  const a1 = (r, c) => colName(c) + (r + 1)
+  const a1 = (r: number, c: number) => colName(c) + (r + 1)
   return a1(Math.min(r0, r1), Math.min(c0, c1)) + ':' + a1(Math.max(r0, r1), Math.max(c0, c1))
 }
 
-function colName(c) {
+function colName(c: number): string {
   let s = ''
   let n = c
   do { s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26) - 1 } while (n >= 0)
   return s
 }
 
-export default function ChartWizard({ data, chart, selectionRect, onClose, onChange }) {
+export default function ChartWizard({ data, chart, selectionRect, onClose, onChange }: ChartWizardProps) {
   const editing = !!chart
   const [chartType, setChartType] = useState(chart?.type || 'column')
   const [range,     setRange]     = useState(chart?.range || selectionToRange(selectionRect))
@@ -71,8 +82,8 @@ export default function ChartWizard({ data, chart, selectionRect, onClose, onCha
   const [headerRow, setHeaderRow] = useState(chart?.options?.headerRow !== false)
   const [headerCol, setHeaderCol] = useState(chart?.options?.headerCol !== false)
   const [secondary, setSecondary] = useState(chart?.options?.secondaryAxis === true)
-  const [bins,      setBins]      = useState(chart?.options?.bins || HISTOGRAM_BINS_DEFAULT)
-  const dialogRef = useRef(null)
+  const [bins,      setBins]      = useState<number | string>(chart?.options?.bins || HISTOGRAM_BINS_DEFAULT)
+  const dialogRef = useRef<HTMLDivElement>(null)
   useDialogA11y(dialogRef, onClose)
 
   const isCombo     = chartType === 'combo'
@@ -89,7 +100,7 @@ export default function ChartWizard({ data, chart, selectionRect, onClose, onCha
   // for a combo. Only on the TRANSITION into combo, and never against an existing
   // chart's saved choice — otherwise re-clicking the already-selected Combo tile
   // would silently re-check a box the user just cleared.
-  function pickType(value) {
+  function pickType(value: string) {
     if (value === chartType) return
     if (value === 'combo' && chart?.options?.secondaryAxis === undefined) setSecondary(true)
     setChartType(value)
@@ -108,7 +119,7 @@ export default function ChartWizard({ data, chart, selectionRect, onClose, onCha
         bins: Number(bins) || HISTOGRAM_BINS_DEFAULT,
       },
     })
-    const next = editing
+    const next = editing && chart
       ? updateChart(data, chart.id, built)
       : insertChart(data, built)
     onChange(next)
