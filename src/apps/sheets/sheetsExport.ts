@@ -1,8 +1,49 @@
 import * as XLSX from 'xlsx'
 import { saveAs } from 'file-saver'
-import { escapeChartText } from './charts.js'
-import { injectChartsIntoXlsx, nativeXlsxSupport } from './xlsxCharts.js'
-import { getImportNotes } from './importNotes.js'
+import { escapeChartText, type Chart, type ChartSheet } from './charts.js'
+import { injectChartsIntoXlsx, nativeXlsxSupport, type SkippedChart } from './xlsxCharts.js'
+import { getImportNotes, type ImportNoteChart } from './importNotes.js'
+
+export interface MergeCell { r: number; c: number; rs?: number; cs?: number }
+export interface ExportSheetConfig {
+  merge?: Record<string, MergeCell>
+  columnlen?: Record<string, number>
+  rowlen?: Record<string, number>
+  [key: string]: unknown
+}
+export interface ExportCellValue {
+  v?: string | number | boolean
+  m?: string | number
+  f?: string
+  ct?: { fa?: string; t?: string }
+  [key: string]: unknown
+}
+export interface ExportCellEntry {
+  r: number
+  c: number
+  v?: ExportCellValue | null
+}
+export interface ExportSheet {
+  name?: string
+  celldata?: ExportCellEntry[]
+  charts?: Chart[]
+  pivots?: unknown[]
+  config?: ExportSheetConfig
+  [key: string]: unknown
+}
+
+export interface DroppedChart { type: string; title: string; note: string }
+export interface MissingInfo { pivots: number; charts: ImportNoteChart[]; filename: string }
+export interface ExportFidelityReport {
+  format: string
+  charts: number
+  pivots: number
+  native: number
+  degraded: DroppedChart[]
+  lost: DroppedChart[]
+  notes: string[]
+  missing: MissingInfo | null
+}
 
 /** The worksheet that carries our chart definitions (see chartsMetaSheet). */
 export const CHART_META_SHEET = 'Vulos Charts'
@@ -19,14 +60,14 @@ export const CHART_META_COLUMNS = [
   'y2AxisLabel', 'secondaryAxis', 'bins', 'x', 'y', 'w', 'h', 'id',
 ]
 
-export function fortuneToWorksheet(sheet) {
-  const ws = {}
+export function fortuneToWorksheet(sheet: ExportSheet): XLSX.WorkSheet {
+  const ws: XLSX.WorkSheet = {}
   const cells = sheet.celldata || []
   let maxR = 0, maxC = 0
   for (const { r, c, v } of cells) {
     if (!v) continue
     const raw = v.v !== undefined ? v.v : v.m
-    const cell = { v: raw, t: typeof raw === 'number' ? 'n' : 's' }
+    const cell: XLSX.CellObject = { v: raw, t: typeof raw === 'number' ? 'n' : 's' }
     // DATA-INTEGRITY: preserve the cell FORMULA on export. sheetsImport stores an
     // imported formula as `v.f = "=..."` (leading '='), and the import docstring
     // promises formulas round-trip — but without this the exporter wrote only the
@@ -62,7 +103,7 @@ export function fortuneToWorksheet(sheet) {
   // flattened to default width and every row to default height on round-trip.
   const columnlen = sheet.config?.columnlen
   if (columnlen && typeof columnlen === 'object') {
-    const colArr = []
+    const colArr: XLSX.ColInfo[] = []
     for (const [i, px] of Object.entries(columnlen)) {
       const idx = Number(i)
       if (Number.isInteger(idx) && idx >= 0 && Number.isFinite(px) && px > 0) {
@@ -73,7 +114,7 @@ export function fortuneToWorksheet(sheet) {
   }
   const rowlen = sheet.config?.rowlen
   if (rowlen && typeof rowlen === 'object') {
-    const rowArr = []
+    const rowArr: XLSX.RowInfo[] = []
     for (const [i, px] of Object.entries(rowlen)) {
       const idx = Number(i)
       if (Number.isInteger(idx) && idx >= 0 && Number.isFinite(px) && px > 0) {
@@ -109,11 +150,11 @@ export function fortuneToWorksheet(sheet) {
  * The type / legend / header / secondaryAxis columns are fixed enums and the
  * geometry columns are numbers, so neither is a free-text surface.
  */
-export function chartsMetaSheet(data) {
+export function chartsMetaSheet(data: ExportSheet[] | null | undefined): XLSX.WorkSheet | null {
   const charts = data?.[0]?.charts
   if (!Array.isArray(charts) || charts.length === 0) return null
-  const rows = [CHART_META_COLUMNS.slice()]
-  const yn = (v, dflt = true) => ((v === undefined ? dflt : v) ? 'yes' : 'no')
+  const rows: unknown[][] = [CHART_META_COLUMNS.slice()]
+  const yn = (v: unknown, dflt = true) => ((v === undefined ? dflt : v) ? 'yes' : 'no')
   for (const c of charts) {
     rows.push([
       String(c.type ?? ''),
@@ -153,11 +194,11 @@ export function chartsMetaSheet(data) {
  * user is about to write a file back over the original that still HAS it. So the
  * import wrote down what it dropped, and we say it again here.
  */
-export function exportFidelity(data, format) {
-  const charts = Array.isArray(data?.[0]?.charts) ? data[0].charts : []
-  const pivots = Array.isArray(data?.[0]?.pivots) ? data[0].pivots : []
+export function exportFidelity(data: ExportSheet[] | null | undefined, format: string): ExportFidelityReport {
+  const charts = Array.isArray(data?.[0]?.charts) ? data![0].charts! : []
+  const pivots = Array.isArray(data?.[0]?.pivots) ? data![0].pivots! : []
   const imported = getImportNotes(data)
-  const report = {
+  const report: ExportFidelityReport = {
     format, charts: charts.length, pivots: pivots.length, native: 0,
     degraded: [], lost: [], notes: [],
     missing: imported ? { pivots: imported.pivots, charts: imported.charts, filename: imported.filename || '' } : null,
@@ -167,7 +208,7 @@ export function exportFidelity(data, format) {
     for (const c of charts) {
       const s = nativeXlsxSupport(c.type)
       if (s.native && !s.note) report.native++
-      else if (s.native) { report.native++; report.degraded.push({ type: c.type, title: c.title || '', note: s.note }) }
+      else if (s.native) { report.native++; report.degraded.push({ type: c.type, title: c.title || '', note: s.note as string }) }
       else report.lost.push({ type: c.type, title: c.title || '', note: s.note || 'no Excel equivalent' })
     }
     if (charts.length) {
@@ -213,7 +254,7 @@ export function exportFidelity(data, format) {
  * at import) exports with zero friction; anything that loses or degrades content
  * goes through the dialog.
  */
-export function exportNeedsConfirm(data, format) {
+export function exportNeedsConfirm(data: ExportSheet[] | null | undefined, format: string): boolean {
   const r = exportFidelity(data, format)
   const missing = !!r.missing && (r.missing.pivots > 0 || r.missing.charts.length > 0)
   return r.lost.length > 0 || r.degraded.length > 0 || r.pivots > 0 || missing ||
@@ -227,7 +268,7 @@ export function exportNeedsConfirm(data, format) {
  * Resolves with the injection result ({ embedded, skipped }) so a caller can
  * surface what happened; nothing here throws away a chart quietly.
  */
-export async function exportSheetsToXlsx(data, filename) {
+export async function exportSheetsToXlsx(data: ExportSheet[], filename: string): Promise<{ embedded: string[]; skipped: SkippedChart[] }> {
   const wb = XLSX.utils.book_new()
   for (const sheet of data) {
     XLSX.utils.book_append_sheet(wb, fortuneToWorksheet(sheet), sheet.name || 'Sheet')
@@ -241,12 +282,12 @@ export async function exportSheetsToXlsx(data, filename) {
     wb.Workbook = wb.Workbook || {}
     wb.Workbook.Sheets = wb.SheetNames.map((n) => ({ Hidden: n === CHART_META_SHEET ? 1 : 0 }))
   }
-  const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+  const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as Parameters<typeof injectChartsIntoXlsx>[0]
 
-  const charts = Array.isArray(data?.[0]?.charts) ? data[0].charts : []
-  const { buffer, embedded, skipped } = await injectChartsIntoXlsx(buf, charts, data?.[0] || {})
+  const charts = Array.isArray(data?.[0]?.charts) ? data[0].charts! : []
+  const { buffer, embedded, skipped } = await injectChartsIntoXlsx(buf, charts, (data?.[0] || {}) as ChartSheet)
   saveAs(
-    new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+    new Blob([buffer as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
     `${filename}.xlsx`
   )
   return { embedded, skipped }
@@ -264,7 +305,7 @@ export async function exportSheetsToXlsx(data, filename) {
 // stores computed values as numbers), can never carry a payload, and prefixing a
 // legitimate negative number like `-5` would corrupt the data — so the guard is
 // scoped to string cells only.
-export function csvField(cell) {
+export function csvField(cell: unknown): string {
   if (typeof cell === 'number') return String(cell)
   let s = String(cell ?? '')
   if (/^[=+\-@\t\r]/.test(s)) s = "'" + s
@@ -272,13 +313,13 @@ export function csvField(cell) {
 }
 
 /** Build the CSV text for the first sheet (pure — no side effects, testable). */
-export function buildCsv(data) {
+export function buildCsv(data: ExportSheet[] | null | undefined): string {
   const sheet = data?.[0]
   if (!sheet) return ''
   const cells = sheet.celldata || []
   let maxR = 0, maxC = 0
   for (const { r, c } of cells) { if (r > maxR) maxR = r; if (c > maxC) maxC = c }
-  const grid = Array.from({ length: maxR + 1 }, () => new Array(maxC + 1).fill(''))
+  const grid: unknown[][] = Array.from({ length: maxR + 1 }, () => new Array(maxC + 1).fill(''))
   for (const { r, c, v } of cells) {
     if (!v) continue
     grid[r][c] = v.v !== undefined ? v.v : (v.m ?? '')
@@ -286,7 +327,7 @@ export function buildCsv(data) {
   return grid.map((row) => row.map(csvField).join(',')).join('\n')
 }
 
-export function exportSheetsToCsv(data, filename) {
+export function exportSheetsToCsv(data: ExportSheet[] | null | undefined, filename: string): void {
   if (!data?.[0]) return
   const csv = buildCsv(data)
   saveAs(new Blob([csv], { type: 'text/csv;charset=utf-8' }), `${filename}.csv`)
@@ -305,7 +346,7 @@ export function exportSheetsToCsv(data, filename) {
  * definition sheet — and exportFidelity('ods') says exactly that before the user
  * commits to the download.
  */
-export function exportSheetsToOds(data, filename) {
+export function exportSheetsToOds(data: ExportSheet[], filename: string): void {
   const wb = XLSX.utils.book_new()
   for (const sheet of data) {
     XLSX.utils.book_append_sheet(wb, fortuneToWorksheet(sheet), sheet.name || 'Sheet')
