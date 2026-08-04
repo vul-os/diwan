@@ -3,9 +3,10 @@ import {
   makeProtectedRange, clampRect, getProtectedRanges, setProtectedRanges,
   insertProtectedRange, deleteProtectedRange, updateProtectedRange,
   clampProtectedRanges, mergeProtectedRanges, cellProtection, rectToA1,
+  type PRSheet,
 } from './protectedRanges.js'
 
-const sheet = (extra = {}) => [{ name: 'Sheet1', id: 'sheet_1', celldata: [], ...extra }]
+const sheet = (extra: Partial<PRSheet> = {}): PRSheet[] => [{ name: 'Sheet1', id: 'sheet_1', celldata: [], ...extra }]
 
 describe('protectedRanges model', () => {
   it('clampRect normalises order and rejects negatives', () => {
@@ -37,7 +38,9 @@ describe('protectedRanges model', () => {
   })
 
   it('clampProtectedRanges re-clamps a poisoned persisted record', () => {
-    const poisoned = sheet({ protectedRanges: [{ id: 'x', sheetIndex: -9, range: { startRow: -1, startCol: 2, endRow: 3, endCol: 0 }, warningOnly: 1, editors: 'not-an-array' }] })
+    // Deliberately malformed (wrong types on warningOnly/editors) to exercise the
+    // fail-closed clamp on a poisoned/legacy record — hence the `unknown` cast.
+    const poisoned = sheet({ protectedRanges: [{ id: 'x', sheetIndex: -9, range: { startRow: -1, startCol: 2, endRow: 3, endCol: 0 }, warningOnly: 1, editors: 'not-an-array' }] as unknown as PRSheet['protectedRanges'] })
     const out = clampProtectedRanges(poisoned)
     const pr = getProtectedRanges(out)[0]
     expect(pr.sheetIndex).toBe(0)
