@@ -13,7 +13,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import HistoryPanel from '../../components/HistoryPanel'
-import { server, resetMock, mockState } from './server.js'
+import { server, resetMock, mockState } from './server'
 
 beforeAll(() => server.listen({ onUnhandledRequest: 'bypass' }))
 afterEach(() => server.resetHandlers())

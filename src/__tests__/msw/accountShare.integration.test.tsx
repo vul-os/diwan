@@ -21,7 +21,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import AccountShareModal from '../../components/AccountShareModal.jsx'
-import { server, resetMock, mockState } from './server.js'
+import { server, resetMock, mockState } from './server'
 
 beforeAll(() => server.listen({ onUnhandledRequest: 'bypass' }))
 afterEach(() => server.resetHandlers())
@@ -50,7 +50,7 @@ describe('AccountShareModal (MSW integration)', () => {
     expect(mockState.calls).toContain('POST /files/doc1/share')
     const bob = mockState.collaborators.doc1.find((c) => c.account_id === 'bob@vulos.test')
     expect(bob).toBeTruthy()
-    expect(bob.role).toBe('commenter')
+    expect(bob!.role).toBe('commenter')
   })
 
   it('owner can change a collaborator role and revoke access', async () => {

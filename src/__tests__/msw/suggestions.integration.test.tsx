@@ -12,25 +12,26 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } 
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { useState } from 'react'
 import SuggestionPanel from '../../components/SuggestionPanel.jsx'
+import type { Suggestion } from '../../components/SuggestionPanel.jsx'
 import { getSuggestionStore, evictSuggestionStore } from '../../lib/crdt/suggestions.js'
 import { api } from '../../lib/api.js'
-import { server, resetMock, mockState } from './server.js'
+import { server, resetMock, mockState } from './server'
 
 beforeAll(() => server.listen({ onUnhandledRequest: 'bypass' }))
 afterEach(() => server.resetHandlers())
 afterAll(() => server.close())
 
 // Harness mirroring DocsEditor's suggestion accept/reject handlers.
-function Harness({ fileId }) {
+function Harness({ fileId }: { fileId: string }) {
   const store = getSuggestionStore(fileId)
   const [suggestions, setSuggestions] = useState(store.list())
 
-  const onAccept = async (sg) => {
+  const onAccept = async (sg: Suggestion) => {
     store.accept(sg.id, 'reviewer')
     setSuggestions(store.list())
     await api.updateSuggestion(fileId, sg.id, 'accepted', 'reviewer')
   }
-  const onReject = async (sg) => {
+  const onReject = async (sg: Suggestion) => {
     store.reject(sg.id, 'reviewer')
     setSuggestions(store.list())
     await api.updateSuggestion(fileId, sg.id, 'rejected', 'reviewer')
