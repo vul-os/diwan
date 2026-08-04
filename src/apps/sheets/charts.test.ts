@@ -9,11 +9,17 @@ import {
   extractChartData, chartValuesSignature, escapeChartText, chartAccessibleSummary,
   chartsBySheetId, mergeCharts, clampCharts,
   CHART_TYPES, CHART_TYPE_GROUPS, stackModeOf, isHorizontalBar, histogramBins, histogramValues,
+  type ChartSheet, type ChartCellValue,
 } from './charts.js'
+
+// Test fixtures know their own cell shapes; narrows ChartCellEntry['v']'s union
+// (string|number|boolean|ChartCellValue|null|undefined) back to the object form
+// so assertions can reach `.v`/`.m` directly, matching numberFormats.test.ts's asObj.
+const asCellValue = (v: ChartCellValue | string | number | boolean | null | undefined): ChartCellValue => v as ChartCellValue
 
 // Build a FortuneSheet-style workbook with the given cell display values.
 // cells: { "r_c": value }
-function wb(cells = {}) {
+function wb(cells: Record<string, string | number> = {}): ChartSheet[] {
   const celldata = Object.entries(cells).map(([k, v]) => {
     const [r, c] = k.split('_').map(Number)
     return { r, c, v: { v, m: String(v), ct: { fa: 'General', t: typeof v === 'number' ? 'n' : 'g' } } }
@@ -74,7 +80,7 @@ describe('extractChartData', () => {
       '1_0': 'North', '1_1': 10,
       '2_0': 'South', '2_1': 25,
     })
-    const chart = makeChart({ range: 'A1:B3', headerRow: true, headerCol: true, options: { headerRow: true, headerCol: true } })
+    const chart = makeChart({ range: 'A1:B3', options: { headerRow: true, headerCol: true } })
     const out = extractChartData(chart, data[0])
     expect(out.categories).toEqual(['North', 'South'])
     expect(out.series).toHaveLength(1)
@@ -181,7 +187,7 @@ describe('WAVE-61 chart persistence merge', () => {
     data = data.map((s, i) => (i === 0 ? { ...s, id: 'sheet_1' } : s))
     const map = chartsBySheetId(data)
     expect(map.get('sheet_1')).toHaveLength(1)
-    expect(map.get('sheet_1')[0].id).toBe('c1')
+    expect(map.get('sheet_1')![0].id).toBe('c1')
   })
 
   it('mergeCharts re-attaches charts a normalised onChange payload dropped', () => {
@@ -196,8 +202,8 @@ describe('WAVE-61 chart persistence merge', () => {
     // Charts survive; the fresh cell edit (42) survives too.
     expect(getCharts(merged)).toHaveLength(1)
     expect(getCharts(merged)[0].id).toBe('c1')
-    const cell = merged[0].celldata.find((c) => c.r === 1 && c.c === 1)
-    expect(cell.v.v).toBe(42)
+    const cell = merged![0].celldata!.find((c) => c.r === 1 && c.c === 1)
+    expect(asCellValue(cell!.v).v).toBe(42)
   })
 
   it('mergeCharts matches by position when the sheet id changed (index #0 fallback)', () => {
@@ -229,7 +235,7 @@ describe('WAVE-61 chart persistence merge', () => {
     const corrupt = [{ name: 'Sheet1', celldata: [], config: {}, charts: [
       { id: 'c1', type: 'evil', range: 'A1:B2', title: 't', x: NaN, y: Infinity, w: -1, h: 'x' },
     ] }]
-    const fixed = clampCharts(corrupt)
+    const fixed = clampCharts(corrupt as unknown as ChartSheet[])
     const c = getCharts(fixed)[0]
     expect(c.type).toBe('column')
     expect(Number.isFinite(c.x) && Number.isFinite(c.y)).toBe(true)
@@ -272,7 +278,7 @@ describe('WAVE-62 load-path clamp neutralises a poisoned saved/draft document', 
   }]
 
   it('clampCharts coerces every hostile field to safe plain data', () => {
-    const safe = getCharts(clampCharts(poisoned()))[0]
+    const safe = getCharts(clampCharts(poisoned() as unknown as ChartSheet[]))[0]
     expect(safe.type).toBe('column')                 // unknown type → default
     expect(typeof safe.title).toBe('string')         // object title → string
     expect(safe.title).toBe('')                       // ('' — not the object)
@@ -289,7 +295,7 @@ describe('WAVE-62 load-path clamp neutralises a poisoned saved/draft document', 
     for (const badTitle of [{}, [], { toString: () => 'x' }, 42, true, null]) {
       const doc = [{ name: 'Sheet1', id: 's', celldata: [], config: {},
         charts: [{ id: 'c', type: 'bar', range: 'A1:B2', title: badTitle }] }]
-      const t = getCharts(clampCharts(doc))[0].title
+      const t = getCharts(clampCharts(doc as unknown as ChartSheet[]))[0].title
       expect(typeof t).toBe('string')   // ALWAYS a string → safe as a React child
     }
   })
@@ -301,11 +307,11 @@ describe('WAVE-62 load-path clamp neutralises a poisoned saved/draft document', 
     // poison on the next keystroke. The clamp is the load-boundary's job.
     const poison = poisoned()
     const payload = [{ name: 'Sheet1', id: 'sheet_1', celldata: [], config: {} }] // no charts
-    const merged = mergeCharts(payload, chartsBySheetId(poison))
+    const merged = mergeCharts(payload, chartsBySheetId(poison as unknown as ChartSheet[]))
     // mergeCharts re-attaches the SAME (unvalidated) object — hence load must clamp.
     expect(getCharts(merged)[0].title).toEqual(poison[0].charts[0].title)
     // ...whereas clamping the source first yields a render-safe descriptor.
-    const mergedSafe = mergeCharts(payload, chartsBySheetId(clampCharts(poison)))
+    const mergedSafe = mergeCharts(payload, chartsBySheetId(clampCharts(poison as unknown as ChartSheet[])))
     expect(typeof getCharts(mergedSafe)[0].title).toBe('string')
   })
 })
