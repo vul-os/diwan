@@ -9,9 +9,11 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, within } from '@testing-library/react'
 import ConditionalFormatPanel from './ConditionalFormatPanel.jsx'
-import { getColorScales, buildNativeConditionFormat, CS_KINDS } from './colorScales.js'
+import { getColorScales, buildNativeConditionFormat, CS_KINDS, type CSSheet, type ColorScaleRule, type NativeConditionFormat } from './colorScales.js'
 
-function workbook(colorScales) {
+function cast<T>(v: unknown): T { return v as T }
+
+function workbook(colorScales?: ColorScaleRule[]): CSSheet[] {
   return [{
     name: 'Sheet1',
     celldata: [
@@ -27,9 +29,9 @@ function workbook(colorScales) {
 }
 
 /** Render the panel over a mutable workbook; returns a getter for the latest data. */
-function mount(initial = workbook()) {
+function mount(initial: CSSheet[] = workbook()) {
   let data = initial
-  const onColorScaleChange = vi.fn((next) => { data = next })
+  const onColorScaleChange = vi.fn((next: CSSheet[]) => { data = next })
   const view = render(
     <ConditionalFormatPanel
       data={data}
@@ -54,7 +56,7 @@ describe('ConditionalFormatPanel — rule list', () => {
     mount()
     fireEvent.click(screen.getByRole('button', { name: /Add rule/i }))
     const select = screen.getByLabelText(/Format cells if/i)
-    const values = within(select).getAllByRole('option').map((o) => o.value)
+    const values = within(select).getAllByRole('option').map((o) => (o as HTMLOptionElement).value)
     expect(values.sort()).toEqual([...CS_KINDS].sort())
   })
 })
@@ -76,7 +78,7 @@ describe('ConditionalFormatPanel — writes a clamped rule', () => {
     expect(JSON.parse(JSON.stringify(rules[0]))).toEqual(rules[0]) // CRDT-safe
 
     // …and it renders into a safe native paint instruction.
-    const native = buildNativeConditionFormat({ ...get()[0], colorScales: rules })
+    const native = buildNativeConditionFormat({ ...get()[0], colorScales: rules }, undefined)
     expect(native).toHaveLength(1)
     expect(native[0].cellrange).toEqual([{ row: [1, 1], column: [0, 0] }]) // only A2 (15) > 10
   })
@@ -202,10 +204,12 @@ describe('ConditionalFormatPanel — round-trip + delete', () => {
 
   it('lists a legacy native rule from an older file and can remove it', () => {
     let data = workbook()
-    data[0].luckysheet_conditionformat_save = [
+    // A simplified legacy record -- the panel only reads conditionName/format.cellColor
+    // to list it, not the full native shape.
+    data[0].luckysheet_conditionformat_save = cast<NativeConditionFormat[]>([
       { conditionName: 'greaterThan', conditionValue: [5], format: { cellColor: '#ff0000' } },
-    ]
-    const onChange = vi.fn((next) => { data = next })
+    ])
+    const onChange = vi.fn((next: CSSheet[]) => { data = next })
     render(<ConditionalFormatPanel data={data} onClose={() => {}} onChange={onChange} />)
     expect(screen.getByText(/Imported rules/i)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Delete imported rule/i }))
