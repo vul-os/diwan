@@ -18,37 +18,47 @@
 import { describe, it, expect, vi } from 'vitest'
 import { Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
-import { YP2PCollabSession } from '../yP2PSession.js'
+import { YP2PCollabSession, type SessionFabric } from '../yP2PSession.js'
 import { YCollab } from '../../../apps/docs/collabExtension.js'
 import { createYContext, Y, Y_FRAGMENT } from '../ydoc.js'
 import { parseInvite, deriveRoomKeys, openFrame } from '../p2pRoom.js'
+import type { YContext } from '../ydoc.js'
 
 vi.setConfig({ testTimeout: 30_000 })
 
 // A tiny in-process mesh fabric: every peer connected to it receives every
 // frame any member broadcasts. `tap` records raw wire frames for the opacity
 // assertion (this is exactly what a relay / passive eavesdropper would see).
+//
+// Not declared `implements SessionFabric`: it really does emit exactly the
+// 'state'/'message' shape the interface describes (see yP2PSession.ts's own
+// comment on the same point for FabricClient), but EventTarget's inherited
+// addEventListener is typed generically, so callers cast at the call site
+// instead — same as production does for the real FabricClient.
 class FakeFabric extends EventTarget {
-  constructor(wireLog) {
+  peers: Set<FakeFabric>
+  id: string
+  wireLog?: string[]
+  constructor(wireLog?: string[]) {
     super()
     this.peers = new Set()
     this.id = Math.random().toString(36).slice(2)
     this.wireLog = wireLog
   }
-  connect(other) { this.peers.add(other); other.peers.add(this) }
+  connect(other: FakeFabric) { this.peers.add(other); other.peers.add(this) }
   disconnect() {
     for (const p of this.peers) p.peers.delete(this)
     this.peers.clear()
   }
   async join() {}
   leave() { this.disconnect() }
-  send(frame) {
+  send(frame: string) {
     if (this.wireLog) this.wireLog.push(frame)
     for (const p of this.peers) {
       p.dispatchEvent(new CustomEvent('message', { detail: { from: this.id, data: frame } }))
     }
   }
-  sendTo(_peerId, frame) { this.send(frame) }
+  sendTo(_peerId: string, frame: string) { this.send(frame) }
 }
 
 const INVITE = 'https://office.test/docs/doc1'
@@ -60,7 +70,7 @@ const INVITE = 'https://office.test/docs/doc1'
 const settle = () => new Promise((r) => setTimeout(r, 60))
 
 /** Poll `ok()` until true; fail with `label` in the message if it never is. */
-async function until(ok, label, timeout = 5000) {
+async function until(ok: () => unknown, label: string, timeout = 5000): Promise<void> {
   const deadline = Date.now() + timeout
   for (;;) {
     let ready = false
@@ -74,11 +84,27 @@ async function until(ok, label, timeout = 5000) {
 }
 
 /** Structural equality of two editor JSON docs. */
-const sameDoc = (x, y) => JSON.stringify(x) === JSON.stringify(y)
+const sameDoc = (x: unknown, y: unknown) => JSON.stringify(x) === JSON.stringify(y)
 
-function makePeer(fabric) {
+// FakeFabric really does emit exactly the SessionFabric event shape (see the
+// class comment above) — the cast is only needed because EventTarget's
+// inherited addEventListener is typed generically, same as production's cast
+// of the real FabricClient in yP2PSession.ts.
+const asFabric = (f: FakeFabric): SessionFabric => f as unknown as SessionFabric
+
+type Peer = {
+  ydoc: InstanceType<typeof Y.Doc>
+  ctx: YContext
+  editor: Editor
+  fabric: FakeFabric
+  session?: YP2PCollabSession
+}
+
+function makePeer(fabric: FakeFabric): Peer {
   const ydoc = new Y.Doc()
-  const ctx = createYContext(null, ydoc)
+  // schema is unknown until the editor below is constructed; assigned onto ctx
+  // immediately after, before anything reads it — same as the runtime always did.
+  const ctx: YContext = createYContext(null as unknown as YContext['schema'], ydoc)
   const element = document.createElement('div')
   document.body.appendChild(element)
   const editor = new Editor({
@@ -92,8 +118,8 @@ function makePeer(fabric) {
   return { ydoc, ctx, editor, fabric }
 }
 
-function plainText(editor) {
-  return editor.getJSON().content
+function plainText(editor: Editor): string {
+  return editor.getJSON().content!
     .map((n) => (n.content || []).map((t) => t.text || '').join(''))
     .join('\n')
 }
@@ -108,17 +134,17 @@ describe('YP2PCollabSession — three peers converge (mesh, no central server)',
 
     const a = makePeer(fa)
     const { session: aSession, rwLink } = await YP2PCollabSession.create({
-      peerId: 'a', fileId: 'doc1', baseUrl: INVITE, ctx: a.ctx, fabric: fa,
+      peerId: 'a', fileId: 'doc1', baseUrl: INVITE, ctx: a.ctx, fabric: asFabric(fa),
     })
     a.session = aSession
 
     const b = makePeer(fb)
     b.session = await YP2PCollabSession.fromInvite({
-      inviteLink: rwLink, peerId: 'b', fileId: 'doc1', ctx: b.ctx, fabric: fb,
+      inviteLink: rwLink, peerId: 'b', fileId: 'doc1', ctx: b.ctx, fabric: asFabric(fb),
     })
     const c = makePeer(fc)
     c.session = await YP2PCollabSession.fromInvite({
-      inviteLink: rwLink, peerId: 'c', fileId: 'doc1', ctx: c.ctx, fabric: fc,
+      inviteLink: rwLink, peerId: 'c', fileId: 'doc1', ctx: c.ctx, fabric: asFabric(fc),
     })
 
     await a.session.join(); await b.session.join(); await c.session.join()
@@ -161,7 +187,7 @@ describe('YP2PCollabSession — late joiner catches up with no server', () => {
 
     const a = makePeer(fa)
     const { session: aSession, rwLink } = await YP2PCollabSession.create({
-      peerId: 'a', fileId: 'doc1', baseUrl: INVITE, ctx: a.ctx, fabric: fa,
+      peerId: 'a', fileId: 'doc1', baseUrl: INVITE, ctx: a.ctx, fabric: asFabric(fa),
     })
     a.session = aSession
     await a.session.join()
@@ -175,7 +201,7 @@ describe('YP2PCollabSession — late joiner catches up with no server', () => {
     // bootstrap from.
     const b = makePeer(fb)
     b.session = await YP2PCollabSession.fromInvite({
-      inviteLink: rwLink, peerId: 'b', fileId: 'doc1', ctx: b.ctx, fabric: fb,
+      inviteLink: rwLink, peerId: 'b', fileId: 'doc1', ctx: b.ctx, fabric: asFabric(fb),
     })
     expect(plainText(b.editor)).toBe('')
 
@@ -193,19 +219,19 @@ describe('YP2PCollabSession — late joiner catches up with no server', () => {
 
 describe('YP2PCollabSession — the wire is content-blind (E2E)', () => {
   it('a relay/eavesdropper who captures frames cannot recover the document text', async () => {
-    const wire = []               // everything that crossed the "relay"
+    const wire: string[] = []     // everything that crossed the "relay"
     const fa = new FakeFabric(wire)
     const fb = new FakeFabric(wire)
     fa.connect(fb)
 
     const a = makePeer(fa)
     const { session: aSession, rwLink } = await YP2PCollabSession.create({
-      peerId: 'a', fileId: 'doc1', baseUrl: INVITE, ctx: a.ctx, fabric: fa,
+      peerId: 'a', fileId: 'doc1', baseUrl: INVITE, ctx: a.ctx, fabric: asFabric(fa),
     })
     a.session = aSession
     const b = makePeer(fb)
     b.session = await YP2PCollabSession.fromInvite({
-      inviteLink: rwLink, peerId: 'b', fileId: 'doc1', ctx: b.ctx, fabric: fb,
+      inviteLink: rwLink, peerId: 'b', fileId: 'doc1', ctx: b.ctx, fabric: asFabric(fb),
     })
     await a.session.join(); await b.session.join()
     await settle()
@@ -230,7 +256,7 @@ describe('YP2PCollabSession — the wire is content-blind (E2E)', () => {
     // which never crosses the wire. Deriving a DIFFERENT key and trying to open a
     // captured frame fails closed.
     const wrongKey = await deriveRoomKeys(new Uint8Array(32).fill(7))
-    const attackerRoom = { encKey: wrongKey.encKey, macKeyRw: null }
+    const attackerRoom = { encKey: wrongKey.encKey, macKeyRw: null, roomId: wrongKey.roomId }
     let opened = false
     for (const frame of wire) {
       try { await openFrame(attackerRoom, frame); opened = true } catch { /* AEAD fail — expected */ }
