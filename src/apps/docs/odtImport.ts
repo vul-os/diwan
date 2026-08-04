@@ -21,12 +21,18 @@
 
 import { safeLoadZip, entryText, entryDataUri, parseXmlSafe, MAX_HTML_BYTES, ImportError } from '../../lib/importBounds.js'
 
-const RASTER_MIME = {
+const RASTER_MIME: Record<string, string> = {
   png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
   webp: 'image/webp', bmp: 'image/bmp',
 }
 
-function escapeText(s) {
+interface RunStyle {
+  bold: boolean
+  italic: boolean
+  underline: boolean
+}
+
+function escapeText(s: unknown): string {
   return String(s ?? '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
@@ -35,7 +41,7 @@ function escapeText(s) {
 // Only http(s)/mailto/relative anchors survive as links (defence-in-depth; the
 // downstream sanitiser also gates href). javascript:/data: etc. become plain
 // text (we drop the <a> wrapper).
-function hrefSafe(href) {
+function hrefSafe(href: unknown): string | null {
   if (typeof href !== 'string') return null
   const s = href.trim()
   if (!s) return null
@@ -47,8 +53,8 @@ function hrefSafe(href) {
 // Build a lookup of automatic style-name → { bold, italic, underline } from the
 // <office:automatic-styles> and <office:styles> blocks. ODF puts run formatting
 // in style:text-properties (fo:font-weight / fo:font-style / style:text-underline-*).
-function buildStyleMap(doc) {
-  const map = new Map()
+function buildStyleMap(doc: Document): Map<string, RunStyle> {
+  const map = new Map<string, RunStyle>()
   const styles = doc.getElementsByTagName('style:style')
   for (const st of Array.from(styles)) {
     const name = st.getAttribute('style:name')
@@ -67,7 +73,7 @@ function buildStyleMap(doc) {
   return map
 }
 
-export async function odtToHtml(arrayBuffer, filename = 'file.odt') {
+export async function odtToHtml(arrayBuffer: ArrayBuffer | Uint8Array, filename = 'file.odt'): Promise<string> {
   const zip = await safeLoadZip(arrayBuffer, filename)
   const contentXml = await entryText(zip, 'content.xml')
   if (!contentXml) throw new ImportError(`${filename} is not a valid ODT (no content.xml).`)
@@ -75,7 +81,7 @@ export async function odtToHtml(arrayBuffer, filename = 'file.odt') {
   const styleMap = buildStyleMap(doc)
 
   // Resolve a Pictures/ image href → bounded raster data: URI (or null).
-  async function imageDataUri(href) {
+  async function imageDataUri(href: unknown): Promise<string | null> {
     if (typeof href !== 'string' || !href) return null
     // ODF hrefs are archive-relative, often "Pictures/xxxx.png". Strip a leading
     // "./" and reject anything that isn't a plain in-archive path.
@@ -92,9 +98,9 @@ export async function odtToHtml(arrayBuffer, filename = 'file.odt') {
   const body = doc.getElementsByTagName('office:text')[0]
   if (!body) return '<p></p>'
 
-  const out = []
+  const out: string[] = []
   let budget = MAX_HTML_BYTES
-  const push = (s) => {
+  const push = (s: string) => {
     budget -= s.length
     if (budget < 0) throw new ImportError(`${filename} produced too much content to import.`)
     out.push(s)
@@ -102,7 +108,7 @@ export async function odtToHtml(arrayBuffer, filename = 'file.odt') {
 
   // Inline serialiser: walk a text-container's children, honouring text:span
   // formatting, text:a links, line breaks, tabs, and inline images.
-  async function inline(node) {
+  async function inline(node: Node): Promise<string> {
     let html = ''
     for (const child of Array.from(node.childNodes)) {
       if (child.nodeType === 3) {           // text node
@@ -110,30 +116,31 @@ export async function odtToHtml(arrayBuffer, filename = 'file.odt') {
         continue
       }
       if (child.nodeType !== 1) continue
-      const ln = child.localName
+      const el = child as Element
+      const ln = el.localName
       if (ln === 'span') {
-        const styleName = child.getAttribute('text:style-name')
-        const fmt = styleMap.get(styleName) || {}
-        let inner = await inline(child)
+        const styleName = el.getAttribute('text:style-name') || ''
+        const fmt = styleMap.get(styleName) || ({} as Partial<RunStyle>)
+        let inner = await inline(el)
         if (fmt.bold) inner = `<strong>${inner}</strong>`
         if (fmt.italic) inner = `<em>${inner}</em>`
         if (fmt.underline) inner = `<u>${inner}</u>`
         html += inner
       } else if (ln === 'a') {
-        const href = hrefSafe(child.getAttribute('xlink:href'))
-        const inner = await inline(child)
+        const href = hrefSafe(el.getAttribute('xlink:href'))
+        const inner = await inline(el)
         html += href ? `<a href="${escapeText(href)}">${inner}</a>` : inner
       } else if (ln === 'line-break') {
         html += '<br>'
       } else if (ln === 'tab') {
         html += ' '
       } else if (ln === 's') {                 // <text:s text:c="n"> = n spaces
-        const c = parseInt(child.getAttribute('text:c') || '1', 10)
+        const c = parseInt(el.getAttribute('text:c') || '1', 10)
         html += ' '.repeat(Math.min(Number.isFinite(c) ? c : 1, 64))
       } else if (ln === 'frame' || ln === 'image') {
-        html += await imageFromFrame(child)
+        html += await imageFromFrame(el)
       } else if (ln) {
-        html += await inline(child)            // unknown inline wrapper → flatten
+        html += await inline(el)            // unknown inline wrapper → flatten
       }
     }
     return html
@@ -141,7 +148,7 @@ export async function odtToHtml(arrayBuffer, filename = 'file.odt') {
 
   // A draw:frame usually wraps a draw:image (and optionally a svg:desc). Extract
   // the first raster image; drop OLE objects / applets / plugins entirely.
-  async function imageFromFrame(frame) {
+  async function imageFromFrame(frame: Element): Promise<string> {
     const img = frame.localName === 'image'
       ? frame
       : frame.getElementsByTagName('draw:image')[0]
@@ -151,7 +158,7 @@ export async function odtToHtml(arrayBuffer, filename = 'file.odt') {
     return uri ? `<img src="${escapeText(uri)}" alt="">` : ''
   }
 
-  async function block(node) {
+  async function block(node: Element): Promise<void> {
     const ln = node.localName
     if (ln === 'h') {
       const lvlRaw = parseInt(node.getAttribute('text:outline-level') || '1', 10)
@@ -168,23 +175,24 @@ export async function odtToHtml(arrayBuffer, filename = 'file.odt') {
     } else if (ln) {
       // Section / frame / other container → recurse into its blocks.
       for (const child of Array.from(node.childNodes)) {
-        if (child.nodeType === 1) await block(child)
+        if (child.nodeType === 1) await block(child as Element)
       }
     }
   }
 
-  async function listHtml(listNode, ordered = false) {
+  async function listHtml(listNode: Element, ordered = false): Promise<string> {
     // ODF doesn't tag ordered vs bullet on the list element itself (it's on the
     // referenced list-style); best-effort: honour a style hint if present, else
     // default to unordered. Nested lists recurse.
-    const items = []
+    const items: string[] = []
     for (const item of Array.from(listNode.childNodes)) {
-      if (item.nodeType !== 1 || item.localName !== 'list-item') continue
+      if (item.nodeType !== 1 || (item as Element).localName !== 'list-item') continue
       let inner = ''
       for (const c of Array.from(item.childNodes)) {
         if (c.nodeType !== 1) continue
-        if (c.localName === 'list') inner += await listHtml(c, ordered)
-        else if (c.localName === 'h' || c.localName === 'p') inner += `<p>${await inline(c)}</p>`
+        const cEl = c as Element
+        if (cEl.localName === 'list') inner += await listHtml(cEl, ordered)
+        else if (cEl.localName === 'h' || cEl.localName === 'p') inner += `<p>${await inline(cEl)}</p>`
       }
       items.push(`<li>${inner}</li>`)
     }
@@ -192,17 +200,17 @@ export async function odtToHtml(arrayBuffer, filename = 'file.odt') {
     return `<${tag}>${items.join('')}</${tag}>`
   }
 
-  async function tableHtml(tableNode) {
-    const rows = []
+  async function tableHtml(tableNode: Element): Promise<string> {
+    const rows: string[] = []
     for (const row of Array.from(tableNode.getElementsByTagName('table:table-row'))) {
-      const cells = []
+      const cells: string[] = []
       for (const cell of Array.from(row.childNodes)) {
-        if (cell.nodeType !== 1 || cell.localName !== 'table-cell') continue
+        if (cell.nodeType !== 1 || (cell as Element).localName !== 'table-cell') continue
         let inner = ''
         for (const c of Array.from(cell.childNodes)) {
           if (c.nodeType === 1) inner += await inline(c)
         }
-        const span = parseInt(cell.getAttribute('table:number-columns-spanned') || '1', 10)
+        const span = parseInt((cell as Element).getAttribute('table:number-columns-spanned') || '1', 10)
         const colspan = span > 1 ? ` colspan="${Math.min(span, 100)}"` : ''
         cells.push(`<td${colspan}>${inner}</td>`)
       }
@@ -212,7 +220,7 @@ export async function odtToHtml(arrayBuffer, filename = 'file.odt') {
   }
 
   for (const node of Array.from(body.childNodes)) {
-    if (node.nodeType === 1) await block(node)
+    if (node.nodeType === 1) await block(node as Element)
   }
   const html = out.join('\n')
   return html || '<p></p>'
