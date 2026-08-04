@@ -14,7 +14,13 @@
  * (the card's title is the accessible name).
  */
 
-const TINT = {
+export type DocThumbType = 'doc' | 'sheet' | 'slide' | 'pdf' | 'whiteboard'
+
+interface GlyphProps {
+  tint: string
+}
+
+const TINT: Record<DocThumbType, string> = {
   doc:   'var(--app-docs)',
   sheet: 'var(--app-sheets)',
   slide: 'var(--app-slides)',
@@ -22,7 +28,7 @@ const TINT = {
   whiteboard: 'var(--app-board)',
 }
 
-function DocGlyph({ tint }) {
+function DocGlyph({ tint }: GlyphProps) {
   // Ruled "paper" with a heading bar — a document at a glance.
   return (
     <svg viewBox="0 0 96 72" className="w-full h-full" preserveAspectRatio="xMidYMid meet">
@@ -37,7 +43,7 @@ function DocGlyph({ tint }) {
   )
 }
 
-function SheetGlyph({ tint }) {
+function SheetGlyph({ tint }: GlyphProps) {
   // A small grid with a tinted header row.
   const cols = [30, 44, 58]
   const rows = [24, 32, 40, 48]
@@ -56,7 +62,7 @@ function SheetGlyph({ tint }) {
   )
 }
 
-function SlideGlyph({ tint }) {
+function SlideGlyph({ tint }: GlyphProps) {
   // A 16:9 stage with a title + bullet lines.
   return (
     <svg viewBox="0 0 96 72" className="w-full h-full" preserveAspectRatio="xMidYMid meet">
@@ -70,7 +76,7 @@ function SlideGlyph({ tint }) {
   )
 }
 
-function PdfGlyph({ tint }) {
+function PdfGlyph({ tint }: GlyphProps) {
   return (
     <svg viewBox="0 0 96 72" className="w-full h-full" preserveAspectRatio="xMidYMid meet">
       <rect x="28" y="8" width="40" height="56" rx="3" fill="var(--bg-elevated)" stroke="var(--line-strong)" />
@@ -84,7 +90,7 @@ function PdfGlyph({ tint }) {
   )
 }
 
-function WhiteboardGlyph({ tint }) {
+function WhiteboardGlyph({ tint }: GlyphProps) {
   // An infinite canvas: a few loose shapes + a connector, sketch-style.
   return (
     <svg viewBox="0 0 96 72" className="w-full h-full" preserveAspectRatio="xMidYMid meet">
@@ -98,9 +104,15 @@ function WhiteboardGlyph({ tint }) {
   )
 }
 
-const GLYPH = { doc: DocGlyph, sheet: SheetGlyph, slide: SlideGlyph, pdf: PdfGlyph, whiteboard: WhiteboardGlyph }
+const GLYPH: Record<DocThumbType, (props: GlyphProps) => ReturnType<typeof DocGlyph>> =
+  { doc: DocGlyph, sheet: SheetGlyph, slide: SlideGlyph, pdf: PdfGlyph, whiteboard: WhiteboardGlyph }
 
-export default function DocThumb({ type = 'doc', className = '' }) {
+interface DocThumbProps {
+  type?: DocThumbType
+  className?: string
+}
+
+export default function DocThumb({ type = 'doc', className = '' }: DocThumbProps) {
   const Glyph = GLYPH[type] || DocGlyph
   const tint = TINT[type] || TINT.doc
   return (
