@@ -269,7 +269,16 @@ const SIDEBAR_TABS: { id: 'slides' | 'transitions'; icon: typeof FileText; label
   { id: 'transitions', icon: Zap, label: 'Transitions' },
 ]
 
-export default function SlidesEditor() {
+export interface SlidesEditorProps {
+  apiBase?: string
+  onSignOut?: () => void
+  onNotification?: (title: string, body: string, priority?: string) => void
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- props accepted
+// for interface parity with <SlidesApp/>'s callers; this editor does not yet
+// use them (pre-existing — noted, not fixed, matching PDFEditor's same gap).
+export default function SlidesEditor(_props: SlidesEditorProps) {
   const { id } = useParams()
   const navigate = useNavigate()
   const { files, updateFile } = useFilesStore()
