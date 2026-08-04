@@ -83,13 +83,20 @@ const FILES = {
   'LICENSE-MIT': { sha256: 'ee23c17b75f8964f2c4e39555ebb0c38a6141265ff05f1db15942811bbf1bf6d', bytes: 1075 },
 }
 
-async function readJson(p) {
-  return JSON.parse(await readFile(p, 'utf8'))
+async function readJson<T = unknown>(p: string): Promise<T> {
+  return JSON.parse(await readFile(p, 'utf8')) as T
 }
+
+type PackageJson = {
+  dependencies?: Record<string, string>
+  devDependencies?: Record<string, string>
+}
+type LockEntry = { version?: string, resolved?: string, integrity?: string, link?: boolean }
+type PackageLock = { packages?: Record<string, LockEntry> }
 
 describe('@vul-os/kotva-sync provenance', () => {
   it('is an exactly-pinned registry dependency, not a vendored file: path', async () => {
-    const pkg = await readJson(join(REPO, 'package.json'))
+    const pkg = await readJson<PackageJson>(join(REPO, 'package.json'))
     const spec = pkg.dependencies?.[PKG_NAME]
 
     expect(spec, `${PKG_NAME} must be a runtime dependency of the app`).toBe(PKG_VERSION)
@@ -104,23 +111,24 @@ describe('@vul-os/kotva-sync provenance', () => {
   })
 
   it('the lockfile pins the exact published tarball by sha512', async () => {
-    const lock = await readJson(join(REPO, 'package-lock.json'))
+    const lock = await readJson<PackageLock>(join(REPO, 'package-lock.json'))
     const entry = lock.packages?.[`node_modules/${PKG_NAME}`]
 
     expect(entry, `package-lock.json must contain node_modules/${PKG_NAME}`).toBeTruthy()
-    expect(entry.version).toBe(PKG_VERSION)
-    expect(entry.resolved).toBe(
+    expect(entry!.version).toBe(PKG_VERSION)
+    expect(entry!.resolved).toBe(
       `https://registry.npmjs.org/${PKG_NAME}/-/kotva-sync-${PKG_VERSION}.tgz`,
     )
     expect(
-      entry.integrity,
+      entry!.integrity,
       'the lockfile no longer pins the reviewed tarball — if this is a deliberate upgrade, ' +
       're-record TARBALL_INTEGRITY and every digest in FILES from the new install',
     ).toBe(TARBALL_INTEGRITY)
 
     // No `file:`/`link:` entry may survive in the lockfile either: a stale one
     // would keep a deleted vendored tree resolvable on a fresh `npm ci`.
-    const links = Object.keys(lock.packages ?? {}).filter((k) => lock.packages[k].link === true)
+    const packages = lock.packages ?? {}
+    const links = Object.keys(packages).filter((k) => packages[k].link === true)
     expect(links, 'lockfile still contains linked local packages').toEqual([])
   })
 
