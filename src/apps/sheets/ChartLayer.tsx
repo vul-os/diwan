@@ -1,5 +1,5 @@
 /**
- * src/apps/sheets/ChartLayer.jsx  (WAVE-54)
+ * src/apps/sheets/ChartLayer.tsx  (WAVE-54)
  *
  * Floating chart overlay for Sheets. Renders every chart in `sheet.charts` as an
  * absolutely-positioned card over the grid (like Google Sheets), each card
@@ -25,17 +25,30 @@ import { Pencil, Trash2, GripVertical } from 'lucide-react'
 import {
   getCharts, chartValuesSignature, extractChartData, chartAccessibleSummary,
   deleteChart, updateChart,
+  type Chart, type ChartSheet,
 } from './charts.js'
 import { ChartSvg } from './ChartSvg.jsx'
+
+interface Geom { x: number; y: number; w: number; h: number }
+
+interface ChartCardProps {
+  chart: Chart
+  sheet: ChartSheet | null | undefined
+  selected: boolean
+  onSelect: (id: string) => void
+  onEdit: (id: string) => void
+  onDelete: (id: string) => void
+  onCommitGeom: (id: string, geom: Geom) => void
+}
 
 const HEADER_H = 26
 
 const ChartCard = memo(function ChartCard({
   chart, sheet, selected, onSelect, onEdit, onDelete, onCommitGeom,
-}) {
-  const cardRef = useRef(null)
-  const [geom, setGeom] = useState({ x: chart.x, y: chart.y, w: chart.w, h: chart.h })
-  const dragRef = useRef(null)
+}: ChartCardProps) {
+  const cardRef = useRef<HTMLDivElement>(null)
+  const [geom, setGeom] = useState<Geom>({ x: chart.x, y: chart.y, w: chart.w, h: chart.h })
+  const dragRef = useRef<{ mode: 'move' | 'resize' } | null>(null)
   const rafRef = useRef(0)
 
   // Keep local geom in sync when the descriptor changes from outside (CRDT peer).
@@ -54,13 +67,13 @@ const ChartCard = memo(function ChartCard({
   const titleId = `cht-title-${chart.id}`
   const descId  = `cht-desc-${chart.id}`
 
-  const startDrag = useCallback((e, mode) => {
+  const startDrag = useCallback((e: React.PointerEvent, mode: 'move' | 'resize') => {
     e.preventDefault(); e.stopPropagation()
     onSelect(chart.id)
     const startX = e.clientX, startY = e.clientY
     const base = { ...geom }
     dragRef.current = { mode }
-    const onMove = (ev) => {
+    const onMove = (ev: PointerEvent) => {
       const dx = ev.clientX - startX, dy = ev.clientY - startY
       cancelAnimationFrame(rafRef.current)
       rafRef.current = requestAnimationFrame(() => {
@@ -84,7 +97,7 @@ const ChartCard = memo(function ChartCard({
     window.addEventListener('pointerup', onUp)
   }, [chart.id, geom, onSelect, onCommitGeom])
 
-  const onKeyDown = useCallback((e) => {
+  const onKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Delete' || e.key === 'Backspace') {
       e.preventDefault(); onDelete(chart.id); return
     }
@@ -187,20 +200,28 @@ const ChartCard = memo(function ChartCard({
   )
 })
 
+export interface ChartLayerProps {
+  data: ChartSheet[]
+  onChange: (data: ChartSheet[]) => void
+  selectedId?: string | null
+  onSelect: (id: string) => void
+  onEdit: (id: string) => void
+}
+
 /**
  * ChartLayer — the overlay. Positioned absolutely inside the workbook wrapper
  * (which is `position: relative`). pointer-events:none on the container so grid
  * interaction passes through; each card re-enables pointer-events for itself.
  */
-export default function ChartLayer({ data, onChange, selectedId, onSelect, onEdit }) {
+export default function ChartLayer({ data, onChange, selectedId, onSelect, onEdit }: ChartLayerProps) {
   const sheet = data?.[0]
   const charts = useMemo(() => getCharts(data), [data])
 
-  const handleDelete = useCallback((id) => {
+  const handleDelete = useCallback((id: string) => {
     onChange(deleteChart(data, id))
   }, [data, onChange])
 
-  const handleCommitGeom = useCallback((id, geom) => {
+  const handleCommitGeom = useCallback((id: string, geom: Geom) => {
     onChange(updateChart(data, id, { x: geom.x, y: geom.y, w: geom.w, h: geom.h }))
   }, [data, onChange])
 
