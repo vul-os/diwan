@@ -43,20 +43,21 @@
 import { describe, it, expect, beforeAll } from 'vitest'
 import { loadSync } from '../kotvaSync.js'
 import { ordKeyBetween } from '../tree.js'
+import type { SyncEngine, HlcClock } from '@vul-os/kotva-sync'
 
-let sync
+let sync: Awaited<ReturnType<typeof loadSync>>
 
 beforeAll(async () => { sync = await loadSync() })
 
 const NS = 'slides'
 const ROOT = 'root'
 
-function clockFor(seed) {
+function clockFor(seed: number): HlcClock {
   return new sync.HlcClock(new Uint8Array(32).fill(seed))
 }
 
 /** A slide reorder/insert: SYNC.md §4.8 `tree-move`, ordKey as the ordering key. */
-function moveOp(clock, node, ordKey, parent = ROOT) {
+function moveOp(clock: HlcClock, node: string, ordKey: string, parent = ROOT): Uint8Array {
   return sync.encode_op(JSON.stringify({
     kind: 8,
     ns: NS,
@@ -68,7 +69,7 @@ function moveOp(clock, node, ordKey, parent = ROOT) {
 }
 
 /** A permanent slide delete: §4.5 death certificate. */
-function deleteOp(clock, node) {
+function deleteOp(clock: HlcClock, node: string): Uint8Array {
   return sync.encode_op(JSON.stringify({
     kind: 4,
     ns: NS,
@@ -79,7 +80,7 @@ function deleteOp(clock, node) {
 }
 
 /** Slide content: an LWW register per (slide, object|scalar). */
-function contentOp(clock, node, field, jsonValue) {
+function contentOp(clock: HlcClock, node: string, field: string, jsonValue: unknown): Uint8Array {
   return sync.encode_op(JSON.stringify({
     kind: 3,
     ns: NS,
@@ -90,20 +91,23 @@ function contentOp(clock, node, field, jsonValue) {
   }))
 }
 
-function ingest(engine, ops) {
+function ingest(engine: SyncEngine, ops: Uint8Array[]): void {
   for (const op of ops) engine.ingest_ambient_authenticated(op, Date.now())
 }
 
+/** A tree edge, as returned by SyncEngine#tree(): [node, parent, ordKey]. */
+type TreeEdge = [string, string, string]
+
 /** The visible slide order: live children of root, sorted by (ordKey, node). */
-function orderedSlides(engine) {
-  const tree = JSON.parse(engine.tree())
+function orderedSlides(engine: SyncEngine): string[] {
+  const tree = JSON.parse(engine.tree()) as { edges?: TreeEdge[] }
   return (tree.edges || [])
-    .filter(([node, parent]) => parent === ROOT && !JSON.parse(engine.death_state(node)).deleted)
+    .filter(([node, parent]) => parent === ROOT && !(JSON.parse(engine.death_state(node)) as { deleted: boolean }).deleted)
     .sort((a, b) => (a[2] !== b[2] ? (a[2] < b[2] ? -1 : 1) : (a[0] < b[0] ? -1 : 1)))
     .map(([node]) => node)
 }
 
-function hex(bytes) {
+function hex(bytes: Uint8Array): string {
   return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
