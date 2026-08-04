@@ -15,7 +15,14 @@ import {
   buildRegulation, validationSummary, regulationToForm,
   clampRegulation, clampDataValidation,
   applyValidation, listValidationRules,
+  type DVSheet,
 } from './dataValidation.js'
+
+// parseRange (ConditionalFormatPanel.jsx, not yet converted) infers a `number[]`
+// row/column shape rather than the `[number, number]` tuple applyValidation's
+// signature declares — a local, typed adapter over the same runtime contract.
+const parseRangeTyped = (text: string): { row: [number, number]; column: [number, number] }[] | undefined =>
+  parseRange(text) as { row: [number, number]; column: [number, number] }[] | undefined
 
 describe('validationRange — the dropdown source-range gate', () => {
   it('accepts A1 ranges, $-anchors and a sheet qualifier', () => {
@@ -50,7 +57,7 @@ describe('buildRegulation — dropdown from a range (incl. cross-sheet)', () => 
     expect(validationSummary(reg)).toBe('Dropdown · from Sheet2!A1:A5')
   })
   it('multi-select sets the native type2 flag', () => {
-    expect(buildRegulation({ kind: 'dropdownRange', sourceRange: 'A1:A5', allowMulti: true }).type2).toBe('true')
+    expect(buildRegulation({ kind: 'dropdownRange', sourceRange: 'A1:A5', allowMulti: true })!.type2).toBe('true')
   })
   it('a junk source range is REFUSED (no rule written)', () => {
     expect(buildRegulation({ kind: 'dropdownRange', sourceRange: 'not a range' })).toBeNull()
@@ -66,7 +73,7 @@ describe('buildRegulation — checkbox', () => {
   })
   it('accepts custom checked/unchecked values', () => {
     const reg = buildRegulation({ kind: 'checkbox', checkedValue: 'Yes', uncheckedValue: 'No' })
-    expect(reg.value1).toBe('Yes,No')
+    expect(reg!.value1).toBe('Yes,No')
     expect(validationSummary(reg)).toBe('Checkbox · Yes / No')
   })
   it('refuses two identical values (a checkbox with one state is not a checkbox)', () => {
@@ -83,7 +90,7 @@ describe('buildRegulation — date', () => {
   it('between needs both dates', () => {
     expect(buildRegulation({ kind: 'date', condition: 'between', value1: '2026-01-01' })).toBeNull()
     const reg = buildRegulation({ kind: 'date', condition: 'between', value1: '2026-01-01', value2: '2026-12-31' })
-    expect(reg.value2).toBe('2026-12-31')
+    expect(reg!.value2).toBe('2026-12-31')
     expect(dateConditionArity('between')).toBe(2)
   })
   it('refuses an invalid date or an unknown condition', () => {
@@ -97,14 +104,14 @@ describe('buildRegulation — text content + text length', () => {
     const reg = buildRegulation({ kind: 'text', condition: 'include', value1: 'INV-' })
     expect(reg).toMatchObject({ type: 'text_content', type2: 'include', value1: 'INV-' })
     expect(validationSummary(reg)).toBe('Text contains “INV-”')
-    expect(buildRegulation({ kind: 'text', condition: 'exclude', value1: 'x' }).type2).toBe('exclude')
-    expect(buildRegulation({ kind: 'text', condition: 'equal', value1: 'x' }).type2).toBe('equal')
+    expect(buildRegulation({ kind: 'text', condition: 'exclude', value1: 'x' })!.type2).toBe('exclude')
+    expect(buildRegulation({ kind: 'text', condition: 'equal', value1: 'x' })!.type2).toBe('equal')
   })
   it('text length takes whole numbers only', () => {
     const reg = buildRegulation({ kind: 'textLength', condition: 'lessThanOrEqualTo', value1: '10' })
     expect(reg).toMatchObject({ type: 'text_length', type2: 'lessThanOrEqualTo', value1: '10' })
     expect(validationSummary(reg)).toBe('Text length less than or equal 10')
-    expect(buildRegulation({ kind: 'textLength', condition: 'between', value1: '2', value2: '8' }).value2).toBe('8')
+    expect(buildRegulation({ kind: 'textLength', condition: 'between', value1: '2', value2: '8' })!.value2).toBe('8')
     expect(buildRegulation({ kind: 'textLength', condition: 'equal', value1: '3.5' })).toBeNull()
     expect(buildRegulation({ kind: 'textLength', condition: 'between', value1: '2' })).toBeNull()
   })
@@ -135,7 +142,7 @@ describe('regulationToForm — round-trip back into the panel', () => {
       const reg = buildRegulation(form)
       expect(reg, form.kind).toBeTruthy()
       const back = regulationToForm(reg)
-      expect(back.kind, form.kind).toBe(form.kind)
+      expect(back!.kind, form.kind).toBe(form.kind)
       // A rebuild from the round-tripped form is byte-identical: the panel can
       // re-open a saved rule without mutating it.
       expect(buildRegulation(back)).toEqual(reg)
@@ -145,9 +152,9 @@ describe('regulationToForm — round-trip back into the panel', () => {
   })
   it('keeps the hint (bounded) and the reject-invalid flag', () => {
     const reg = buildRegulation({ kind: 'number', condition: 'equal', value1: '1', rejectInvalid: false, hint: 'Enter 1' })
-    expect(reg.hintShow).toBe(true)
-    expect(reg.hintValue).toBe('Enter 1')
-    expect(reg.prohibitInput).toBe(false)
+    expect(reg!.hintShow).toBe(true)
+    expect(reg!.hintValue).toBe('Enter 1')
+    expect(reg!.prohibitInput).toBe(false)
     expect(regulationToForm(reg)).toMatchObject({ hint: 'Enter 1', rejectInvalid: false })
   })
 })
@@ -191,19 +198,19 @@ describe('clampRegulation — fail-closed ingress clamp', () => {
       hintValue: 'x'.repeat(5000),
       prohibitInput: 'yes-please', // not a boolean
     })
-    expect(reg.value1).toBe('abc')                       // control chars stripped
-    expect(reg.hintValue.length).toBeLessThanOrEqual(200) // hint is rendered — bounded
-    expect(reg.prohibitInput).toBe(true)                 // coerced to a real boolean
+    expect(reg!.value1).toBe('abc')                       // control chars stripped
+    expect(reg!.hintValue.length).toBeLessThanOrEqual(200) // hint is rendered — bounded
+    expect(reg!.prohibitInput).toBe(true)                 // coerced to a real boolean
     expect(JSON.parse(JSON.stringify(reg))).toEqual(reg) // plain, CRDT-safe data
   })
   it('caps a monstrous dropdown list', () => {
     const reg = clampRegulation({ type: 'dropdown', type2: '', value1: Array.from({ length: 5000 }, (_, i) => `i${i}`).join(','), value2: '' })
-    expect(reg.value1.length).toBeLessThanOrEqual(2000)
+    expect(reg!.value1.length).toBeLessThanOrEqual(2000)
   })
 })
 
 describe('clampDataValidation — the load gate', () => {
-  const sheetWith = (dv) => [{ name: 'Sheet1', celldata: [{ r: 0, c: 0, v: { v: 1, m: '1' } }], config: {}, dataVerification: dv }]
+  const sheetWith = (dv: Record<string, unknown>): DVSheet[] => [{ name: 'Sheet1', celldata: [{ r: 0, c: 0, v: { v: 1, m: '1' } }], config: {}, dataVerification: dv }]
 
   it('keeps the good rules and drops the poisoned ones', () => {
     const good = buildRegulation({ kind: 'dropdown', items: 'a,b' })
@@ -216,11 +223,11 @@ describe('clampDataValidation — the load gate', () => {
       '__proto__': good,
     })
     const clamped = clampDataValidation(data)
-    const dv = clamped[0].dataVerification
+    const dv = clamped[0].dataVerification!
     expect(Object.keys(dv)).toEqual(['0_0'])
     expect(dv['0_0']).toEqual(good)
     // The input is untouched (immutable, like every other clamp).
-    expect(Object.keys(data[0].dataVerification)).toContain('0_1')
+    expect(Object.keys(data[0].dataVerification!)).toContain('0_1')
   })
   it('leaves a sheet with no validation alone', () => {
     const data = [{ name: 'Sheet1', celldata: [], config: {} }]
@@ -229,15 +236,15 @@ describe('clampDataValidation — the load gate', () => {
   })
   it('a clamped workbook still lists its rules', () => {
     const reg = buildRegulation({ kind: 'date', condition: 'earlierThan', value1: '2026-07-14' })
-    const data = applyValidation([{ name: 'Sheet1', celldata: [], config: {} }], 'A1:A3', reg, parseRange)
+    const data = applyValidation([{ name: 'Sheet1', celldata: [], config: {} }], 'A1:A3', reg, parseRangeTyped)
     const rules = listValidationRules(clampDataValidation(data)[0])
     expect(rules).toHaveLength(1)
     expect(rules[0].count).toBe(3)
     expect(rules[0].summary).toBe('Date is before 2026-07-14')
   })
   it('a checkbox and a plain dropdown over the same values stay distinct rules', () => {
-    let data = applyValidation([{ name: 'Sheet1', celldata: [], config: {} }], 'A1', buildRegulation({ kind: 'checkbox' }), parseRange)
-    data = applyValidation(data, 'B1', buildRegulation({ kind: 'dropdown', items: 'TRUE,FALSE' }), parseRange)
+    let data = applyValidation([{ name: 'Sheet1', celldata: [], config: {} }], 'A1', buildRegulation({ kind: 'checkbox' }), parseRangeTyped)
+    data = applyValidation(data, 'B1', buildRegulation({ kind: 'dropdown', items: 'TRUE,FALSE' }), parseRangeTyped)
     const rules = listValidationRules(clampDataValidation(data)[0])
     expect(rules).toHaveLength(2)
     expect(rules.map((r) => r.summary).sort()).toEqual(['Checkbox · TRUE / FALSE', 'Dropdown · 2 items'])
