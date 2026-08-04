@@ -10,7 +10,7 @@ import { inlineNodes } from '../docsExport.js'
 const VT = String.fromCharCode(0x0B)
 const NUL = String.fromCharCode(0x00)
 
-function runHasChar(run, ch) {
+function runHasChar(run: unknown, ch: string): boolean {
   return JSON.stringify(run).includes(ch)
 }
 
