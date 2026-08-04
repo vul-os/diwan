@@ -8,11 +8,18 @@ import {
   normalizeCellObject,
   applyNumberFormat,
   detectPresetId,
+  type CellEntry,
+  type CellObject,
 } from './numberFormats.js'
+
+// Test fixtures know their own cell shapes; this narrows `CellEntry.v`'s
+// CellValue union (string|number|boolean|null|undefined|CellObject) back to
+// the object form so assertions can reach `.ct`/`.v` directly.
+const asObj = (cell: CellEntry | undefined): CellObject => cell!.v as CellObject
 
 describe('presetById / ctForPreset', () => {
   it('resolves known preset', () => {
-    expect(presetById('currency').label).toBe('Currency ($)')
+    expect(presetById('currency')!.label).toBe('Currency ($)')
   })
   it('unknown → null', () => {
     expect(presetById('nope')).toBeNull()
@@ -54,27 +61,27 @@ describe('applyNumberFormat', () => {
 
   it('stamps ct.fa on in-range cells only', () => {
     const next = applyNumberFormat(data, [0, 0], [0, 1], 'currency')
-    const cells = next[0].celldata
-    expect(cells.find((c) => c.r === 0 && c.c === 0).v.ct).toEqual({ fa: '"$"#,##0.00', t: 'n' })
-    expect(cells.find((c) => c.r === 0 && c.c === 1).v.ct).toEqual({ fa: '"$"#,##0.00', t: 'n' })
+    const cells = next[0].celldata!
+    expect(asObj(cells.find((c) => c.r === 0 && c.c === 0)).ct).toEqual({ fa: '"$"#,##0.00', t: 'n' })
+    expect(asObj(cells.find((c) => c.r === 0 && c.c === 1)).ct).toEqual({ fa: '"$"#,##0.00', t: 'n' })
     // out-of-range untouched
-    expect(cells.find((c) => c.r === 5 && c.c === 5).v.ct).toBeUndefined()
+    expect(asObj(cells.find((c) => c.r === 5 && c.c === 5)).ct).toBeUndefined()
   })
 
   it('never mutates the raw value v', () => {
     const next = applyNumberFormat(data, [0, 0], [0, 0], 'percent')
-    expect(next[0].celldata.find((c) => c.r === 0 && c.c === 0).v.v).toBe(12.5)
+    expect(asObj(next[0].celldata!.find((c) => c.r === 0 && c.c === 0)).v).toBe(12.5)
   })
 
   it('is immutable', () => {
     applyNumberFormat(data, [0, 0], [0, 1], 'currency')
-    expect(data[0].celldata[0].v.ct.fa).toBe('General')
+    expect(asObj(data[0].celldata![0]).ct!.fa).toBe('General')
   })
 
   it('general clears back to automatic', () => {
     const withFmt = applyNumberFormat(data, [0, 0], [0, 0], 'currency')
     const cleared = applyNumberFormat(withFmt, [0, 0], [0, 0], 'general')
-    expect(cleared[0].celldata.find((c) => c.r === 0 && c.c === 0).v.ct).toEqual({ fa: 'General', t: 'g' })
+    expect(asObj(cleared[0].celldata!.find((c) => c.r === 0 && c.c === 0)).ct).toEqual({ fa: 'General', t: 'g' })
   })
 })
 
