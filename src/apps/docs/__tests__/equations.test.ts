@@ -14,6 +14,7 @@
 
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { Editor } from '@tiptap/core'
+import type { JSONContent } from '@tiptap/core'
 import Document from '@tiptap/extension-document'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
@@ -25,15 +26,33 @@ import { saveAs } from 'file-saver'
 
 vi.mock('file-saver', () => ({ saveAs: vi.fn() }))
 
-function makeEditor(content = '<p>Hello</p>') {
+function makeEditor(content = '<p>Hello</p>'): Editor {
   return new Editor({
     extensions: [Document, Paragraph, Text, MathInline, MathBlock],
     content,
   })
 }
 
-let editor
+let editor: Editor | null = null
 afterEach(() => { editor?.destroy(); editor = null; vi.clearAllMocks() })
+
+// A saveAs Blob argument narrowed away from the `Blob | string` union the real
+// file-saver signature allows — this suite only ever hands it a Blob.
+function savedBlob(): Blob {
+  const data = vi.mocked(saveAs).mock.calls[0][0]
+  if (!(data instanceof Blob)) throw new Error('expected saveAs to be called with a Blob')
+  return data
+}
+
+// Depth-first search for the first node of the given type in a doc JSON tree.
+function findNodeByType(n: JSONContent, type: string): JSONContent | null {
+  if (n.type === type) return n
+  for (const child of n.content || []) {
+    const found = findNodeByType(child, type)
+    if (found) return found
+  }
+  return null
+}
 
 // ── 1. Rendering ─────────────────────────────────────────────────────────────
 describe('renderEquationHtml (KaTeX)', () => {
@@ -88,7 +107,7 @@ describe('equation security — hostile LaTeX is neutralised', () => {
       // never as a parsed attribute or a live <script>/<a href>. Checking the
       // parsed DOM (not the raw string) is what actually matters.
       const doc = new DOMParser().parseFromString(`<div>${html}</div>`, 'text/html')
-      const root = doc.body.firstChild
+      const root = doc.body.firstChild as Element
       // No script elements.
       expect(root.querySelectorAll('script').length).toBe(0)
       // No element carries an on* handler attribute.
@@ -101,7 +120,7 @@ describe('equation security — hostile LaTeX is neutralised', () => {
       }
       // No <a href> at all (KaTeX \href is disabled under trust:false).
       for (const a of root.querySelectorAll('a[href]')) {
-        expect(a.getAttribute('href').toLowerCase()).not.toContain('javascript:')
+        expect(a.getAttribute('href')?.toLowerCase()).not.toContain('javascript:')
       }
       // No <img> was produced from the hostile <img> string (it stays text).
       expect(root.querySelectorAll('img').length).toBe(0)
@@ -113,7 +132,7 @@ describe('equation security — hostile LaTeX is neutralised', () => {
     editor.commands.insertMathInline('\\href{javascript:alert(1)}{x}')
     exportToHtml(editor, 'sec', {})
     expect(saveAs).toHaveBeenCalled()
-    const blob = saveAs.mock.calls[0][0]
+    const blob = savedBlob()
     // We can't read Blob text synchronously in jsdom easily; assert on the
     // sanitiser directly with the rendered markup instead.
     const rendered = renderEquationHtml('\\href{javascript:alert(1)}{x}', false)
@@ -130,17 +149,16 @@ describe('math node model', () => {
     editor = makeEditor('<p></p>')
     editor.commands.insertMathInline('E = mc^2')
     const json = editor.getJSON()
-    // Find the math node.
-    let found = null
-    const walk = (n) => {
-      if (n.type === 'mathInline') found = n
-      ;(n.content || []).forEach(walk)
-    }
-    walk(json)
-    expect(found).toBeTruthy()
-    expect(found.attrs.latex).toBe('E = mc^2')
+    // Find the math node. A returning recursive lookup (rather than a
+    // closure that mutates an outer `let`) so TS can actually narrow the
+    // result — mutation of a captured variable inside a nested function
+    // isn't tracked by control-flow analysis at the call site.
+    const mathNode = findNodeByType(json, 'mathInline')
+    expect(mathNode).toBeTruthy()
+    if (!mathNode) throw new Error('math node not found')
+    expect(mathNode.attrs!.latex).toBe('E = mc^2')
     // No rendered HTML is stored — only the source attr.
-    expect(Object.keys(found.attrs)).toEqual(['latex'])
+    expect(Object.keys(mathNode.attrs!)).toEqual(['latex'])
   })
 
   it('block math is an atomic block node', () => {
@@ -174,7 +192,7 @@ describe('equation HTML export', () => {
     editor = makeEditor('<p>See</p>')
     editor.commands.insertMathBlock('\\frac{a}{b}')
     exportToHtml(editor, 'doc', {})
-    const blob = saveAs.mock.calls[0][0]
+    const blob = savedBlob()
     const text = await blob.text()
     expect(text).toContain('katex')
     expect(text).not.toContain('<script')
@@ -188,13 +206,13 @@ describe('equation HTML export', () => {
     editor = makeEditor('<p>x</p>')
     editor.commands.insertMathInline('\\href{javascript:alert(1)}{x}')
     exportToHtml(editor, 'doc', {})
-    const blob = saveAs.mock.calls[0][0]
+    const blob = savedBlob()
     const text = await blob.text()
     // Parse the exported document; assert no live executable surface.
     const doc = new DOMParser().parseFromString(text, 'text/html')
     expect(doc.querySelectorAll('script').length).toBe(0)
     for (const a of doc.querySelectorAll('a[href]')) {
-      expect(a.getAttribute('href').toLowerCase()).not.toContain('javascript:')
+      expect(a.getAttribute('href')?.toLowerCase()).not.toContain('javascript:')
     }
     for (const el of doc.querySelectorAll('*')) {
       for (const attr of el.attributes) {
