@@ -1,5 +1,5 @@
 /**
- * src/apps/sheets/ConditionalFormatPanel.jsx
+ * src/apps/sheets/ConditionalFormatPanel.tsx
  *
  * Conditional-formatting side panel — ONE rule builder for every kind:
  *   • single-colour rules  (greater than / text contains / date is before /
@@ -28,7 +28,14 @@ import {
   getColorScales, insertColorScale, updateColorScale, deleteColorScale,
   makeColorScale, colorScaleSummary, colorScaleError, isSingleKind,
   CS_KIND_META, CS_SCALE_KINDS, CS_SINGLE_KINDS,
+  type ColorScaleRule, type CSSheet, type NativeConditionFormat,
 } from './colorScales.js'
+
+/** A parsed A1-range `{ row: [r0,r1], column: [c0,c1] }` (0-indexed, inclusive). */
+export interface ParsedRangeRect {
+  row: [number, number]
+  column: [number, number]
+}
 
 // Parse "A1:B10" style A1-notation range to Fortune Sheet conditionRange format.
 // Supports:
@@ -36,7 +43,7 @@ import {
 //   "B2"       → { row: [1, 1],  column: [1, 1] }
 // Column letters: A=0, Z=25, AA=26, AZ=51, BA=52, …
 // Invalid input falls back to a sensible whole-sheet default.
-export function colLetterToIndex(letters) {
+export function colLetterToIndex(letters: string): number {
   const s = letters.toUpperCase()
   let idx = 0
   for (let i = 0; i < s.length; i++) {
@@ -45,7 +52,7 @@ export function colLetterToIndex(letters) {
   return idx - 1  // 0-indexed
 }
 
-export function parseCellRef(ref) {
+export function parseCellRef(ref: string): { col: number; row: number } | null {
   // ref like "A1", "BC200"
   const m = ref.match(/^([A-Za-z]+)(\d+)$/)
   if (!m) return null
@@ -55,8 +62,8 @@ export function parseCellRef(ref) {
   }
 }
 
-export function parseRange(text) {
-  const FALLBACK = [{ row: [0, 99], column: [0, 25] }]
+export function parseRange(text: string): ParsedRangeRect[] {
+  const FALLBACK: ParsedRangeRect[] = [{ row: [0, 99], column: [0, 25] }]
   if (!text || text.trim() === '') return FALLBACK
   const parts = text.trim().toUpperCase().split(':')
   if (parts.length === 1) {
@@ -86,7 +93,22 @@ const KIND_GROUPS = [
   { label: 'Scales & bars', kinds: CS_SCALE_KINDS },
 ]
 
-const NEW_RULE = {
+interface EditRuleState {
+  id: string | null
+  kind: string
+  range: string
+  value1: string
+  value2: string
+  formula: string
+  fill: string
+  textColor: string
+  min: string
+  mid: string
+  max: string
+  barColor: string
+}
+
+const NEW_RULE: EditRuleState = {
   id: null,
   kind: 'greaterThan',
   range: 'A1:A10',
@@ -102,7 +124,7 @@ const NEW_RULE = {
 }
 
 /** The colour chip shown next to a rule in the list. */
-function RuleSwatch({ rule }) {
+function RuleSwatch({ rule }: { rule: ColorScaleRule }) {
   const style = rule.kind === 'dataBar'
     ? { background: `linear-gradient(90deg, ${rule.barColor} 60%, transparent 60%)` }
     : rule.kind === 'colorScale2' || rule.kind === 'colorScale3'
@@ -119,7 +141,14 @@ function RuleSwatch({ rule }) {
   )
 }
 
-export default function ConditionalFormatPanel({ data, onClose, onChange, onColorScaleChange }) {
+export interface ConditionalFormatPanelProps {
+  data: CSSheet[]
+  onClose: () => void
+  onChange?: (data: CSSheet[]) => void
+  onColorScaleChange?: (data: CSSheet[]) => void
+}
+
+export default function ConditionalFormatPanel({ data, onClose, onChange, onColorScaleChange }: ConditionalFormatPanelProps) {
   // Rule writes are authoritative overlay writes (a deletion must stick), so they
   // go through onColorScaleChange when provided, falling back to onChange.
   const pushRule = onColorScaleChange || onChange
@@ -131,14 +160,14 @@ export default function ConditionalFormatPanel({ data, onClose, onChange, onColo
     [data],
   )
 
-  const [edit, setEdit]   = useState(null) // the rule being added/edited
+  const [edit, setEdit]   = useState<EditRuleState | null>(null) // the rule being added/edited
   const [error, setError] = useState('')
 
   const meta = edit ? CS_KIND_META[edit.kind] : null
 
   function startNew() { setEdit({ ...NEW_RULE }); setError('') }
-  function startEdit(rule) { setEdit({ ...rule }); setError('') }
-  function patch(p) { setEdit((r) => ({ ...r, ...p })); setError('') }
+  function startEdit(rule: ColorScaleRule) { setEdit({ ...rule }); setError('') }
+  function patch(p: Partial<EditRuleState>) { setEdit((r) => (r ? { ...r, ...p } : r)); setError('') }
 
   function save() {
     if (!edit || !pushRule) return
@@ -151,12 +180,12 @@ export default function ConditionalFormatPanel({ data, onClose, onChange, onColo
     setEdit(null)
   }
 
-  function remove(id) {
+  function remove(id: string) {
     if (!pushRule) return
     pushRule(deleteColorScale(data, id))
   }
 
-  function removeLegacy(i) {
+  function removeLegacy(i: number) {
     if (!onChange) return
     const next = legacy.filter((_, idx) => idx !== i)
     onChange(data.map((sheet, idx) => (idx === 0 ? { ...sheet, luckysheet_conditionformat_save: next } : sheet)))
@@ -215,7 +244,7 @@ export default function ConditionalFormatPanel({ data, onClose, onChange, onColo
             {legacy.length > 0 && (
               <div className="border-t border-line pt-3 space-y-2">
                 <p className="font-medium text-ink-muted">Imported rules</p>
-                {legacy.map((r, i) => (
+                {legacy.map((r: NativeConditionFormat, i) => (
                   <div key={i} className="flex items-center gap-1.5 border border-line rounded-md px-2 py-1.5">
                     <span
                       aria-hidden
@@ -223,7 +252,7 @@ export default function ConditionalFormatPanel({ data, onClose, onChange, onColo
                       style={{ background: r.format?.cellColor || 'transparent' }}
                     />
                     <span className="flex-1 truncate text-ink">
-                      {r.conditionName} {r.conditionSymbol || ''} {String(r.conditionValue?.[0] ?? '')}
+                      {r.conditionName} {(r as unknown as { conditionSymbol?: string }).conditionSymbol || ''} {String(r.conditionValue?.[0] ?? '')}
                     </span>
                     <button
                       onClick={() => removeLegacy(i)}
