@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { useEditor, EditorContent } from '@tiptap/react'
+import { useEditor, EditorContent, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Image from '@tiptap/extension-image'
 import Link from '@tiptap/extension-link'
@@ -21,7 +21,7 @@ import {
   ChevronDown as ChevronDownIcon, Type as TypeIcon, LayoutGrid, X, Square, Share2,
 } from 'lucide-react'
 import { sanitizeSlideHtml as sanitize } from '../../lib/sanitize'
-import { useFilesStore } from '../../store/filesStore'
+import { useFilesStore, type DiwanFile } from '../../store/filesStore'
 import { api } from '../../lib/api'
 import SlidePreview from './SlidePreview'
 import { exportSlidesToPdf, exportSlidesToPptx } from './slidesExport'
@@ -32,23 +32,25 @@ import ObjectTextEditor from './ObjectTextEditor'
 import ArrangeToolbar from './ArrangeToolbar'
 import {
   ensureObjects, sanitizeObjects, newObjectId, flowContentFromObjects, sortByZ,
+  type SlideObject, type SlideLike, type TextSlideObject, type ImageSlideObject, type ShapeSlideObject, type ShapeKind,
 } from './slideObjects'
 import {
   bringToFront, sendToBack, bringForward, sendBackward,
   groupObjects, ungroupObjects, expandSelectionToGroups, align, distribute,
+  type AlignEdge, type DistributeAxis,
 } from './slideArrange'
-import { playAnimationsOn } from './slideAnimations'
-import { TreeSession, getTreeReplicaId, ordKeyBetween } from '../../lib/crdt/tree.js'
+import { playAnimationsOn, type SlideAnimation } from './slideAnimations'
+import { TreeSession, getTreeReplicaId, ordKeyBetween, type Slide as TreeSlide } from '../../lib/crdt/tree.js'
 import { OpLogSync } from '../../lib/collab/opLogSync.js'
 import { updateLogEnabled } from '../../lib/flags.js'
 import CommentsPanel from '../../components/CommentsPanel'
-import { useLiveCursors } from '../../lib/collab/webrtc/useLiveCursors.js'
-import { usePresence } from '../../lib/collab/webrtc/presence.js'
+import { useLiveCursors, type FabricLike } from '../../lib/collab/webrtc/useLiveCursors.js'
+import { usePresence, type PresenceFabric } from '../../lib/collab/webrtc/presence.js'
 import { getSlideViewers } from '../../components/RemoteCursors.jsx'
 import PresenceBar from '../../components/PresenceBar.jsx'
 import ConnectionPill from '../../components/ConnectionPill.jsx'
 import { useCollabFabric } from '../../lib/collab/useCollabFabric.js'
-import { getCollabIdentity, identityColor, deriveStatusPill, countLivePeers } from '../../lib/collab/presenceCommon.js'
+import { getCollabIdentity, identityColor, deriveStatusPill, countLivePeers, type CollabIdentity } from '../../lib/collab/presenceCommon.js'
 import { Button, IconButton, Tooltip, Topbar, Menu, UrlPopover, LoadingState, SaveStatus } from '../../components/ui'
 import AccountShareModal from '../../components/AccountShareModal.jsx'
 import { useAuthStore } from '../../store/authStore'
@@ -57,13 +59,55 @@ import MasterSlideEditor from './MasterSlideEditor.jsx'
 import TransitionPanel from './TransitionPanel.jsx'
 import TemplateGallery from './TemplateGallery.jsx'
 import { usePresenterView } from './PresenterView.jsx'
-import { getTheme } from './themes'
+import { getTheme, type MasterLayout, type SlideTheme } from './themes'
 
 // HTML sanitisation uses the shared config in src/lib/sanitize.js.
 
+/** A deck slide — the generic slideObjects.ts shape plus the fields this
+ * editor (and the CRDT tree / importers / exporters) read on it. Kept with
+ * an index signature (via SlideLike) since this is the app's most dynamic,
+ * "kitchen sink" state shape — mirroring how the CRDT boundary (tree.ts's
+ * own Slide/SlideObject types) is deliberately loose too. */
+interface DeckSlide extends SlideLike {
+  id: string
+  notes?: string
+  background?: string
+  master?: string
+  transition?: string
+  animations?: SlideAnimation[]
+  objects?: SlideObject[]
+}
+
+/** The whole presentation document (slidesData). */
+interface DeckData {
+  themeId?: string
+  theme?: string
+  transition?: string
+  slides: DeckSlide[]
+  masters?: MasterLayout[] | null
+  customTheme?: Partial<SlideTheme> | null
+  importNotes?: unknown
+  [key: string]: unknown
+}
+
+/** Mirrors ArrangeToolbar.tsx's own (unexported) ArrangeAction union — kept
+ * structurally identical rather than re-exported, since only its shape (not
+ * its name) needs to match at the onArrange prop boundary. */
+type ArrangeAction =
+  | 'bringToFront' | 'bringForward' | 'sendBackward' | 'sendToBack'
+  | 'group' | 'ungroup' | 'align' | 'distribute'
+
+/** A new-object spec: any mix of fields across the three object variants,
+ * merged with generated id/rotation/z in insertObject(). */
+type ObjectSeed =
+  Partial<Omit<TextSlideObject, 'type'>>
+  & Partial<Omit<ImageSlideObject, 'type'>>
+  & Partial<Omit<ShapeSlideObject, 'type'>>
+  & { type: 'text' | 'image' | 'shape' }
+
 // SlideLinkButton — link insert with an inline anchored URL popover (replaces
 // the blocking window.prompt). Self-contained open state.
-function SlideLinkButton({ editor }) {
+function SlideLinkButton({ editor }: { editor: Editor }) {
   const [open, setOpen] = useState(false)
   return (
     <div className="relative inline-flex">
@@ -100,7 +144,7 @@ function SlideLinkButton({ editor }) {
 // had no UI). Mirrors the Docs FontFamilySelector so both editors behave the
 // same. Pure textStyle-mark op — writes only into the slide's content HTML, so
 // the CRDT slide tree is untouched.
-function SlideFontFamilySelector({ editor }) {
+function SlideFontFamilySelector({ editor }: { editor: Editor }) {
   const currentFamily = editor.getAttributes('textStyle').fontFamily || ''
   const currentLabel = SLIDE_FONT_FAMILIES.find((f) => f.value === currentFamily)?.label || 'Font'
   return (
@@ -137,8 +181,8 @@ function SlideFontFamilySelector({ editor }) {
 }
 
 // ObjectInsertMenu — insert image / shapes as positioned canvas objects (P4).
-function ObjectInsertMenu({ onImage, onShape }) {
-  const SHAPES = [
+function ObjectInsertMenu({ onImage, onShape }: { onImage: () => void; onShape: (kind: ShapeKind) => void }) {
+  const SHAPES: [ShapeKind, string][] = [
     ['rect', 'Rectangle'], ['roundRect', 'Rounded'], ['oval', 'Oval'],
     ['triangle', 'Triangle'], ['star', 'Star'], ['line', 'Line'],
     ['arrow', 'Arrow'], ['callout', 'Callout'],
@@ -174,7 +218,7 @@ function ObjectInsertMenu({ onImage, onShape }) {
 // Reveal.js theme names (kept for backward compatibility with legacy decks).
 const LEGACY_TRANSITIONS = ['none', 'fade', 'slide', 'convex', 'concave', 'zoom']
 
-function newSlide(master = 'content') {
+function newSlide(master = 'content'): DeckSlide {
   return {
     id: crypto.randomUUID(),
     title: '',
@@ -217,10 +261,10 @@ const SLIDE_HEADINGS = [
   { label: 'H1',     value: 1 },
   { label: 'H2',     value: 2 },
   { label: 'H3',     value: 3 },
-]
+] as const
 
 // ── Sidebar tabs ────────────────────────────────────────────────────────────
-const SIDEBAR_TABS = [
+const SIDEBAR_TABS: { id: 'slides' | 'transitions'; icon: typeof FileText; label: string }[] = [
   { id: 'slides', icon: FileText, label: 'Slides' },
   { id: 'transitions', icon: Zap, label: 'Transitions' },
 ]
@@ -230,14 +274,15 @@ export default function SlidesEditor() {
   const navigate = useNavigate()
   const { files, updateFile } = useFilesStore()
   const stored = files.find((f) => f.id === id)
-  const [file, setFile] = useState(stored)
+  const [file, setFile] = useState<DiwanFile | undefined>(stored)
 
-  const defaultData = file?.content && file.content.slides
-    ? file.content
+  const fileContent = file?.content as DeckData | undefined
+  const defaultData: DeckData = fileContent && fileContent.slides
+    ? fileContent
     : { themeId: 'obsidian', theme: 'black', transition: 'slide', slides: [newSlide()], masters: null, customTheme: null }
 
   const [title, setTitle] = useState(file?.name || 'Untitled Presentation')
-  const [slidesData, setSlidesData] = useState(defaultData)
+  const [slidesData, setSlidesData] = useState<DeckData>(defaultData)
   const [activeIdx, setActiveIdx] = useState(0)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(true)
@@ -251,7 +296,7 @@ export default function SlidesEditor() {
   // Account-based sharing (named users, role-scoped, ACL-enforced).
   const [showShare, setShowShare] = useState(false)
   const myAccountId = useAuthStore((s) => s.accountId)
-  const [sidebarTab, setSidebarTab] = useState('slides')
+  const [sidebarTab, setSidebarTab] = useState<'slides' | 'transitions'>('slides')
 
   // Modal states
   const [showThemeGallery,   setShowThemeGallery]   = useState(false)
@@ -261,36 +306,36 @@ export default function SlidesEditor() {
 
   // Notes panel height (resizable)
   const [notesHeight, setNotesHeight] = useState(80)
-  const notesResizeRef = useRef(null)
+  const notesResizeRef = useRef<HTMLDivElement>(null)
   const isResizingNotes = useRef(false)
 
-  const saveTimer = useRef(null)
-  const imgInput = useRef(null)
-  const treeSessionRef = useRef(null)
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const imgInput = useRef<HTMLInputElement>(null)
+  const treeSessionRef = useRef<TreeSession | null>(null)
 
   // Drag-drop for slide reorder
-  const [dragSlideIdx, setDragSlideIdx] = useState(null)
-  const [dragOverIdx, setDragOverIdx] = useState(null)
+  const [dragSlideIdx, setDragSlideIdx] = useState<number | null>(null)
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
 
   // ── P2/P3: positioned-object canvas state ─────────────────────────────────
-  const [selectedObjectIds, setSelectedObjectIds] = useState([])
-  const [editingObjectId, setEditingObjectId] = useState(null)
-  const [objectEditor, setObjectEditor] = useState(null)   // TipTap editor of the object being edited
+  const [selectedObjectIds, setSelectedObjectIds] = useState<string[]>([])
+  const [editingObjectId, setEditingObjectId] = useState<string | null>(null)
+  const [objectEditor, setObjectEditor] = useState<Editor | null>(null)   // TipTap editor of the object being edited
   const [animPlaying, setAnimPlaying] = useState(false)
-  const canvasStageRef = useRef(null)
+  const canvasStageRef = useRef<HTMLDivElement>(null)
 
   const activeSlide = slidesData.slides[activeIdx] ?? slidesData.slides[0]
   // Objects for the active slide. Migration (legacy content → objects[]) is
   // memoized per slide id so a slide without objects[] yields STABLE ids across
   // renders (re-migrating each render would mint new ids → remount nodes → break
   // selection/editing). The effect below persists the migration once.
-  const migrationCacheRef = useRef(new Map())
-  const activeObjects = useMemo(() => {
+  const migrationCacheRef = useRef(new Map<string, SlideObject[]>())
+  const activeObjects: SlideObject[] = useMemo(() => {
     if (!activeSlide) return []
     if (Array.isArray(activeSlide.objects)) return sanitizeObjects(activeSlide.objects)
     const cache = migrationCacheRef.current
     if (!cache.has(activeSlide.id)) cache.set(activeSlide.id, ensureObjects(activeSlide))
-    return cache.get(activeSlide.id)
+    return cache.get(activeSlide.id)!
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSlide?.id, activeSlide?.objects, activeSlide?.content, activeSlide?.title])
 
@@ -300,22 +345,28 @@ export default function SlidesEditor() {
   // ── Collaboration presence (WAVE-27) ────────────────────────────────────────
   // Stable per-tab replica id doubles as the fabric peerId (shared by CRDT sync
   // and presence/cursor transport).
-  const replicaIdRef = useRef(null)
+  const replicaIdRef = useRef<string | null>(null)
   if (!replicaIdRef.current) replicaIdRef.current = getTreeReplicaId()
-  const replicaId = replicaIdRef.current
+  const replicaId = replicaIdRef.current!
 
   const { fabric, peers: collabPeers, joined, configured } =
-    useCollabFabric({ sessionId: id, peerId: replicaId })
+    useCollabFabric({ sessionId: id as string, peerId: replicaId })
 
-  const identityRef = useRef(null)
+  const identityRef = useRef<CollabIdentity | null>(null)
   if (!identityRef.current) identityRef.current = getCollabIdentity(replicaId)
-  const localIdentity = identityRef.current
+  const localIdentity = identityRef.current!
 
-  // Live cursors + presence roster (OFFICE-25 / WAVE-27)
+  // ── Live cursors + presence roster (OFFICE-25 / WAVE-27) ────────────────────
+  // FabricClient (lib/collab/webrtc/fabric.ts) extends EventTarget and so
+  // types addEventListener with the generic DOM signature, which does not
+  // structurally satisfy the narrower per-event-name overloads FabricLike /
+  // PresenceFabric declare — a pre-existing type-only mismatch between those
+  // independently-typed modules (not a runtime one: FabricClient's listeners
+  // are called with the same CustomEvent shape at runtime either way).
   const { remoteCursors, broadcastSlideCursor } = useLiveCursors({
-    fabric, localIdentity, color: identityColor(localIdentity),
+    fabric: fabric as unknown as FabricLike | null, localIdentity, color: identityColor(localIdentity),
   })
-  const { roster } = usePresence({ fabric, localIdentity })
+  const { roster } = usePresence({ fabric: fabric as unknown as PresenceFabric | null, localIdentity })
 
   const collabPill = deriveStatusPill({ configured, joined, peers: collabPeers })
   const livePeerCount = countLivePeers(collabPeers)
@@ -345,10 +396,11 @@ export default function SlidesEditor() {
   // ── Load file ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!file && id) {
-      api.getFile(id).then((f) => {
+      (api.getFile(id) as Promise<DiwanFile>).then((f) => {
         setFile(f)
         setTitle(f.name)
-        if (f.content?.slides) setSlidesData(f.content)
+        const content = f.content as DeckData | undefined
+        if (content?.slides) setSlidesData(content)
       }).catch(() => navigate('/slides'))
     }
   }, [id])
@@ -367,7 +419,10 @@ export default function SlidesEditor() {
         current.slides.forEach((slide, idx) => {
           if (!existing.includes(slide.id)) {
             const ordKey = String(idx).padStart(10, '0')
-            session.insertSlide(ordKey, slide)
+            // tree.ts's own Slide/SlideObject types are deliberately loose (no
+            // index signature match with slideObjects.ts's richer union) — see
+            // the fabric cast comment above for the same cross-module pattern.
+            session.insertSlide(ordKey, slide as unknown as TreeSlide)
           }
         })
         return current
@@ -382,12 +437,12 @@ export default function SlidesEditor() {
     // converged slides render like a peer edit. start() runs only AFTER hydrate,
     // so the deterministic seed above (re-derived from file content on every
     // open, like Docs' SEED_ORIGIN) is not double-logged. Self-disables on 404.
-    let opLog = null
+    let opLog: OpLogSync | null = null
     if (updateLogEnabled()) {
       opLog = new OpLogSync({
         fileId: id,
         subscribeLocal: (cb) => {
-          const h = (e) => cb(e.detail.op)
+          const h = (e: Event) => cb((e as CustomEvent).detail.op)
           session.addEventListener('localOp', h)
           return () => session.removeEventListener('localOp', h)
         },
@@ -395,14 +450,14 @@ export default function SlidesEditor() {
         applySnapshot: (snap) => session.applyLogSnapshot(snap),
         encodeSnapshot: () => session.logSnapshotData(),
       })
-      opLog.hydrate().then((ok) => { if (ok) opLog.start() }).catch(() => {})
+      opLog.hydrate().then((ok) => { if (ok) opLog!.start() }).catch(() => {})
     }
 
     const onRemote = () => {
       const crdtSlides = session.orderedSlides()
       if (crdtSlides.length === 0) return
       setSlidesData((prev) => {
-        const next = {
+        const next: DeckData = {
           ...prev,
           slides: crdtSlides
             .filter((s) => s.data && typeof s.data === 'object')
@@ -412,7 +467,7 @@ export default function SlidesEditor() {
             // sanitized text, gated image src) and fail closed — a malformed
             // object is repaired or dropped, never rendered raw.
             .map((s) => {
-              const slide = { ...s.data }
+              const slide = { ...s.data } as DeckSlide
               if (Array.isArray(slide.objects)) slide.objects = sanitizeObjects(slide.objects)
               return slide
             }),
@@ -458,7 +513,7 @@ export default function SlidesEditor() {
 
   // ── Notes panel resize ────────────────────────────────────────────────────
   useEffect(() => {
-    const onMouseMove = (e) => {
+    const onMouseMove = (e: MouseEvent) => {
       if (!isResizingNotes.current) return
       const container = notesResizeRef.current?.closest('.slides-layout')
       if (!container) return
@@ -477,10 +532,11 @@ export default function SlidesEditor() {
 
   // ── Global keyboard shortcuts ─────────────────────────────────────────────
   useEffect(() => {
-    const onKeyDown = (e) => {
+    const onKeyDown = (e: KeyboardEvent) => {
       // Only fire when not in an input/textarea/contenteditable.
-      const tag = e.target.tagName
-      const isEditing = tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable
+      const target = e.target as HTMLElement
+      const tag = target.tagName
+      const isEditing = tag === 'INPUT' || tag === 'TEXTAREA' || target.isContentEditable
       const meta = e.metaKey || e.ctrlKey
 
       if (meta && e.key === 'm' && !isEditing) {
@@ -525,7 +581,7 @@ export default function SlidesEditor() {
   }, [activeIdx, slidesData.slides.length, selectedObjectIds, editingObjectId, activeObjects]) // eslint-disable-line
 
   // ── Autosave ──────────────────────────────────────────────────────────────
-  const autosave = useCallback(async (sd) => {
+  const autosave = useCallback(async (sd: DeckData) => {
     if (!id) return
     setSaving(true)
     try {
@@ -536,7 +592,7 @@ export default function SlidesEditor() {
     }
   }, [id, title])
 
-  const schedule = (sd) => {
+  const schedule = (sd: DeckData) => {
     setSaved(false)
     clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => autosave(sd), 2000)
@@ -547,7 +603,7 @@ export default function SlidesEditor() {
   useEffect(() => () => clearTimeout(saveTimer.current), [])
 
   // ── Slide field update ────────────────────────────────────────────────────
-  const updateSlideField = (idx, field, value) => {
+  const updateSlideField = (idx: number, field: string, value: unknown) => {
     setSlidesData((prev) => {
       const slides = [...prev.slides]
       slides[idx] = { ...slides[idx], [field]: value }
@@ -556,14 +612,14 @@ export default function SlidesEditor() {
       const session = treeSessionRef.current
       if (session) {
         const slide = slides[idx]
-        session.setSlide(slide.id, slide)
+        session.setSlide(slide.id, slide as unknown as TreeSlide)
         session.saveLocal()
       }
       return next
     })
   }
 
-  const updateSlideMeta = (idx, updates) => {
+  const updateSlideMeta = (idx: number, updates: Partial<DeckSlide>) => {
     setSlidesData((prev) => {
       const slides = [...prev.slides]
       slides[idx] = { ...slides[idx], ...updates }
@@ -578,12 +634,12 @@ export default function SlidesEditor() {
   // so the CRDT tree syncs them as part of the slide node. `commit` gates the
   // CRDT/persist write: transient drag frames pass commit:false (local render
   // only), and the pointer-up passes commit:true.
-  const updateObjects = useCallback((nextObjects, { commit = true } = {}) => {
+  const updateObjects = useCallback((nextObjects: SlideObject[], { commit = true }: { commit?: boolean } = {}) => {
     setSlidesData((prev) => {
       const idx = prev.slides.findIndex((s) => s.id === activeSlide?.id)
       if (idx < 0) return prev
       const objects = sanitizeObjects(nextObjects)
-      const slide = {
+      const slide: DeckSlide = {
         ...prev.slides[idx],
         objects,
         // Keep a legacy flow `content` in sync so thumbnails / PDF / notes-print
@@ -596,17 +652,17 @@ export default function SlidesEditor() {
       if (commit) {
         schedule(next)
         const session = treeSessionRef.current
-        if (session) { session.setSlide(slide.id, slide); session.saveLocal() }
+        if (session) { session.setSlide(slide.id, slide as unknown as TreeSlide); session.saveLocal() }
       }
       return next
     })
   }, [activeSlide?.id]) // eslint-disable-line
 
   // Commit an object text edit back into the object model.
-  const commitObjectText = useCallback((html) => {
+  const commitObjectText = useCallback((html: string) => {
     if (!editingObjectId) return
     updateObjects(
-      activeObjects.map((o) => (o.id === editingObjectId ? { ...o, html } : o)),
+      activeObjects.map((o) => (o.id === editingObjectId ? { ...o, html } as SlideObject : o)),
       { commit: true },
     )
   }, [editingObjectId, activeObjects, updateObjects])
@@ -617,7 +673,7 @@ export default function SlidesEditor() {
     if (!stage || !activeSlide) return
     // Target the animatable objects in z-order (matches present-mode ordering).
     const els = sortByZ(activeObjects)
-      .map((o) => stage.querySelector(`[data-object-id="${o.id}"]`))
+      .map((o) => stage.querySelector<HTMLElement>(`[data-object-id="${o.id}"]`))
       .filter(Boolean)
     setAnimPlaying(true)
     const cleanup = playAnimationsOn(els, activeSlide.animations || [])
@@ -626,9 +682,9 @@ export default function SlidesEditor() {
     return () => { clearTimeout(t); cleanup() }
   }, [activeObjects, activeSlide]) // eslint-disable-line
 
-  const insertObject = (partial) => {
+  const insertObject = (partial: ObjectSeed) => {
     const maxZ = Math.max(0, ...activeObjects.map((o) => o.z || 0))
-    const obj = { id: newObjectId(), rotation: 0, z: maxZ + 1, ...partial }
+    const obj = { id: newObjectId(), rotation: 0, z: maxZ + 1, ...partial } as unknown as SlideObject
     updateObjects([...activeObjects, obj], { commit: true })
     setSelectedObjectIds([obj.id])
     if (obj.type === 'text') setEditingObjectId(obj.id)
@@ -637,10 +693,10 @@ export default function SlidesEditor() {
   const insertTextObject = () => insertObject({
     type: 'text', x: 0.3, y: 0.4, w: 0.4, h: 0.15, html: '<p>Text</p>', align: 'left', valign: 'top',
   })
-  const insertShapeObject = (shape = 'rect', fill = '#7c6af7', stroke = '#5b4dd0') => insertObject({
+  const insertShapeObject = (shape: ShapeSlideObject['shape'] = 'rect', fill = '#7c6af7', stroke = '#5b4dd0') => insertObject({
     type: 'shape', shape, x: 0.35, y: 0.35, w: 0.3, h: 0.3, fill, stroke, strokeWidth: 2, opacity: 1,
   })
-  const insertImageObject = (src) => insertObject({
+  const insertImageObject = (src: string) => insertObject({
     type: 'image', src, x: 0.3, y: 0.3, w: 0.4, h: 0.4,
   })
 
@@ -652,7 +708,7 @@ export default function SlidesEditor() {
   }
 
   // Contextual arrange dispatcher (P3).
-  const doArrange = (op, arg) => {
+  const doArrange = (op: ArrangeAction, arg?: AlignEdge | DistributeAxis) => {
     const ids = expandSelectionToGroups(activeObjects, selectedObjectIds)
     let next = activeObjects
     switch (op) {
@@ -662,8 +718,8 @@ export default function SlidesEditor() {
       case 'sendBackward':  next = sendBackward(activeObjects, ids); break
       case 'group':         next = groupObjects(activeObjects, selectedObjectIds); break
       case 'ungroup':       next = ungroupObjects(activeObjects, selectedObjectIds); break
-      case 'align':         next = align(activeObjects, ids, arg); break
-      case 'distribute':    next = distribute(activeObjects, ids, arg); break
+      case 'align':         next = align(activeObjects, ids, arg as AlignEdge); break
+      case 'distribute':    next = distribute(activeObjects, ids, arg as DistributeAxis); break
       default: return
     }
     updateObjects(next, { commit: true })
@@ -672,8 +728,10 @@ export default function SlidesEditor() {
   const editingObject = activeObjects.find((o) => o.id === editingObjectId) || null
   // The formatting toolbar acts on the object editor while a text object is open,
   // otherwise on the (hidden) flow editor — which always exists past the loading
-  // guard below, so `fmtEditor` is never null when the toolbar renders.
-  const fmtEditor = objectEditor || editor
+  // guard below, so `fmtEditor` is never null when the toolbar renders. (The
+  // non-null assertion is safe for that same reason: this expression runs
+  // before the guard, but fmtEditor is only ever READ from the JSX after it.)
+  const fmtEditor = (objectEditor || editor)!
 
   // ── Slide operations ──────────────────────────────────────────────────────
   const addSlide = (master = 'content') => {
@@ -687,14 +745,14 @@ export default function SlidesEditor() {
       if (session) {
         const prevOrdKey = slides.length >= 2 ? String(slides.length - 2).padStart(10, '0') : ''
         const ordKey = ordKeyBetween(prevOrdKey, '')
-        session.insertSlide(ordKey, slide)
+        session.insertSlide(ordKey, slide as unknown as TreeSlide)
         session.saveLocal()
       }
       return next
     })
   }
 
-  const duplicateSlide = (idx) => {
+  const duplicateSlide = (idx: number) => {
     setSlidesData((prev) => {
       const original = prev.slides[idx]
       const copy = { ...original, id: crypto.randomUUID() }
@@ -712,14 +770,14 @@ export default function SlidesEditor() {
           String(idx).padStart(10, '0'),
           String(idx + 1).padStart(10, '0')
         )
-        session.insertSlide(ordKey, copy)
+        session.insertSlide(ordKey, copy as unknown as TreeSlide)
         session.saveLocal()
       }
       return next
     })
   }
 
-  const deleteSlide = (idx) => {
+  const deleteSlide = (idx: number) => {
     setSlidesData((prev) => {
       if (prev.slides.length === 1) return prev
       const slide = prev.slides[idx]
@@ -736,7 +794,7 @@ export default function SlidesEditor() {
     })
   }
 
-  const moveSlide = (idx, dir) => {
+  const moveSlide = (idx: number, dir: number) => {
     const newIdx = idx + dir
     if (newIdx < 0 || newIdx >= slidesData.slides.length) return
     setSlidesData((prev) => {
@@ -774,14 +832,14 @@ export default function SlidesEditor() {
     setDragSlideIdx(null); setDragOverIdx(null)
   }
 
-  const updateMeta = (key, value) => {
+  const updateMeta = (key: string, value: unknown) => {
     const next = { ...slidesData, [key]: value }
     setSlidesData(next)
     schedule(next)
   }
 
   // ── Theme application ─────────────────────────────────────────────────────
-  const applyTheme = ({ themeId, customTheme }) => {
+  const applyTheme = ({ themeId, customTheme }: { themeId: string; customTheme: Partial<SlideTheme> | null }) => {
     const theme = getTheme(themeId)
     const next = {
       ...slidesData,
@@ -794,7 +852,7 @@ export default function SlidesEditor() {
   }
 
   // ── Master save ───────────────────────────────────────────────────────────
-  const saveMasters = (masters) => {
+  const saveMasters = (masters: MasterLayout[]) => {
     const next = { ...slidesData, masters }
     setSlidesData(next)
     schedule(next)
@@ -1585,7 +1643,7 @@ export default function SlidesEditor() {
                   onChange={async (e) => {
                     const f = e.target.files?.[0]; if (!f) return
                     try {
-                      const { url } = await api.uploadImage(f)
+                      const { url } = await api.uploadImage(f) as { url: string }
                       insertImageObject(url)
                     } catch {
                       const reader = new FileReader()
@@ -1645,7 +1703,7 @@ export default function SlidesEditor() {
                     overlay={editingObject && (
                       <ObjectTextEditor
                         key={editingObject.id}
-                        obj={editingObject}
+                        obj={editingObject as TextSlideObject}
                         onEditorReady={setObjectEditor}
                         onCommit={commitObjectText}
                         onClose={() => { setEditingObjectId(null); setObjectEditor(null) }}
@@ -1706,7 +1764,7 @@ export default function SlidesEditor() {
           {/* Comments panel */}
           {showComments && (
             <CommentsPanel
-              fileId={id}
+              fileId={id as string}
               anchorCtx={activeSlide ? { type: 'slide', slide_id: activeSlide.id, snapshot: activeSlide.title || `Slide ${activeIdx + 1}` } : null}
               onClose={() => setShowComments(false)}
             />
@@ -1725,7 +1783,7 @@ export default function SlidesEditor() {
       )}
       {showMasterEditor && (
         <MasterSlideEditor
-          masters={slidesData.masters}
+          masters={slidesData.masters ?? undefined}
           onSave={saveMasters}
           onClose={() => setShowMasterEditor(false)}
         />
@@ -1733,8 +1791,8 @@ export default function SlidesEditor() {
       {showTemplateGallery && (
         <TemplateGallery
           onApply={(tplData) => {
-            setSlidesData((prev) => ({ ...prev, ...tplData }))
-            schedule({ ...slidesData, ...tplData })
+            setSlidesData((prev) => ({ ...prev, ...tplData }) as DeckData)
+            schedule({ ...slidesData, ...tplData } as DeckData)
             setActiveIdx(0)
           }}
           onClose={() => setShowTemplateGallery(false)}
@@ -1746,7 +1804,7 @@ export default function SlidesEditor() {
         open={showShare}
         onClose={() => setShowShare(false)}
         file={{ id, name: title }}
-        me={myAccountId}
+        me={myAccountId ?? undefined}
       />
     </div>
   )
