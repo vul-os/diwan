@@ -24,10 +24,10 @@ import {
   chartPartXml, drawingXml, chartRefs, absRef, xmlEscape, nativeXlsxSupport,
   injectChartsIntoXlsx,
 } from './xlsxCharts.js'
-import { makeChart } from './charts.js'
+import { makeChart, type Chart, type ChartInput } from './charts.js'
 import { fortuneToWorksheet } from './sheetsExport.js'
 
-const GRID = [
+const GRID: (string | number)[][] = [
   ['Quarter', 'Revenue', 'Cost', 'Margin'],
   ['Q1', 100, 60, 12],
   ['Q2', 140, 70, 18],
@@ -35,8 +35,8 @@ const GRID = [
   ['Q4', 200, 110, 25],
 ]
 
-function sheetFrom(grid = GRID, charts = []) {
-  const celldata = []
+function sheetFrom(grid: (string | number)[][] = GRID, charts: Chart[] = []) {
+  const celldata: { r: number; c: number; v: { v: string | number; m: string; ct: { fa: string; t: string } } }[] = []
   grid.forEach((row, r) => row.forEach((v, c) => {
     if (v === '' || v == null) return
     const isNum = typeof v === 'number'
@@ -45,7 +45,7 @@ function sheetFrom(grid = GRID, charts = []) {
   return { name: 'Sheet1', celldata, config: {}, charts }
 }
 
-function chart(type, over = {}) {
+function chart(type: string, over: ChartInput = {}): Chart {
   return makeChart({
     id: 'c_' + type, type, range: 'A1:D5', title: `${type} chart`,
     options: { headerRow: true, headerCol: true, legend: true, ...(over.options || {}) },
@@ -53,7 +53,7 @@ function chart(type, over = {}) {
   })
 }
 
-async function xlsxWith(charts) {
+async function xlsxWith(charts: Chart[]) {
   const sheet = sheetFrom(GRID, charts)
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, fortuneToWorksheet(sheet), 'Sheet1')
@@ -81,7 +81,7 @@ describe('nativeXlsxSupport — the honesty predicate', () => {
 
 describe('chartRefs — range → live cell references', () => {
   it('maps series to columns and categories to the label column', () => {
-    const refs = chartRefs(chart('column'), 'Sheet1')
+    const refs = chartRefs(chart('column'), 'Sheet1')!
     expect(refs.series).toHaveLength(3)                       // B, C, D
     expect(refs.catRef).toBe("'Sheet1'!$A$2:$A$5")
     expect(refs.series[0].valRef).toBe("'Sheet1'!$B$2:$B$5")
@@ -96,14 +96,14 @@ describe('chartRefs — range → live cell references', () => {
   // uses (parseRange's A1:Z100), so the exported chart shows what the user sees —
   // an export must not quietly disagree with the live chart it came from.
   it('falls back to the renderer default for an unparseable range (parity, not divergence)', () => {
-    const refs = chartRefs(makeChart({ range: 'not-a-range' }), 'S')
+    const refs = chartRefs(makeChart({ range: 'not-a-range' }), 'S')!
     expect(refs.catRef).toBe("'S'!$A$2:$A$100")
     expect(refs.series[0].valRef).toBe("'S'!$B$2:$B$100")
   })
 })
 
 describe('chartPartXml — one part per chart type', () => {
-  const cases = [
+  const cases: [string, RegExp][] = [
     ['column',          /<c:barChart>.*<c:barDir val="col"\/>.*<c:grouping val="clustered"\/>/s],
     ['bar',             /<c:barDir val="bar"\/>.*<c:grouping val="clustered"\/>/s],
     ['column-stacked',  /<c:barDir val="col"\/>.*<c:grouping val="stacked"\/>.*<c:overlap val="100"\/>/s],
@@ -117,7 +117,7 @@ describe('chartPartXml — one part per chart type', () => {
   ]
   for (const [type, re] of cases) {
     it(`emits a ${type} chart part`, () => {
-      const xml = chartPartXml(chart(type), sheetFrom(), 'Sheet1')
+      const xml = chartPartXml(chart(type), sheetFrom(), 'Sheet1')!
       expect(xml).toMatch(re)
       expect(xml).toContain('<c:chartSpace')
       expect(xml).toContain("'Sheet1'!$B$2:$B$5")            // live cell reference
@@ -131,14 +131,14 @@ describe('chartPartXml — one part per chart type', () => {
   })
 
   it('scatter emits xVal/yVal (not cat/val)', () => {
-    const xml = chartPartXml(chart('scatter', { range: 'B1:C5', options: { headerCol: false } }), sheetFrom(), 'Sheet1')
+    const xml = chartPartXml(chart('scatter', { range: 'B1:C5', options: { headerCol: false } }), sheetFrom(), 'Sheet1')!
     expect(xml).toContain('<c:scatterChart>')
     expect(xml).toContain('<c:xVal>')
     expect(xml).toContain('<c:yVal>')
   })
 
   it('bubble emits a bubbleSize series — and refuses to invent one when absent', () => {
-    const ok = chartPartXml(chart('bubble', { range: 'B1:D5', options: { headerCol: false } }), sheetFrom(), 'Sheet1')
+    const ok = chartPartXml(chart('bubble', { range: 'B1:D5', options: { headerCol: false } }), sheetFrom(), 'Sheet1')!
     expect(ok).toContain('<c:bubbleSize>')
     // Only two numeric columns → no size column → we do NOT fabricate one.
     const missing = chartPartXml(chart('bubble', { range: 'B1:C5', options: { headerCol: false } }), sheetFrom(), 'Sheet1')
@@ -146,7 +146,7 @@ describe('chartPartXml — one part per chart type', () => {
   })
 
   it('combo emits a barChart AND a lineChart, with a secondary axis when asked', () => {
-    const plain = chartPartXml(chart('combo'), sheetFrom(), 'Sheet1')
+    const plain = chartPartXml(chart('combo'), sheetFrom(), 'Sheet1')!
     expect(plain).toContain('<c:barChart>')
     expect(plain).toContain('<c:lineChart>')
     expect(plain).not.toContain('<c:axId val="40"/>')          // single axis pair
@@ -154,7 +154,7 @@ describe('chartPartXml — one part per chart type', () => {
     const secondary = chartPartXml(
       chart('combo', { options: { headerRow: true, headerCol: true, secondaryAxis: true, y2AxisLabel: 'Margin' } }),
       sheetFrom(), 'Sheet1'
-    )
+    )!
     // The line group is bound to the second axis pair, whose value axis sits on
     // the right and crosses the (hidden) category axis at its maximum.
     expect(secondary).toMatch(/<c:lineChart>.*<c:axId val="30"\/><c:axId val="40"\/>.*<\/c:lineChart>/s)
@@ -167,7 +167,7 @@ describe('chartPartXml — one part per chart type', () => {
     const xml = chartPartXml(
       chart('histogram', { range: 'B1:B5', options: { headerRow: true, headerCol: false, bins: 2 } }),
       sheetFrom(), 'Sheet1'
-    )
+    )!
     expect(xml).toContain('<c:barChart>')
     expect(xml).toContain('<c:gapWidth val="0"/>')             // adjacent bars = distribution
     expect(xml).toContain('<c:numLit>')                        // counts, not a cell ref
@@ -182,8 +182,8 @@ describe('chartPartXml — one part per chart type', () => {
   })
 
   it('returns null (never a half-built part) for an unsupported type', () => {
-    expect(chartPartXml({ type: 'evil', range: 'A1:B2', options: {} }, sheetFrom(), 'S')).toBeNull()
-    expect(chartPartXml({ type: '__proto__', range: 'A1:B2', options: {} }, sheetFrom(), 'S')).toBeNull()
+    expect(chartPartXml({ type: 'evil', range: 'A1:B2', options: {} } as unknown as Chart, sheetFrom(), 'S')).toBeNull()
+    expect(chartPartXml({ type: '__proto__', range: 'A1:B2', options: {} } as unknown as Chart, sheetFrom(), 'S')).toBeNull()
   })
 })
 
@@ -194,7 +194,7 @@ describe('XML injection safety (untrusted cell/peer text)', () => {
       title: '</c:t></a:t><script>alert(1)</script>',
       options: { xAxisLabel: '=HYPERLINK("http://evil")', headerRow: true, headerCol: true },
     })
-    const xml = chartPartXml(hostile, sheetFrom(), 'Sheet1')
+    const xml = chartPartXml(hostile, sheetFrom(), 'Sheet1')!
     // No raw tag survives: every < > & " ' is entity-encoded.
     expect(xml).not.toContain('<script>')
     expect(xml).not.toContain('</c:t></a:t>')
@@ -228,15 +228,15 @@ describe('injectChartsIntoXlsx — package surgery', () => {
     expect(names).toContain('xl/worksheets/_rels/sheet1.xml.rels')
 
     // Content types declare the new parts (Excel refuses the file otherwise).
-    const ct = await zip.file('[Content_Types].xml').async('string')
+    const ct = await zip.file('[Content_Types].xml')!.async('string')
     expect(ct).toContain('/xl/charts/chart1.xml')
     expect(ct).toContain('drawingml.chart+xml')
     expect(ct).toContain('/xl/drawings/drawing1.xml')
 
     // The worksheet points at the drawing, which points at the charts.
-    const ws = await zip.file('xl/worksheets/sheet1.xml').async('string')
+    const ws = await zip.file('xl/worksheets/sheet1.xml')!.async('string')
     expect(ws).toMatch(/<drawing r:id="rId\d+"\/>\s*<\/worksheet>/)
-    const drels = await zip.file('xl/drawings/_rels/drawing1.xml.rels').async('string')
+    const drels = await zip.file('xl/drawings/_rels/drawing1.xml.rels')!.async('string')
     expect(drels).toContain('../charts/chart1.xml')
     expect(drels).toContain('../charts/chart3.xml')
 
@@ -250,7 +250,7 @@ describe('injectChartsIntoXlsx — package surgery', () => {
   it('anchors each chart at its saved position/size', async () => {
     const c = chart('column', { x: 640, y: 200, w: 480, h: 300 })
     const { zip } = await xlsxWith([c])
-    const d = await zip.file('xl/drawings/drawing1.xml').async('string')
+    const d = await zip.file('xl/drawings/drawing1.xml')!.async('string')
     expect(d).toContain('<xdr:col>10</xdr:col>')     // 640px / 64px per col
     expect(d).toContain('<xdr:row>10</xdr:row>')     // 200px / 20px per row
     expect(d).toContain('cx="4572000"')              // 480px * 9525 EMU
@@ -258,7 +258,7 @@ describe('injectChartsIntoXlsx — package surgery', () => {
   })
 
   it('SKIPS (and reports) a chart it cannot express — never a corrupt part', async () => {
-    const bad = { id: 'x', type: 'evil', range: 'A1:D5', options: {}, x: 0, y: 0, w: 480, h: 300 }
+    const bad = { id: 'x', type: 'evil', range: 'A1:D5', options: {}, x: 0, y: 0, w: 480, h: 300 } as unknown as Chart
     const { embedded, skipped, zip } = await xlsxWith([chart('column'), bad])
     expect(embedded).toEqual(['c_column'])
     expect(skipped).toEqual([{ id: 'x', type: 'evil', reason: 'no Excel equivalent' }])
@@ -300,7 +300,7 @@ describe('injectChartsIntoXlsx — package surgery', () => {
 
 describe('drawingXml', () => {
   it('clamps a hostile/absurd geometry — a NaN extent would make Excel reject the file', () => {
-    const xml = drawingXml([{ rId: 'rId1', x: -50, y: NaN, w: 0, h: undefined }])
+    const xml = drawingXml([{ rId: 'rId1', x: -50, y: NaN, w: 0, h: NaN }])
     expect(xml).not.toContain('NaN')
     expect(xml).toContain('<xdr:col>0</xdr:col>')
     expect(xml).toContain('<xdr:row>0</xdr:row>')
