@@ -21,22 +21,37 @@ import { Check, XCircle, Type, Trash2, ChevronDown, ChevronUp, X, GitBranch } fr
 import { formatTs } from '../lib/format'
 import { Tabs, Button, IconButton, EmptyState } from './ui'
 
+export type SuggestionKind = 'insert' | 'delete'
+export type SuggestionState = 'pending' | 'accepted' | 'rejected'
+
+export interface Suggestion {
+  id: string
+  kind: SuggestionKind
+  state: SuggestionState
+  author_id?: string
+  reviewer_id?: string
+  created_at?: string | number | Date | null
+  text?: string
+  from?: number
+  to?: number
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function kindColor(kind) {
+function kindColor(kind: SuggestionKind): string {
   return kind === 'insert'
     ? 'text-success bg-success-bg border-success'
     : 'text-danger bg-danger-bg border-danger'
 }
 
 // Signal-color pill for suggestion state
-function StatePill({ state }) {
-  const map = {
+function StatePill({ state }: { state: SuggestionState }) {
+  const map: Record<SuggestionState, string> = {
     accepted: 'bg-success-bg text-success border border-success',
     rejected:  'bg-danger-bg  text-danger  border border-danger',
     pending:   'bg-warning-bg text-warning border border-warning',
   }
-  const labels = { accepted: 'Accepted', rejected: 'Rejected', pending: 'Pending' }
+  const labels: Record<SuggestionState, string> = { accepted: 'Accepted', rejected: 'Rejected', pending: 'Pending' }
   return (
     <span className={`text-2xs font-semibold px-1.5 py-px rounded-pill tracking-tightish ${map[state] || map.pending}`}>
       {labels[state] || state}
@@ -45,7 +60,17 @@ function StatePill({ state }) {
 }
 
 // ─── SuggestionItem ───────────────────────────────────────────────────────────
-function SuggestionItem({ item, onAccept, onReject, busy }) {
+interface SuggestionItemProps {
+  item: Suggestion
+  onAccept: (item: Suggestion) => void
+  onReject: (item: Suggestion) => void
+  busy: boolean
+  // Accepted for parity with the caller (SuggestionPanel passes it down) but
+  // not currently read here — matches the original JS component's contract.
+  authorId?: string
+}
+
+function SuggestionItem({ item, onAccept, onReject, busy }: SuggestionItemProps) {
   const [expanded, setExpanded] = useState(true)
   const isPending = item.state === 'pending'
   const isInsert  = item.kind === 'insert'
@@ -144,18 +169,27 @@ const TAB_ITEMS = [
   { value: 'rejected', label: 'Rejected' },
 ]
 
+interface SuggestionPanelProps {
+  fileId?: string
+  authorId?: string
+  suggestions?: Suggestion[]
+  onAccept: (item: Suggestion) => void | Promise<void>
+  onReject: (item: Suggestion) => void | Promise<void>
+  onClose?: () => void
+}
+
 export default function SuggestionPanel({
   fileId, authorId = 'You', suggestions = [], onAccept, onReject, onClose,
-}) {
+}: SuggestionPanelProps) {
   const [busy, setBusy]     = useState(false)
   const [filter, setFilter] = useState('pending')
 
-  const handleAccept = async (item) => {
+  const handleAccept = async (item: Suggestion) => {
     setBusy(true)
     try { await onAccept(item) } finally { setBusy(false) }
   }
 
-  const handleReject = async (item) => {
+  const handleReject = async (item: Suggestion) => {
     setBusy(true)
     try { await onReject(item) } finally { setBusy(false) }
   }
