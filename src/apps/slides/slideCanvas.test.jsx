@@ -19,7 +19,7 @@ import {
 import {
   bringToFront, sendToBack, bringForward, sendBackward,
   groupObjects, ungroupObjects, expandSelectionToGroups, align, distribute,
-} from './slideArrange.js'
+} from './slideArrange'
 import { animationClassFor, playAnimationsOn, prefersReducedMotion } from './slideAnimations'
 import SlideCanvas from './SlideCanvas.jsx'
 
