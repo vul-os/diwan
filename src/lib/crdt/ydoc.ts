@@ -55,11 +55,21 @@
  */
 
 import * as Y from 'yjs'
-import { Node as PMNode } from '@tiptap/pm/model'
+import { Node as PMNode, type Schema } from '@tiptap/pm/model'
 import {
   prosemirrorJSONToYXmlFragment,
   yXmlFragmentToProsemirrorJSON,
 } from 'y-prosemirror'
+
+/** Untrusted ProseMirror-JSON-shaped node — see validateDocJSON below. */
+export type PMJSON = {
+  type?: string
+  text?: string
+  attrs?: Record<string, unknown>
+  marks?: Array<{ type?: string; attrs?: Record<string, unknown> }>
+  content?: PMJSON[]
+  [key: string]: unknown
+}
 
 /** The XmlFragment key inside the Y.Doc that holds the ProseMirror document. */
 export const Y_FRAGMENT = 'prosemirror'
@@ -105,17 +115,17 @@ const UNSAFE_URL = /^\s*(javascript|data|vbscript|file):/i
 const B64_RE = /^[A-Za-z0-9+/]*={0,2}$/
 
 /** Uint8Array → base64. */
-export function bytesToB64(bytes) {
+export function bytesToB64(bytes: Uint8Array): string {
   let bin = ''
   const chunk = 0x8000 // avoid blowing the argument limit on large updates
   for (let i = 0; i < bytes.length; i += chunk) {
-    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk))
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk) as unknown as number[])
   }
   return btoa(bin)
 }
 
 /** base64 → Uint8Array. Returns null on anything that is not clean base64. */
-export function b64ToBytes(s) {
+export function b64ToBytes(s: unknown): Uint8Array | null {
   if (typeof s !== 'string' || s.length === 0) return null
   if (s.length % 4 !== 0 || !B64_RE.test(s)) return null
   try {
@@ -130,14 +140,16 @@ export function b64ToBytes(s) {
 
 // ── Envelopes ───────────────────────────────────────────────────────────────
 
+export type UpdateEnvelope = { y: typeof Y_ENVELOPE_VERSION; u: string }
+
 /** Wrap a raw Yjs update as the wire envelope. */
-export function encodeUpdateEnvelope(update) {
+export function encodeUpdateEnvelope(update: Uint8Array): UpdateEnvelope {
   return { y: Y_ENVELOPE_VERSION, u: bytesToB64(update) }
 }
 
 /** True iff `o` looks like a Yjs envelope of a version we understand. */
-export function isYEnvelope(o) {
-  return !!o && typeof o === 'object' && o.y === Y_ENVELOPE_VERSION && typeof o.u === 'string'
+export function isYEnvelope(o: unknown): o is UpdateEnvelope {
+  return !!o && typeof o === 'object' && (o as Record<string, unknown>).y === Y_ENVELOPE_VERSION && typeof (o as Record<string, unknown>).u === 'string'
 }
 
 /**
@@ -145,10 +157,11 @@ export function isYEnvelope(o) {
  * ({nodes:[…]}) — the pre-Yjs format. Used by the migration path to recognise
  * (and deliberately ignore) a pre-Yjs op log when hydrating a legacy document.
  */
-export function isLegacyTextPayload(o) {
+export function isLegacyTextPayload(o: unknown): boolean {
   if (!o || typeof o !== 'object') return false
-  if (typeof o.k === 'number' && (o.k === 1 || o.k === 2)) return true
-  if (Array.isArray(o.nodes)) return true
+  const r = o as Record<string, unknown>
+  if (typeof r.k === 'number' && (r.k === 1 || r.k === 2)) return true
+  if (Array.isArray(r.nodes)) return true
   return false
 }
 
@@ -157,10 +170,9 @@ export function isLegacyTextPayload(o) {
  * willing to feed to Yjs. FAIL-CLOSED: shape, base64 validity and size are all
  * checked here, at the ingress boundary, before any CRDT state is touched.
  *
- * @param {*} env  untrusted payload from a peer / relay / persisted op log
- * @param {number} [maxBytes]
+ * @param env  untrusted payload from a peer / relay / persisted op log
  */
-export function decodeUpdateEnvelope(env, maxBytes = MAX_UPDATE_BYTES) {
+export function decodeUpdateEnvelope(env: unknown, maxBytes = MAX_UPDATE_BYTES): Uint8Array | null {
   if (!isYEnvelope(env)) return null
   // Reject before decoding: base64 inflates by 4/3, so cap the encoded length.
   if (env.u.length > Math.ceil((maxBytes * 4) / 3) + 4) return null
@@ -183,13 +195,14 @@ export function decodeUpdateEnvelope(env, maxBytes = MAX_UPDATE_BYTES) {
  * partial strip would leave the two peers' documents divergent, which is exactly
  * the class of bug this whole change exists to kill.
  */
-export function validateDocJSON(json) {
+export function validateDocJSON(json: unknown): string | null {
   let nodes = 0
   let textChars = 0
-  const stack = [json]
+  const stack: unknown[] = [json]
   while (stack.length) {
-    const n = stack.pop()
-    if (!n || typeof n !== 'object') return 'malformed node'
+    const raw = stack.pop()
+    if (!raw || typeof raw !== 'object') return 'malformed node'
+    const n = raw as PMJSON
     if (++nodes > MAX_DOC_NODES) return 'document exceeds node ceiling'
     if (typeof n.text === 'string') {
       textChars += n.text.length
@@ -233,21 +246,25 @@ export function validateDocJSON(json) {
  * (e.g. a table row outside a table). Both are caught here, before the update is
  * allowed anywhere near the live document.
  */
-export function checkFragmentRenderable(fragment, schema) {
-  let json
+export type FragmentCheckResult =
+  | { ok: true; json: Record<string, unknown> }
+  | { ok: false; reason: string; json?: Record<string, unknown> }
+
+export function checkFragmentRenderable(fragment: Y.XmlFragment, schema: Schema): FragmentCheckResult {
+  let json: Record<string, unknown>
   try {
     json = yXmlFragmentToProsemirrorJSON(fragment)
   } catch (err) {
-    return { ok: false, reason: `unreadable fragment: ${err?.message || err}` }
+    return { ok: false, reason: `unreadable fragment: ${(err as Error)?.message || err}` }
   }
   const bad = validateDocJSON(json)
   if (bad) return { ok: false, reason: bad, json }
-  let node
+  let node: InstanceType<typeof PMNode>
   try {
     node = PMNode.fromJSON(schema, json)
     node.check()
   } catch (err) {
-    return { ok: false, reason: `not renderable: ${err?.message || err}`, json }
+    return { ok: false, reason: `not renderable: ${(err as Error)?.message || err}`, json }
   }
   // Hand back CANONICAL ProseMirror JSON (node.toJSON()), not y-prosemirror's
   // raw conversion — the latter emits `attrs: {}` on attribute-less marks, which
@@ -273,7 +290,7 @@ export function checkFragmentRenderable(fragment, schema) {
  *     Yjs would silently keep one and drop the other — a divergence we could
  *     never detect. Content-derived ids make the bad case loud instead of silent.
  */
-function hash31(s) {
+function hash31(s: string): number {
   let h = 5381
   for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0
   return (h >>> 0) % 0x7fffffff || 1 // never 0 (Yjs treats 0 as unset)
@@ -286,11 +303,10 @@ function hash31(s) {
  * content is not converted from the old op log (which never carried formatting
  * in the first place), it is re-derived from the document itself.
  *
- * @param {import('@tiptap/pm/model').Schema} schema
- * @param {object} docJSON  ProseMirror document JSON
- * @returns {Uint8Array} a Yjs update that, applied to an empty doc, reproduces it
+ * @param docJSON  ProseMirror document JSON
+ * @returns a Yjs update that, applied to an empty doc, reproduces it
  */
-export function seedUpdateFromPMJSON(schema, docJSON) {
+export function seedUpdateFromPMJSON(schema: Schema, docJSON: Record<string, unknown>): Uint8Array {
   const canonical = JSON.stringify(docJSON)
   const seed = new Y.Doc()
   // Must be set before any content is created (item ids embed the client id).
@@ -300,7 +316,7 @@ export function seedUpdateFromPMJSON(schema, docJSON) {
 }
 
 /** True when the doc's fragment holds no content yet (nothing to render). */
-export function isFragmentEmpty(ydoc) {
+export function isFragmentEmpty(ydoc: Y.Doc): boolean {
   const frag = ydoc.getXmlFragment(Y_FRAGMENT)
   return frag.length === 0
 }
@@ -318,11 +334,12 @@ export function isFragmentEmpty(ydoc) {
  * shadow is rebuilt from the live doc, so one hostile frame cannot poison the
  * validator for the frames that follow.
  *
- * @param {object} ctx  { ydoc, shadow, schema }
- * @param {Uint8Array} update
- * @returns {{ applied: boolean, reason?: string }}
+ * @param ctx  { ydoc, shadow, schema }
  */
-export function applyRemoteUpdate(ctx, update) {
+export type YContext = { ydoc: Y.Doc; shadow: Y.Doc; schema: Schema }
+export type ApplyRemoteUpdateResult = { applied: boolean; reason?: string }
+
+export function applyRemoteUpdate(ctx: YContext, update: Uint8Array): ApplyRemoteUpdateResult {
   const { ydoc, shadow, schema } = ctx
   try {
     Y.applyUpdate(shadow, update, REMOTE_ORIGIN)
@@ -330,7 +347,7 @@ export function applyRemoteUpdate(ctx, update) {
     // Malformed/garbage bytes: Yjs throws while decoding. Fail closed — and note
     // the shadow may now be partially updated, so rebuild it.
     resyncShadow(ctx)
-    return { applied: false, reason: `undecodable update: ${err?.message || err}` }
+    return { applied: false, reason: `undecodable update: ${(err as Error)?.message || err}` }
   }
   const check = checkFragmentRenderable(shadow.getXmlFragment(Y_FRAGMENT), schema)
   if (!check.ok) {
@@ -341,13 +358,13 @@ export function applyRemoteUpdate(ctx, update) {
     Y.applyUpdate(ydoc, update, REMOTE_ORIGIN)
   } catch (err) {
     resyncShadow(ctx)
-    return { applied: false, reason: `apply failed: ${err?.message || err}` }
+    return { applied: false, reason: `apply failed: ${(err as Error)?.message || err}` }
   }
   return { applied: true }
 }
 
 /** Discard the shadow's state and rebuild it from the live document. */
-export function resyncShadow(ctx) {
+export function resyncShadow(ctx: YContext): Y.Doc {
   const fresh = new Y.Doc()
   Y.applyUpdate(fresh, Y.encodeStateAsUpdate(ctx.ydoc), REMOTE_ORIGIN)
   ctx.shadow = fresh
@@ -360,10 +377,10 @@ export function resyncShadow(ctx) {
  * candidate update can be tried on it in O(update) instead of re-cloning the
  * whole document on every remote frame.
  */
-export function createYContext(schema, ydoc = new Y.Doc()) {
-  const ctx = { ydoc, shadow: new Y.Doc(), schema }
+export function createYContext(schema: Schema, ydoc: Y.Doc = new Y.Doc()): YContext {
+  const ctx: YContext = { ydoc, shadow: new Y.Doc(), schema }
   // Keep the shadow in lock-step with LOCAL edits too, so it never lags behind.
-  ydoc.on('update', (update, origin) => {
+  ydoc.on('update', (update: Uint8Array, origin: unknown) => {
     if (origin === REMOTE_ORIGIN) return // already applied to the shadow
     try { Y.applyUpdate(ctx.shadow, update, REMOTE_ORIGIN) } catch { resyncShadow(ctx) }
   })

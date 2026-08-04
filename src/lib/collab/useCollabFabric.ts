@@ -62,32 +62,29 @@ import {
   TRANSPORT_LOCAL_ONLY,
 } from './transportSelection.js'
 
-/**
- * @param {object} opts
- * @param {string}  opts.sessionId  - file id (fabric session key)
- * @param {string}  opts.peerId     - stable per-tab id (CRDT replicaId)
- * @param {boolean} [opts.enabled=true] - set false to stay fully local (no fabric)
- * @returns {{
- *   fabric: import('./webrtc/fabric.js').FabricClient | null,
- *   peers: Record<string, string>,
- *   joined: boolean,
- *   configured: boolean,
- * }}
- */
-export function useCollabFabric({ sessionId, peerId, enabled = true }) {
-  const [fabric, setFabric] = useState(null)
-  const [peers, setPeers] = useState({})       // peerId → state
+export type UseCollabFabricOptions = {
+  /** file id (fabric session key) */
+  sessionId: string
+  /** stable per-tab id (CRDT replicaId) */
+  peerId: string
+  /** set false to stay fully local (no fabric) */
+  enabled?: boolean
+}
+
+export function useCollabFabric({ sessionId, peerId, enabled = true }: UseCollabFabricOptions) {
+  const [fabric, setFabric] = useState<FabricClient | null>(null)
+  const [peers, setPeers] = useState<Record<string, string>>({})       // peerId → state
   const [joined, setJoined] = useState(false)
   const [configured, setConfigured] = useState(false)
-  const fabricRef = useRef(null)
+  const fabricRef = useRef<FabricClient | null>(null)
 
   useEffect(() => {
     if (!enabled || !sessionId || !peerId) return
     if (typeof window === 'undefined') return
 
     let cancelled = false
-    let client = null
-    let onState = null
+    let client: FabricClient | null = null
+    let onState: ((ev: Event) => void) | null = null
 
     const wsBase = window.location.origin.replace(/^http/, 'ws') + '/api/peering/stream'
 
@@ -106,24 +103,34 @@ export function useCollabFabric({ sessionId, peerId, enabled = true }) {
       }
 
       try {
-        client = new FabricClient({
+        // FabricClient's constructor JSDoc (fabric.js, not yet converted) only
+        // documents its first 8 options — TS's inference of the constructor's
+        // parameter type is drawn from that JSDoc, not from the fuller
+        // destructuring pattern a few lines below it, which also accepts
+        // rendezvousBaseUrl/rendezvousPrefix. Widen the type at this call site
+        // rather than edit fabric.js's logic.
+        const fabricOpts: ConstructorParameters<typeof FabricClient>[0] & {
+          rendezvousBaseUrl?: string
+          rendezvousPrefix?: string
+        } = {
           sessionId,
           peerId,
           signalingUrl: wsBase,
           iceUrl: '/api/peering/ice',
           relayBaseUrl: '',
-          authToken: null,
+          authToken: undefined,
           // Set only in `rendezvous` mode — the FabricClient itself treats a
           // non-empty rendezvousBaseUrl as "run the whole signaling lifecycle
           // against this relayd instead of /api/peering/*", derives its own
           // ICE from the relay, and ignores signalingUrl/iceUrl above.
           rendezvousBaseUrl,
           ...(rendezvousPrefix ? { rendezvousPrefix } : {}),
-        })
+        }
+        client = new FabricClient(fabricOpts)
       } catch (err) {
         // FabricClient construction should not throw, but never let it break the
         // editor — degrade to local-only.
-        console.warn('[collab] fabric init failed (local-only mode):', err?.message)
+        console.warn('[collab] fabric init failed (local-only mode):', (err as Error)?.message)
         return
       }
       if (cancelled) { try { client.leave() } catch { /* ignore */ }; return }
@@ -134,18 +141,18 @@ export function useCollabFabric({ sessionId, peerId, enabled = true }) {
 
       onState = (ev) => {
         if (cancelled) return
-        const { peerId: pid, state } = ev.detail || {}
-        if (!pid) return
+        const { peerId: pid, state } = (ev as CustomEvent<{ peerId?: string; state?: string }>).detail || {}
+        if (!pid || !state) return
         setPeers((prev) => ({ ...prev, [pid]: state }))
       }
       client.addEventListener('state', onState)
 
       client.join()
         .then(() => { if (!cancelled) setJoined(true) })
-        .catch((err) => {
+        .catch((err: unknown) => {
           // No peering backend / offline / single-user — this is expected and
           // non-fatal. Presence stays empty; the editor is unaffected.
-          console.warn('[collab] fabric join failed (single-user mode):', err?.message)
+          console.warn('[collab] fabric join failed (single-user mode):', (err as Error)?.message)
           if (!cancelled) { setJoined(false); setConfigured(false) }
         })
     })()
