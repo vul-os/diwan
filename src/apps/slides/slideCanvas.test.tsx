@@ -15,13 +15,20 @@ import { render, screen, fireEvent, act } from '@testing-library/react'
 import {
   ensureObjects, sanitizeObject, sanitizeObjects, clampFinite,
   MAX_OBJECTS_PER_SLIDE, flowContentFromObjects, sortByZ, normalizeZ, sanitizeColor,
+  type SlideObject, type TextSlideObject, type ImageSlideObject, type ShapeSlideObject,
 } from './slideObjects'
 import {
   bringToFront, sendToBack, bringForward, sendBackward,
   groupObjects, ungroupObjects, expandSelectionToGroups, align, distribute,
 } from './slideArrange'
-import { animationClassFor, playAnimationsOn, prefersReducedMotion } from './slideAnimations'
+import { animationClassFor, playAnimationsOn, prefersReducedMotion, type SlideAnimation } from './slideAnimations'
 import SlideCanvas from './SlideCanvas.jsx'
+
+// Test fixtures below are deliberately loose (arrange-op tests only care about
+// id/x/y/w/h/z/group; ingress-validation tests deliberately pass malformed
+// shapes). Casting through this alias documents that intent once instead of
+// scattering `as unknown as SlideObject[]` at each call site.
+type Fixture = SlideObject[]
 
 // ── P2: object model + migration ────────────────────────────────────────────
 describe('object model — migration (ensureObjects)', () => {
@@ -31,8 +38,8 @@ describe('object model — migration (ensureObjects)', () => {
     expect(objs.length).toBe(2)
     expect(objs.every((o) => o.type === 'text')).toBe(true)
     // Title object carries the escaped title inside an <h2>.
-    expect(objs[0].html).toContain('My Title')
-    expect(objs[1].html).toContain('Body text')
+    expect((objs[0] as TextSlideObject).html).toContain('My Title')
+    expect((objs[1] as TextSlideObject).html).toContain('Body text')
     // All geometry is finite + normalized.
     for (const o of objs) {
       expect(Number.isFinite(o.x)).toBe(true)
@@ -45,8 +52,8 @@ describe('object model — migration (ensureObjects)', () => {
     const slide = { id: 's', title: '<img src=x onerror=alert(1)>', content: '' }
     const objs = ensureObjects(slide)
     // The <img> is neutralised into inert escaped text (no live element/attr).
-    expect(objs[0].html).not.toContain('<img')
-    expect(objs[0].html).toContain('&lt;img')
+    expect((objs[0] as TextSlideObject).html).not.toContain('<img')
+    expect((objs[0] as TextSlideObject).html).toContain('&lt;img')
   })
 
   it('returns existing objects[] when present (sanitized)', () => {
@@ -71,10 +78,10 @@ describe('object model — migration (ensureObjects)', () => {
 describe('object ingress validation — sanitizeObject / sanitizeObjects', () => {
   it('clamps non-finite geometry to a safe box', () => {
     const o = sanitizeObject({ type: 'shape', shape: 'rect', x: NaN, y: Infinity, w: -5, h: 'foo' })
-    expect(Number.isFinite(o.x)).toBe(true)
-    expect(Number.isFinite(o.y)).toBe(true)
-    expect(o.w).toBeGreaterThan(0)
-    expect(o.h).toBeGreaterThan(0)
+    expect(Number.isFinite(o!.x)).toBe(true)
+    expect(Number.isFinite(o!.y)).toBe(true)
+    expect(o!.w).toBeGreaterThan(0)
+    expect(o!.h).toBeGreaterThan(0)
   })
 
   it('drops objects with an unknown type', () => {
@@ -85,9 +92,10 @@ describe('object ingress validation — sanitizeObject / sanitizeObjects', () =>
 
   it('sanitizes untrusted text html (strips script/on*)', () => {
     const o = sanitizeObject({ type: 'text', html: '<p onclick="x">hi</p><script>alert(1)</script>' })
-    expect(o.html).not.toContain('onclick')
-    expect(o.html).not.toContain('<script')
-    expect(o.html).toContain('hi')
+    const text = o as TextSlideObject
+    expect(text.html).not.toContain('onclick')
+    expect(text.html).not.toContain('<script')
+    expect(text.html).toContain('hi')
   })
 
   it('gates image src — drops an object with an exec-scheme src', () => {
@@ -95,12 +103,12 @@ describe('object ingress validation — sanitizeObject / sanitizeObjects', () =>
     expect(sanitizeObject({ type: 'image', src: 'data:text/html,<script>' })).toBeNull()
     const ok = sanitizeObject({ type: 'image', src: 'https://example.com/a.png', x: 0, y: 0, w: 0.3, h: 0.3 })
     expect(ok).not.toBeNull()
-    expect(ok.src).toBe('https://example.com/a.png')
+    expect((ok as ImageSlideObject).src).toBe('https://example.com/a.png')
   })
 
   it('clamps a hostile z and bounds object count', () => {
     const o = sanitizeObject({ type: 'shape', shape: 'rect', z: 1e12 })
-    expect(o.z).toBeLessThanOrEqual(100000)
+    expect(o!.z).toBeLessThanOrEqual(100000)
     const many = Array.from({ length: MAX_OBJECTS_PER_SLIDE + 50 }, () => ({ type: 'shape', shape: 'rect' }))
     expect(sanitizeObjects(many).length).toBe(MAX_OBJECTS_PER_SLIDE)
   })
@@ -126,9 +134,9 @@ describe('object ingress validation — sanitizeObject / sanitizeObjects', () =>
     const roundTripped = sanitizeObjects(JSON.parse(JSON.stringify(original)))
     expect(roundTripped).toHaveLength(2)
     const a = roundTripped.find((o) => o.id === 'a')
-    expect(a.rotation).toBe(45)
-    expect(a.x).toBeCloseTo(0.1)
-    const b = roundTripped.find((o) => o.id === 'b')
+    expect(a!.rotation).toBe(45)
+    expect(a!.x).toBeCloseTo(0.1)
+    const b = roundTripped.find((o) => o.id === 'b') as ShapeSlideObject
     expect(b.shape).toBe('star')
     expect(b.fill).toBe('#ff0000')
     expect(b.opacity).toBe(0.5)
@@ -159,18 +167,18 @@ describe('flowContentFromObjects (legacy content sync)', () => {
 // ── P1: animation playback ──────────────────────────────────────────────────
 describe('animation playback (P1)', () => {
   it('resolves entrance/exit/emphasis effects to distinct CSS classes', () => {
-    expect(animationClassFor({ type: 'entrance', effect: 'fade-in', order: 0 }).className).toBe('vslide-anim-fade-in')
-    expect(animationClassFor({ type: 'exit', effect: 'fade-in', order: 0 }).className).toBe('vslide-anim-fade-out')
-    expect(animationClassFor({ type: 'emphasis', effect: 'bounce', order: 1 }).className).toBe('vslide-anim-bounce-emph')
+    expect(animationClassFor({ type: 'entrance', effect: 'fade-in', order: 0 })!.className).toBe('vslide-anim-fade-in')
+    expect(animationClassFor({ type: 'exit', effect: 'fade-in', order: 0 })!.className).toBe('vslide-anim-fade-out')
+    expect(animationClassFor({ type: 'emphasis', effect: 'bounce', order: 1 })!.className).toBe('vslide-anim-bounce-emph')
   })
 
   it('staggers by order', () => {
-    expect(animationClassFor({ type: 'entrance', effect: 'fade-in', order: 0 }).delayMs).toBe(0)
-    expect(animationClassFor({ type: 'entrance', effect: 'fade-in', order: 2 }).delayMs).toBeGreaterThan(0)
+    expect(animationClassFor({ type: 'entrance', effect: 'fade-in', order: 0 })!.delayMs).toBe(0)
+    expect(animationClassFor({ type: 'entrance', effect: 'fade-in', order: 2 })!.delayMs).toBeGreaterThan(0)
   })
 
   it('returns null for an unknown effect', () => {
-    expect(animationClassFor({ type: 'entrance', effect: 'nope' })).toBeNull()
+    expect(animationClassFor({ type: 'entrance', effect: 'nope' } as unknown as SlideAnimation)).toBeNull()
     expect(animationClassFor(null)).toBeNull()
   })
 
@@ -185,8 +193,8 @@ describe('animation playback (P1)', () => {
   it('honours prefers-reduced-motion (no class applied)', () => {
     const el = document.createElement('div')
     const prior = window.matchMedia
-    window.matchMedia = (q) => ({
-      matches: q.includes('reduce'), media: q, addListener() {}, removeListener() {},
+    window.matchMedia = (q: string) => ({
+      matches: q.includes('reduce'), media: q, onchange: null, addListener() {}, removeListener() {},
       addEventListener() {}, removeEventListener() {}, dispatchEvent() { return false },
     })
     try {
@@ -201,11 +209,11 @@ describe('animation playback (P1)', () => {
 
 // ── P3: arrange operations ──────────────────────────────────────────────────
 describe('arrange — z-order (P3)', () => {
-  const objs = () => [
+  const objs = (): Fixture => ([
     { id: 'a', type: 'shape', shape: 'rect', x: 0, y: 0, w: 0.2, h: 0.2, z: 1 },
     { id: 'b', type: 'shape', shape: 'rect', x: 0, y: 0, w: 0.2, h: 0.2, z: 2 },
     { id: 'c', type: 'shape', shape: 'rect', x: 0, y: 0, w: 0.2, h: 0.2, z: 3 },
-  ]
+  ] as unknown as Fixture)
   it('bringToFront moves selection above all others', () => {
     const r = bringToFront(objs(), ['a'])
     const sorted = sortByZ(r).map((o) => o.id)
@@ -232,10 +240,10 @@ describe('arrange — z-order (P3)', () => {
 })
 
 describe('arrange — group/ungroup (P3)', () => {
-  const objs = () => [
+  const objs = (): Fixture => ([
     { id: 'a', type: 'shape', shape: 'rect', x: 0, y: 0, w: 0.2, h: 0.2, z: 1 },
     { id: 'b', type: 'shape', shape: 'rect', x: 0, y: 0, w: 0.2, h: 0.2, z: 2 },
-  ]
+  ] as unknown as Fixture)
   it('group tags selected objects with a shared group id', () => {
     const r = groupObjects(objs(), ['a', 'b'])
     expect(r[0].group).toBeTruthy()
@@ -259,11 +267,11 @@ describe('arrange — group/ungroup (P3)', () => {
 })
 
 describe('arrange — align + distribute (P3)', () => {
-  const objs = () => [
+  const objs = (): Fixture => ([
     { id: 'a', type: 'shape', shape: 'rect', x: 0.1, y: 0.1, w: 0.2, h: 0.2, z: 1 },
     { id: 'b', type: 'shape', shape: 'rect', x: 0.5, y: 0.3, w: 0.2, h: 0.2, z: 2 },
     { id: 'c', type: 'shape', shape: 'rect', x: 0.7, y: 0.6, w: 0.2, h: 0.2, z: 3 },
-  ]
+  ] as unknown as Fixture)
   it('align left snaps all to the selection min-x', () => {
     const r = align(objs(), ['a', 'b', 'c'], 'left')
     expect(r.every((o) => o.x === 0.1)).toBe(true)
@@ -275,11 +283,11 @@ describe('arrange — align + distribute (P3)', () => {
   it('align center on a single object centres it on the slide', () => {
     const r = align(objs(), ['a'], 'center')
     const a = r.find((o) => o.id === 'a')
-    expect(a.x).toBeCloseTo(0.5 - 0.2 / 2)
+    expect(a!.x).toBeCloseTo(0.5 - 0.2 / 2)
   })
   it('distribute horizontal evens the centre spacing', () => {
     const r = distribute(objs(), ['a', 'b', 'c'], 'horizontal')
-    const cx = (o) => o.x + o.w / 2
+    const cx = (o: SlideObject) => o.x + o.w / 2
     const rc = r.slice().sort((x, y) => cx(x) - cx(y))
     const gap1 = cx(rc[1]) - cx(rc[0])
     const gap2 = cx(rc[2]) - cx(rc[1])
@@ -291,16 +299,22 @@ describe('arrange — align + distribute (P3)', () => {
   })
 })
 
+// The onChange/onSelect mocks below are typed against SlideCanvas's own prop
+// signatures so mock.calls carries real SlideObject[]/opts types instead of
+// vi.fn()'s untyped-Procedure default (any[][]).
+type OnChangeMock = (next: SlideObject[], opts: { commit: boolean }) => void
+type OnSelectMock = (ids: string[]) => void
+
 // ── P2: SlideCanvas interaction ─────────────────────────────────────────────
 describe('SlideCanvas interaction (P2)', () => {
   const baseObjects = [
     { id: 'a', type: 'shape', shape: 'rect', x: 0.2, y: 0.2, w: 0.3, h: 0.3, rotation: 0, z: 1, fill: '#7c6af7', stroke: '#5b4dd0', strokeWidth: 2, opacity: 1 },
-  ]
+  ] as unknown as Fixture
 
   // jsdom has no layout — stub getBoundingClientRect so px⇄fraction maths runs.
   beforeEach(() => {
     Element.prototype.getBoundingClientRect = vi.fn(() => ({
-      x: 0, y: 0, left: 0, top: 0, right: 960, bottom: 540, width: 960, height: 540,
+      x: 0, y: 0, left: 0, top: 0, right: 960, bottom: 540, width: 960, height: 540, toJSON() { return {} },
     }))
   })
 
@@ -310,32 +324,32 @@ describe('SlideCanvas interaction (P2)', () => {
   })
 
   it('clicking an object selects it', () => {
-    const onSelect = vi.fn()
+    const onSelect = vi.fn<OnSelectMock>()
     render(<SlideCanvas objects={baseObjects} selectedIds={[]} onSelect={onSelect} onChange={() => {}} />)
     const el = document.querySelector('[data-object-id="a"]')
-    fireEvent.pointerDown(el, { clientX: 300, clientY: 200 })
+    fireEvent.pointerDown(el!, { clientX: 300, clientY: 200 })
     expect(onSelect).toHaveBeenCalledWith(['a'])
   })
 
   it('dragging a selected object moves it (onChange with new x/y)', () => {
-    const onChange = vi.fn()
+    const onChange = vi.fn<OnChangeMock>()
     render(<SlideCanvas objects={baseObjects} selectedIds={['a']} onSelect={() => {}} onChange={onChange} />)
     const el = document.querySelector('[data-object-id="a"]')
-    fireEvent.pointerDown(el, { clientX: 300, clientY: 200 })
+    fireEvent.pointerDown(el!, { clientX: 300, clientY: 200 })
     act(() => {
       window.dispatchEvent(new MouseEvent('pointermove', { clientX: 400, clientY: 260 }))
       window.dispatchEvent(new MouseEvent('pointerup', {}))
     })
     const moveCall = onChange.mock.calls.find((c) => c[1] && c[1].commit === false)
     expect(moveCall).toBeTruthy()
-    const movedA = moveCall[0].find((o) => o.id === 'a')
+    const movedA = moveCall![0].find((o) => o.id === 'a')
     // Moved ~100px right (of 960) and ~60px down (of 540).
-    expect(movedA.x).toBeGreaterThan(0.2)
-    expect(movedA.y).toBeGreaterThan(0.2)
+    expect(movedA!.x).toBeGreaterThan(0.2)
+    expect(movedA!.y).toBeGreaterThan(0.2)
   })
 
   it('resize handle grows the object', () => {
-    const onChange = vi.fn()
+    const onChange = vi.fn<OnChangeMock>()
     render(<SlideCanvas objects={baseObjects} selectedIds={['a']} onSelect={() => {}} onChange={onChange} />)
     const seHandle = screen.getByLabelText('Resize se')
     fireEvent.pointerDown(seHandle, { clientX: 480, clientY: 480 })
@@ -345,13 +359,13 @@ describe('SlideCanvas interaction (P2)', () => {
     })
     const call = onChange.mock.calls.find((c) => c[1] && c[1].commit === false)
     expect(call).toBeTruthy()
-    const a = call[0].find((o) => o.id === 'a')
-    expect(a.w).toBeGreaterThan(0.3)
-    expect(a.h).toBeGreaterThan(0.3)
+    const a = call![0].find((o) => o.id === 'a')
+    expect(a!.w).toBeGreaterThan(0.3)
+    expect(a!.h).toBeGreaterThan(0.3)
   })
 
   it('rotate handle changes rotation', () => {
-    const onChange = vi.fn()
+    const onChange = vi.fn<OnChangeMock>()
     render(<SlideCanvas objects={baseObjects} selectedIds={['a']} onSelect={() => {}} onChange={onChange} />)
     const rot = screen.getByLabelText('Rotate')
     fireEvent.pointerDown(rot, { clientX: 336, clientY: 80 })
@@ -361,8 +375,8 @@ describe('SlideCanvas interaction (P2)', () => {
     })
     const call = onChange.mock.calls.find((c) => c[1] && c[1].commit === false)
     expect(call).toBeTruthy()
-    const a = call[0].find((o) => o.id === 'a')
-    expect(a.rotation).not.toBe(0)
+    const a = call![0].find((o) => o.id === 'a')
+    expect(a!.rotation).not.toBe(0)
   })
 
   // Regression: the FINAL commit on pointer-up must carry the DRAGGED geometry,
@@ -372,7 +386,7 @@ describe('SlideCanvas interaction (P2)', () => {
   // transient state; the commit:true on release is what persists). We assert the
   // commit:true payload equals the last committed live geometry.
   it('pointer-up commits the dragged geometry, not the original (revert-on-release guard)', () => {
-    const onChange = vi.fn()
+    const onChange = vi.fn<OnChangeMock>()
     render(<SlideCanvas objects={baseObjects} selectedIds={['a']} onSelect={() => {}} onChange={onChange} />)
     const seHandle = screen.getByLabelText('Resize se')
     fireEvent.pointerDown(seHandle, { clientX: 480, clientY: 480 })
@@ -384,24 +398,24 @@ describe('SlideCanvas interaction (P2)', () => {
     const committed = [...onChange.mock.calls].reverse().find((c) => c[1] && c[1].commit === true)
     expect(lastLive).toBeTruthy()
     expect(committed).toBeTruthy()
-    const grew = lastLive[0].find((o) => o.id === 'a')
-    const saved = committed[0].find((o) => o.id === 'a')
+    const grew = lastLive![0].find((o) => o.id === 'a')
+    const saved = committed![0].find((o) => o.id === 'a')
     // The persisted object is the enlarged one (w grew past its 0.3 origin), i.e.
     // the release did NOT revert to the original geometry.
-    expect(grew.w).toBeGreaterThan(0.3)
-    expect(saved.w).toBeCloseTo(grew.w, 5)
-    expect(saved.w).toBeGreaterThan(0.3)
+    expect(grew!.w).toBeGreaterThan(0.3)
+    expect(saved!.w).toBeCloseTo(grew!.w, 5)
+    expect(saved!.w).toBeGreaterThan(0.3)
   })
 
   it('keyboard arrow nudges the selected object', () => {
-    const onChange = vi.fn()
+    const onChange = vi.fn<OnChangeMock>()
     render(<SlideCanvas objects={baseObjects} selectedIds={['a']} onSelect={() => {}} onChange={onChange} />)
     act(() => {
       window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
     })
     const call = onChange.mock.calls.find((c) => c[1] && c[1].commit === true)
     expect(call).toBeTruthy()
-    expect(call[0].find((o) => o.id === 'a').x).toBeGreaterThan(0.2)
+    expect(call![0].find((o) => o.id === 'a')!.x).toBeGreaterThan(0.2)
   })
 })
 
@@ -410,11 +424,11 @@ describe('SlideCanvas accessibility', () => {
   const baseObjects = [
     { id: 'a', type: 'shape', shape: 'rect', x: 0.2, y: 0.2, w: 0.3, h: 0.3, rotation: 0, z: 1, fill: '#7c6af7', stroke: '#5b4dd0', strokeWidth: 2, opacity: 1 },
     { id: 'b', type: 'text', x: 0.6, y: 0.2, w: 0.3, h: 0.2, rotation: 0, z: 2, html: '<p>hi</p>' },
-  ]
+  ] as unknown as Fixture
 
   beforeEach(() => {
     Element.prototype.getBoundingClientRect = vi.fn(() => ({
-      x: 0, y: 0, left: 0, top: 0, right: 960, bottom: 540, width: 960, height: 540,
+      x: 0, y: 0, left: 0, top: 0, right: 960, bottom: 540, width: 960, height: 540, toJSON() { return {} },
     }))
   })
 
@@ -423,22 +437,22 @@ describe('SlideCanvas accessibility', () => {
       <SlideCanvas objects={baseObjects} selectedIds={[]} onSelect={() => {}} onChange={() => {}} />)
     const live = document.querySelector('[role="status"][aria-live="polite"]')
     expect(live).toBeTruthy()
-    expect(live.textContent).toBe('')
+    expect(live!.textContent).toBe('')
     rerender(<SlideCanvas objects={baseObjects} selectedIds={['b']} onSelect={() => {}} onChange={() => {}} />)
-    expect(live.textContent).toBe('text object selected')
+    expect(live!.textContent).toBe('text object selected')
   })
 
   it('announces a multi-selection as a count', () => {
     render(<SlideCanvas objects={baseObjects} selectedIds={['a', 'b']} onSelect={() => {}} onChange={() => {}} />)
     const live = document.querySelector('[role="status"][aria-live="polite"]')
-    expect(live.textContent).toBe('2 objects selected')
+    expect(live!.textContent).toBe('2 objects selected')
   })
 
   it('marks the selected object aria-pressed and includes "selected" in its label', () => {
     render(<SlideCanvas objects={baseObjects} selectedIds={['a']} onSelect={() => {}} onChange={() => {}} />)
     const el = document.querySelector('[data-object-id="a"]')
-    expect(el.getAttribute('aria-pressed')).toBe('true')
-    expect(el.getAttribute('aria-label')).toContain('selected')
+    expect(el!.getAttribute('aria-pressed')).toBe('true')
+    expect(el!.getAttribute('aria-label')).toContain('selected')
   })
 
   it('resize + rotate handles carry the affordance classes (hover/focus ladder)', () => {
@@ -462,6 +476,7 @@ describe('PPTX export fidelity', () => {
     const addSlide = vi.fn(() => slideObj)
     vi.doMock('pptxgenjs', () => ({
       default: class {
+        layout: string
         constructor() { this.layout = '' }
         addSlide() { return addSlide() }
         stream() { return Promise.resolve(new Blob(['x'])) }
