@@ -4,15 +4,22 @@
 import { describe, it, expect } from 'vitest'
 import * as XLSX from 'xlsx'
 import JSZip from 'jszip'
-import { workbookToSheets, importWorkbook } from '../sheetsImport.js'
-import { getImportNotes, hasImportLoss } from '../importNotes.js'
-import { buildCsv } from '../sheetsExport.js'
+import { workbookToSheets, importWorkbook, type ImportCellEntry } from '../sheetsImport.js'
+import { getImportNotes, hasImportLoss, type INSheet } from '../importNotes.js'
+import { buildCsv, type ExportSheet } from '../sheetsExport.js'
 import { convertToSheetContent } from '../../../lib/importFile.js'
 import { ImportError, MAX_SINGLE_ENTRY } from '../../../lib/importBounds.js'
 import { buildLyingZip } from '../../../lib/__tests__/zipBombFixture.js'
 
+// charts.ts / sheetsExport.ts / sheetsImport.ts / importNotes.ts each declare
+// their own narrow view of the same plain-data FortuneSheet shape (ChartSheet /
+// ExportSheet / ImportSheet / INSheet) — no shared base type. Production
+// crosses these boundaries with the same cast-through-unknown helper
+// (SheetsEditor.tsx's `cast<T>`).
+function cast<T>(v: unknown): T { return v as T }
+
 // Build a workbook ArrayBuffer for a given bookType from a worksheet mutator.
-function buildBook(mutate, bookType = 'xlsx') {
+function buildBook(mutate: (ws: XLSX.WorkSheet, wb: XLSX.WorkBook) => void, bookType: XLSX.BookType = 'xlsx') {
   const wb = XLSX.utils.book_new()
   const ws = XLSX.utils.aoa_to_sheet([['Name', 'Amount'], ['Widget', 5]])
   mutate(ws, wb)
@@ -20,7 +27,7 @@ function buildBook(mutate, bookType = 'xlsx') {
   return XLSX.write(wb, { bookType, type: 'array' })
 }
 
-function findCell(sheet, r, c) {
+function findCell(sheet: { celldata: ImportCellEntry[] }, r: number, c: number): ImportCellEntry | undefined {
   return sheet.celldata.find((cell) => cell.r === r && cell.c === c)
 }
 
@@ -32,41 +39,41 @@ describe('workbookToSheets — fidelity', () => {
     const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
     const sheets = workbookToSheets(buf, 't.xlsx')
     expect(sheets.map((s) => s.name)).toEqual(['One', 'Two'])
-    expect(findCell(sheets[0], 0, 0).v.m).toBe('a')
-    expect(findCell(sheets[1], 0, 0).v.m).toBe('c')
+    expect(findCell(sheets[0], 0, 0)!.v.m).toBe('a')
+    expect(findCell(sheets[1], 0, 0)!.v.m).toBe('c')
   })
 
   it('preserves a formula as inert data (leading =)', () => {
     const buf = buildBook((ws) => { ws.C2 = { t: 'n', f: 'A1&B1', v: 0 }; ws['!ref'] = 'A1:C2' })
     const sheets = workbookToSheets(buf, 't.xlsx')
-    const cell = findCell(sheets[0], 1, 2)
+    const cell = findCell(sheets[0], 1, 2)!
     expect(cell.v.f).toBe('=A1&B1')
   })
 
   it('preserves a number-format code (currency) via ct.fa', () => {
     const buf = buildBook((ws) => { ws.B2.z = '$#,##0.00' })
     const sheets = workbookToSheets(buf, 't.xlsx')
-    expect(findCell(sheets[0], 1, 1).v.ct.fa).toBe('$#,##0.00')
+    expect(findCell(sheets[0], 1, 1)!.v.ct.fa).toBe('$#,##0.00')
   })
 
   it('preserves merged cells', () => {
     const buf = buildBook((ws) => { ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 1 } }] })
     const sheets = workbookToSheets(buf, 't.xlsx')
-    expect(sheets[0].config.merge['0_0']).toEqual({ r: 0, c: 0, rs: 1, cs: 2 })
+    expect(sheets[0].config.merge!['0_0']).toEqual({ r: 0, c: 0, rs: 1, cs: 2 })
   })
 
   it('preserves column widths as columnlen px', () => {
     const buf = buildBook((ws) => { ws['!cols'] = [{ wpx: 140 }, { wpx: 90 }] })
     const sheets = workbookToSheets(buf, 't.xlsx')
-    expect(sheets[0].config.columnlen[0]).toBe(140)
-    expect(sheets[0].config.columnlen[1]).toBe(90)
+    expect(sheets[0].config.columnlen![0]).toBe(140)
+    expect(sheets[0].config.columnlen![1]).toBe(90)
   })
 
   it('round-trips an ODS workbook (SheetJS native ods)', () => {
     const buf = buildBook(() => {}, 'ods')
     const sheets = workbookToSheets(buf, 't.ods')
-    expect(findCell(sheets[0], 0, 0).v.m).toBe('Name')
-    expect(findCell(sheets[0], 1, 1).v.v).toBe(5)
+    expect(findCell(sheets[0], 0, 0)!.v.m).toBe('Name')
+    expect(findCell(sheets[0], 1, 1)!.v.v).toBe(5)
   })
 })
 
@@ -77,7 +84,7 @@ describe('workbookToSheets — fidelity', () => {
 async function odsWithChart() {
   const base = buildBook(() => {}, 'ods')
   const zip = await JSZip.loadAsync(base)
-  const manifest = await zip.file('META-INF/manifest.xml').async('string')
+  const manifest = await zip.file('META-INF/manifest.xml')!.async('string')
   const injected = manifest.replace('</manifest:manifest>',
     '<manifest:file-entry manifest:full-path="Object 1/" manifest:media-type="application/vnd.oasis.opendocument.chart"/></manifest:manifest>')
   zip.file('META-INF/manifest.xml', injected)
@@ -90,12 +97,12 @@ describe('importWorkbook — .ods honesty (no silent chart loss)', () => {
     const buf = await odsWithChart()
     const { sheets, notes } = await importWorkbook(buf, 'budget.ods')
     // Cells arrived (nothing about the chart failed the import).
-    expect(findCell(sheets[0], 0, 0).v.m).toBe('Name')
+    expect(findCell(sheets[0], 0, 0)!.v.m).toBe('Name')
     // The chart loss is recorded — and restated on the workbook for the export dialog.
     expect(hasImportLoss(notes)).toBe(true)
-    expect(notes.charts).toHaveLength(1)
-    expect(notes.charts[0].reason).toMatch(/\.ods/i)
-    expect(getImportNotes(sheets)).not.toBeNull()
+    expect(notes!.charts).toHaveLength(1)
+    expect(notes!.charts[0].reason).toMatch(/\.ods/i)
+    expect(getImportNotes(cast<INSheet[]>(sheets))).not.toBeNull()
   })
 
   it('a clean .ods (no chart) imports with NO import-loss note', async () => {
@@ -114,7 +121,7 @@ describe('workbookToSheets — security', () => {
       ws['!ref'] = 'A1:B3'
     })
     const sheets = workbookToSheets(buf, 't.xlsx')
-    const csv = buildCsv(sheets)
+    const csv = buildCsv(cast<ExportSheet[]>(sheets))
     expect(csv).not.toMatch(/(^|\n|,)=HYPERLINK/)
     expect(csv).toContain("'=HYPERLINK")
   })
@@ -153,17 +160,17 @@ describe('sheets import — zip-bomb rejected BEFORE SheetJS parses', () => {
   it('rejects a lying-central-directory oversize .xlsx before the heavy parse', async () => {
     const bomb = buildLyingZip('xl/worksheets/sheet1.xml', Buffer.from('<x/>'), 200 * 1024 * 1024)
     expect(200 * 1024 * 1024).toBeGreaterThan(MAX_SINGLE_ENTRY)
-    const file = new File([bomb], 'bomb.xlsx')
-    const err = await convertToSheetContent(file).then(() => null, (e) => e)
+    const file = new File([cast<BlobPart>(bomb)], 'bomb.xlsx')
+    const err = await convertToSheetContent(file).then(() => null, (e: unknown) => e)
     expect(err).toBeInstanceOf(ImportError)
-    expect(err.message).toMatch(/decompress|too large|zip-bomb/i)  // from the pre-check, not SheetJS
+    expect((err as ImportError).message).toMatch(/decompress|too large|zip-bomb/i)  // from the pre-check, not SheetJS
   })
 
   it('rejects a lying-central-directory oversize .ods before the heavy parse', async () => {
     const bomb = buildLyingZip('content.xml', Buffer.from('<x/>'), 200 * 1024 * 1024)
-    const file = new File([bomb], 'bomb.ods')
-    const err = await convertToSheetContent(file).then(() => null, (e) => e)
+    const file = new File([cast<BlobPart>(bomb)], 'bomb.ods')
+    const err = await convertToSheetContent(file).then(() => null, (e: unknown) => e)
     expect(err).toBeInstanceOf(ImportError)
-    expect(err.message).toMatch(/decompress|too large|zip-bomb/i)
+    expect((err as ImportError).message).toMatch(/decompress|too large|zip-bomb/i)
   })
 })
