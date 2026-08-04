@@ -1,16 +1,18 @@
-import { useEffect, useRef, useState, useCallback, useMemo, lazy, Suspense } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo, lazy, Suspense, type ChangeEvent } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Workbook } from '@fortune-sheet/react'
+import type { WorkbookInstance } from '@fortune-sheet/react/dist/components/Workbook'
+import type { Sheet as FSSheet, Selection as FSSelection } from '@fortune-sheet/core'
 import '@fortune-sheet/react/dist/index.css'
 import {
   ArrowLeft, Save, Loader2, Download, Upload, AlertCircle, MessageSquare,
   ChevronDown, BarChart2, Filter, Table2, Tag, Sliders, Keyboard, Search,
   Lock, MessageSquarePlus, X, MoreHorizontal, ListChecks, Share2, Shield,
 } from 'lucide-react'
-import { useFilesStore, getSaveState, onSaveStateChange } from '../../store/filesStore'
+import { useFilesStore, getSaveState, onSaveStateChange, type DiwanFile } from '../../store/filesStore'
 import { api } from '../../lib/api'
-import { readDraft, clearDraft } from '../../lib/draftStore'
-import { exportSheetsToXlsx, exportSheetsToCsv, exportSheetsToOds, exportNeedsConfirm } from './sheetsExport'
+import { readDraft, clearDraft, type Draft } from '../../lib/draftStore'
+import { exportSheetsToXlsx, exportSheetsToCsv, exportSheetsToOds, exportNeedsConfirm, type ExportSheet } from './sheetsExport'
 import { importCSVFile } from './csvImport'
 import { importWorkbook } from './sheetsImport'
 // importNotes: what an import could NOT bring in (foreign pivot tables, charts our
@@ -18,18 +20,21 @@ import { importWorkbook } from './sheetsImport'
 // the user writes a file back over the original that still has them.
 import {
   makeImportNotes, combineImportNotes, getImportNotes, setImportNotes,
-  mergeImportNotes, importLossSummary,
+  mergeImportNotes, importLossSummary, type ImportNotes, type INSheet,
 } from './importNotes.js'
 import {
-  clampProtectedRanges, getProtectedRanges, mergeProtectedRanges,
+  clampProtectedRanges, getProtectedRanges, mergeProtectedRanges, type PRSheet,
 } from './protectedRanges.js'
-import { GridSession, getGridReplicaId } from '../../lib/crdt/grid.js'
-import { GRID_ENGINE_MISMATCH_NOTICE } from '../../lib/crdt/gridEngine.js'
+import {
+  GridSession, getGridReplicaId,
+  type GridSessionOptions, type ChartDescriptor as CrdtChartDescriptor,
+} from '../../lib/crdt/grid.js'
+import { GRID_ENGINE_MISMATCH_NOTICE, type EngineMismatch } from '../../lib/crdt/gridEngine.js'
 import { OpLogSync } from '../../lib/collab/opLogSync.js'
 import { updateLogEnabled, substrateSyncEnabled } from '../../lib/flags.js'
 import CommentsPanel from '../../components/CommentsPanel'
-import { useLiveCursors } from '../../lib/collab/webrtc/useLiveCursors.js'
-import { usePresence } from '../../lib/collab/webrtc/presence.js'
+import { useLiveCursors, type FabricLike } from '../../lib/collab/webrtc/useLiveCursors.js'
+import { usePresence, type PresenceFabric } from '../../lib/collab/webrtc/presence.js'
 import { SheetsCursorLayer } from '../../components/RemoteCursors.jsx'
 import PresenceBar from '../../components/PresenceBar.jsx'
 import ConnectionPill from '../../components/ConnectionPill.jsx'
@@ -38,14 +43,14 @@ import { getCollabIdentity, identityColor, deriveStatusPill, countLivePeers } fr
 import { Button, IconButton, Tooltip, Topbar, Menu, useToast, useDialogA11y, SaveStatus } from '../../components/ui'
 import AccountShareModal from '../../components/AccountShareModal.jsx'
 import { useAuthStore } from '../../store/authStore'
-import { useSheetKeyboardShortcuts, KeyboardShortcutsHelp, useShortcutsHelp } from './KeyboardShortcuts.jsx'
+import { useSheetKeyboardShortcuts, KeyboardShortcutsHelp, useShortcutsHelp, type KSSheet } from './KeyboardShortcuts.jsx'
 import SheetsFindReplace from './SheetsFindReplace.jsx'
 import NumberFormatMenu from './NumberFormatMenu.jsx'
 // makeChart is a tiny pure validator/clamp — imported eagerly so the CRDT
 // ingress path can sanitise a peer-supplied chart descriptor fail-closed
 // (WAVE-55: a hostile peer must not be able to inject a non-string title or
 // non-finite geometry that would crash/escape the renderer).
-import { makeChart, chartsBySheetId, mergeCharts, clampCharts } from './charts.js'
+import { makeChart, chartsBySheetId, mergeCharts, clampCharts, type Chart, type ChartSheet } from './charts.js'
 // WAVE-63: register the high-value formulas Fortune-Sheet lacks (XLOOKUP,
 // TEXTJOIN, IFS, SWITCH, LET, XMATCH, FILTER/SORT/UNIQUE) into the shared
 // formula-parser Parser prototype so they evaluate live + recalc on dependency
@@ -53,21 +58,24 @@ import { makeChart, chartsBySheetId, mergeCharts, clampCharts } from './charts.j
 // module load (before any Workbook mounts its parser). Pure data transforms —
 // no eval/DOM/fetch (see formulaFunctions.js SECURITY note).
 import { Parser as FormulaParser } from '@fortune-sheet/formula-parser'
-import { installCustomFormulas } from './formulaFunctions.js'
-installCustomFormulas(FormulaParser)
+import { installCustomFormulas, type FormulaParserClass } from './formulaFunctions.js'
+installCustomFormulas(FormulaParser as unknown as FormulaParserClass)
 // WAVE-63: reactive pivots — makePivot is the fail-closed ingress clamp for a
 // peer-supplied pivot descriptor (allow-listed agg, coerced/capped strings,
 // normalised range) exactly like makeChart. clampPivots re-clamps on load.
-import { makePivot, getPivots, clampPivots, pivotsBySheetId, mergePivots } from './pivot.js'
+import { makePivot, getPivots, clampPivots, pivotsBySheetId, mergePivots, type Pivot, type PivotSheet } from './pivot.js'
 // WAVE-63: CF color scales + data bars — makeColorScale is the fail-closed
 // ingress clamp (allow-listed kind, hex-validated colours) for a peer-supplied
 // rule; clampColorScales re-clamps on load; merge preserves the overlay.
-import { makeColorScale, clampColorScales, colorScalesBySheetId, mergeColorScales, buildNativeConditionFormat } from './colorScales.js'
+import {
+  makeColorScale, clampColorScales, colorScalesBySheetId, mergeColorScales, buildNativeConditionFormat,
+  type ColorScaleRule, type CSSheet, type NativeConditionFormat,
+} from './colorScales.js'
 // WAVE-64: data-validation rules (sheet.dataVerification) get the same treatment
 // — clampDataValidation rebuilds every stored regulation through the fail-closed
 // builder on load, so an unknown type / junk condition / unbounded hint from a
 // corrupt or hostile file is dropped before Fortune-Sheet's validator sees it.
-import { clampDataValidation } from './dataValidation.js'
+import { clampDataValidation, type DVSheet } from './dataValidation.js'
 import { parseRange as parseRangeFS } from './ConditionalFormatPanel.jsx'
 
 // Side panels — lazily loaded so they don't bloat the initial bundle.
@@ -87,14 +95,72 @@ const RETRY_DELAY_MS  = 4000
 const AUTOSAVE_DELAY_MS = 3000
 
 /**
+ * Sheet — the on-disk / in-memory workbook sheet shape SheetsEditor works with.
+ * Every overlay module (charts.ts, pivot.ts, colorScales.ts, dataValidation.ts,
+ * protectedRanges.ts, importNotes.ts) declares its OWN narrower view behind a
+ * `[key: string]: unknown` catch-all; this is the union of all of them. Handing
+ * `Sheet[]` to one of those modules' functions, or taking their narrower return
+ * type back, crosses a structural-typing boundary an index signature's `unknown`
+ * can't bridge on its own — `cast<T>()` below is the local, explicit adapter
+ * (same pattern as sheetsImport.ts's INSheet/ImportSheet boundary).
+ */
+export interface Sheet {
+  id?: string
+  name?: string
+  celldata?: SheetCellEntry[]
+  config?: Record<string, unknown>
+  order?: number
+  status?: number
+  row?: number
+  column?: number
+  luckysheet_select_save?: unknown[]
+  luckysheet_conditionformat_save?: NativeConditionFormat[]
+  charts?: Chart[]
+  pivots?: Pivot[]
+  colorScales?: ColorScaleRule[]
+  dataVerification?: Record<string, unknown>
+  namedRanges?: unknown[]
+  protectedRanges?: unknown[]
+  importNotes?: ImportNotes
+  [key: string]: unknown
+}
+
+export interface SheetCellValue {
+  v?: string | number | boolean
+  m?: string | number
+  f?: string
+  ct?: { fa?: string; t?: string }
+  ps?: { value: string; isShow: boolean }
+  [key: string]: unknown
+}
+export interface SheetCellEntry {
+  r: number
+  c: number
+  v?: SheetCellValue | string | number | boolean | null
+}
+
+/** Local, explicit cast between this file's `Sheet` and a narrower overlay-module
+ * view of the same runtime object — see the `Sheet` doc comment above. */
+function cast<T>(v: unknown): T { return v as T }
+
+/** Mirrors the shared <SaveStatus> component's own kind list (components/ui/SaveStatus.tsx),
+ * which omits filesStore's 'idle' — see the cast site below for why that's safe. */
+type UISaveStatusKind = 'saved' | 'saving' | 'dirty' | 'error' | 'offline'
+
+type AnyGridSession = GridSession
+
+interface ActiveCell { row: number; col: number }
+interface SelectionRect { r0: number; r1: number; c0: number; c1: number }
+
+/**
  * normalizeSheets — give every sheet the dimensions/identity fields Fortune
  * Sheet needs. Without explicit `row`/`column` (and `id`/`order`/`status`) the
  * library computes its default selection against undefined bounds, which is why
  * the name box rendered "A1:NaN" on a fresh/empty sheet. Providing them yields a
  * valid A1 selection and a stable grid.
  */
-function normalizeSheets(sheets) {
-  const arr = Array.isArray(sheets) && sheets.length
+function normalizeSheets(sheets: unknown): Sheet[] {
+  const arr: Sheet[] = Array.isArray(sheets) && sheets.length
     ? sheets
     : [{ name: 'Sheet1', celldata: [], config: {} }]
   return arr.map((sh, i) => ({
@@ -122,8 +188,14 @@ function normalizeSheets(sheets) {
 // path (initial state, api.getFile, XLSX import, draft restore). Runs charts AND
 // pivots through their fail-closed clamps so a corrupt/legacy/poisoned record
 // can never reach render with an unsafe descriptor (WAVE-61/63 defence-in-depth).
-function loadContent(content) {
-  return clampProtectedRanges(clampDataValidation(clampColorScales(clampPivots(clampCharts(normalizeSheets(content))))))
+function loadContent(content: unknown): Sheet[] {
+  const normalized = normalizeSheets(content)
+  const charts = clampCharts(cast<ChartSheet[]>(normalized))
+  const pivots = clampPivots(cast<PivotSheet[]>(charts))
+  const scales = clampColorScales(cast<CSSheet[]>(pivots))
+  const validated = clampDataValidation(cast<DVSheet[]>(scales))
+  const protectedR = clampProtectedRanges(cast<PRSheet[]>(validated))
+  return cast<Sheet[]>(protectedR)
 }
 
 // Shared trigger styling for the Import / Export menus.
@@ -136,18 +208,18 @@ const MENU_TRIGGER_CN = [
 ].join(' ')
 
 // ── FreezePanel ─────────────────────────────────────────────────────────────
-function FreezePanel({ workbookRef }) {
+function FreezePanel({ workbookRef }: { workbookRef: React.RefObject<WorkbookInstance | null> }) {
   const [open, setOpen] = useState(false)
-  const [mode, setMode] = useState(null) // 'rows' | 'cols'
+  const [mode, setMode] = useState<'rows' | 'cols' | null>(null)
   const [count, setCount] = useState(1)
-  const panelRef = useRef(null)
+  const panelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!open) return
-    const onDown = (e) => {
-      if (panelRef.current && !panelRef.current.contains(e.target)) setOpen(false)
+    const onDown = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) setOpen(false)
     }
-    const onKey = (e) => {
+    const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); setMode(null) }
     }
     document.addEventListener('mousedown', onDown)
@@ -158,7 +230,7 @@ function FreezePanel({ workbookRef }) {
     }
   }, [open])
 
-  const freeze = (type, row, column) => {
+  const freeze = (type: 'row' | 'column' | 'both', row: number, column: number) => {
     workbookRef.current?.freeze(type, { row, column })
     setOpen(false)
     setMode(null)
@@ -261,12 +333,19 @@ function FreezePanel({ workbookRef }) {
 }
 
 // ── CellCommentPanel ─────────────────────────────────────────────────────────
-function CellCommentPanel({ data, activeCell, onChange, onClose }) {
+interface CellCommentPanelProps {
+  data: Sheet[]
+  activeCell: ActiveCell
+  onChange: (updater: (prev: Sheet[]) => Sheet[]) => void
+  onClose: () => void
+}
+function CellCommentPanel({ data, activeCell, onChange, onClose }: CellCommentPanelProps) {
   const sheet = data?.[0]
   const existing = sheet?.celldata?.find(
     (c) => c.r === activeCell.row && c.c === activeCell.col
   )
-  const currentComment = existing?.v?.ps?.value || ''
+  const existingV = existing?.v
+  const currentComment = (typeof existingV === 'object' && existingV?.ps?.value) || ''
   const [text, setText] = useState(currentComment)
 
   // Reset when active cell changes
@@ -274,7 +353,8 @@ function CellCommentPanel({ data, activeCell, onChange, onClose }) {
     const cell = data?.[0]?.celldata?.find(
       (c) => c.r === activeCell.row && c.c === activeCell.col
     )
-    setText(cell?.v?.ps?.value || '')
+    const v = cell?.v
+    setText((typeof v === 'object' && v?.ps?.value) || '')
   }, [activeCell.row, activeCell.col]) // eslint-disable-line
 
   const handleSave = () => {
@@ -285,7 +365,9 @@ function CellCommentPanel({ data, activeCell, onChange, onClose }) {
         const cellIdx = celldata.findIndex((c) => c.r === activeCell.row && c.c === activeCell.col)
         if (cellIdx >= 0) {
           const cell = { ...celldata[cellIdx] }
-          const v = typeof cell.v === 'object' ? { ...cell.v } : { v: cell.v, m: String(cell.v ?? '') }
+          const v: SheetCellValue = typeof cell.v === 'object' && cell.v !== null
+            ? { ...cell.v }
+            : { v: cell.v ?? undefined, m: String(cell.v ?? '') }
           if (text.trim()) {
             v.ps = { value: text.trim(), isShow: false }
           } else {
@@ -307,7 +389,7 @@ function CellCommentPanel({ data, activeCell, onChange, onClose }) {
   }
 
   const cellLabel = `${String.fromCharCode(65 + activeCell.col)}${activeCell.row + 1}`
-  const panelRef = useRef(null)
+  const panelRef = useRef<HTMLDivElement>(null)
   // Trap focus, close on Esc, restore focus to the triggering control on close.
   useDialogA11y(panelRef, onClose)
 
@@ -370,11 +452,16 @@ function CellCommentPanel({ data, activeCell, onChange, onClose }) {
   )
 }
 
+interface HandleChangeOpts {
+  chartsAuthoritative?: boolean
+  overlaysAuthoritative?: boolean
+}
+
 export default function SheetsEditor() {
   const { id } = useParams()
   const navigate = useNavigate()
   const { files, saveFileWithDraft, markDirty } = useFilesStore()
-  const [file, setFile] = useState(files.find((f) => f.id === id))
+  const [file, setFile] = useState<DiwanFile | undefined>(files.find((f) => f.id === id))
   const [title, setTitle] = useState(file?.name || 'Untitled Sheet')
   // Account-based sharing (named users, role-scoped, ACL-enforced).
   const [showShare, setShowShare] = useState(false)
@@ -382,9 +469,9 @@ export default function SheetsEditor() {
   // clampCharts re-clamps any persisted chart geometry through makeChart so a
   // corrupt/legacy local descriptor can never reach render with NaN layout
   // (WAVE-61 defence-in-depth; the wave-55 peer-ingress clamp is separate).
-  const [data, setData] = useState(() => loadContent(file?.content))
-  const [saveStatus, setSaveStatus] = useState(getSaveState(id))
-  const [draft, setDraft] = useState(null)
+  const [data, setData] = useState<Sheet[]>(() => loadContent(file?.content))
+  const [saveStatus, setSaveStatus] = useState(getSaveState(id ?? ''))
+  const [draft, setDraft] = useState<Draft | null>(null)
   const [retryCount, setRetryCount] = useState(0)
   const { showToast, toast } = useToast()
 
@@ -401,7 +488,7 @@ export default function SheetsEditor() {
   // remount on the new document. It must NOT be used for cell edits — remounting
   // on every keystroke would throw away the grid's own state.
   const [loadKey, setLoadKey] = useState(0)
-  const loadDocument = useCallback((next) => {
+  const loadDocument = useCallback((next: Sheet[]) => {
     setData(next)
     setLoadKey((k) => k + 1)
   }, [])
@@ -414,39 +501,39 @@ export default function SheetsEditor() {
   const [showNamedRanges,   setShowNamedRanges]   = useState(false)
   const [showProtectedRanges, setShowProtectedRanges] = useState(false)
   const [showChartWizard,   setShowChartWizard]   = useState(false)
-  const [editingChartId,    setEditingChartId]    = useState(null)   // WAVE-54: chart being edited (null = insert)
-  const [selectedChartId,   setSelectedChartId]   = useState(null)   // WAVE-54: floating chart selection
+  const [editingChartId,    setEditingChartId]    = useState<string | null>(null)   // WAVE-54: chart being edited (null = insert)
+  const [selectedChartId,   setSelectedChartId]   = useState<string | null>(null)   // WAVE-54: floating chart selection
   const [showFindReplace,   setShowFindReplace]   = useState(false)
   const [showDataValidation, setShowDataValidation] = useState(false)
-  const [editingPivotId,    setEditingPivotId]    = useState(null)   // WAVE-63: pivot being edited (null = insert)
-  const [exportFormat,      setExportFormat]      = useState(null)   // WAVE-64: format awaiting export confirmation
+  const [editingPivotId,    setEditingPivotId]    = useState<string | null>(null)   // WAVE-63: pivot being edited (null = insert)
+  const [exportFormat,      setExportFormat]      = useState<string | null>(null)   // WAVE-64: format awaiting export confirmation
 
-  const [activeCell,      setActiveCell]      = useState({ row: 0, col: 0 })
-  const [selectionRect,   setSelectionRect]   = useState(null) // {r0,r1,c0,c1} 0-indexed inclusive
+  const [activeCell,      setActiveCell]      = useState<ActiveCell>({ row: 0, col: 0 })
+  const [selectionRect,   setSelectionRect]   = useState<SelectionRect | null>(null) // {r0,r1,c0,c1} 0-indexed inclusive
   const [showCellComment, setShowCellComment] = useState(false)
 
-  const saveTimer   = useRef(null)
-  const retryTimer  = useRef(null)
+  const saveTimer   = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const retryTimer  = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const titleRef    = useRef(title)
   titleRef.current  = title
   const dataRef     = useRef(data)
   dataRef.current   = data
-  const gridSessionRef  = useRef(null)
-  const workbookWrapRef = useRef(null)
-  const workbookRef     = useRef(null)
-  const importInputRef  = useRef(null)
+  const gridSessionRef  = useRef<AnyGridSession | null>(null)
+  const workbookWrapRef = useRef<HTMLDivElement>(null)
+  const workbookRef     = useRef<WorkbookInstance | null>(null)
+  const importInputRef  = useRef<HTMLInputElement>(null)
 
   // ── Collaboration presence (WAVE-27) ────────────────────────────────────────
   // Stable per-tab replica id doubles as the fabric peerId, so the CRDT sync and
   // the presence/cursor transport share one identity.
-  const replicaIdRef = useRef(null)
+  const replicaIdRef = useRef<string | null>(null)
   if (!replicaIdRef.current) replicaIdRef.current = getGridReplicaId()
   const replicaId = replicaIdRef.current
 
   // Owns + joins the same relay-client FabricClient Docs uses; degrades to
   // local-only (fabric stays null-ish, offline pill) when no peering backend.
   const { fabric, peers: collabPeers, joined, configured } =
-    useCollabFabric({ sessionId: id, peerId: replicaId })
+    useCollabFabric({ sessionId: id ?? '', peerId: replicaId })
 
   // True once the grid session has proved a peer runs a different CRDT engine
   // and has therefore STOPPED replicating (lib/crdt/gridEngine.js). Latched for
@@ -455,7 +542,7 @@ export default function SheetsEditor() {
   const [engineMismatch, setEngineMismatch] = useState(false)
 
   // Stable local identity (signed-in account or per-tab guest) + its colour.
-  const identityRef = useRef(null)
+  const identityRef = useRef<ReturnType<typeof getCollabIdentity> | null>(null)
   if (!identityRef.current) identityRef.current = getCollabIdentity(replicaId)
   const localIdentity = identityRef.current
 
@@ -463,14 +550,14 @@ export default function SheetsEditor() {
   const { show: showShortcutsHelp, openHelp, closeHelp } = useShortcutsHelp()
   useSheetKeyboardShortcuts({
     containerRef: workbookWrapRef,
-    data,
-    onChange:    setData,
+    data: cast<KSSheet[]>(data),
+    onChange:    (next) => setData(cast<Sheet[]>(next)),
     onShowHelp:  openHelp,
   })
 
   // Ctrl+F / Ctrl+H: open find/replace overlay for sheets
   useEffect(() => {
-    const onKey = (e) => {
+    const onKey = (e: KeyboardEvent) => {
       const mod = e.metaKey || e.ctrlKey
       if (!mod) return
       if (e.key === 'f' || e.key === 'F') {
@@ -493,8 +580,8 @@ export default function SheetsEditor() {
   useEffect(() => {
     if (!id) return
     let cancelled = false
-    let session = null
-    let opLog = null
+    let session: AnyGridSession | null = null
+    let opLog: OpLogSync | null = null
     // A new session means a new handshake; clear any latch from the old one.
     setEngineMismatch(false)
 
@@ -502,7 +589,7 @@ export default function SheetsEditor() {
     // either synchronously (the default grid.js path) or after the substrate
     // engine's WASM has loaded — hence the `cancelled` guard: the effect can be
     // torn down while that load is still in flight.
-    const open = (s, onRemote) => {
+    const open = (s: AnyGridSession, onRemote: (ev: Event) => void) => {
       if (cancelled) { s.destroy(); return }
       session = s
       gridSessionRef.current = s
@@ -536,7 +623,7 @@ export default function SheetsEditor() {
         opLog = new OpLogSync({
           fileId: id,
           subscribeLocal: (cb) => {
-            const h = (e) => cb(e.detail.op)
+            const h = (e: Event) => cb((e as CustomEvent).detail.op)
             s.addEventListener('localOp', h)
             return () => s.removeEventListener('localOp', h)
           },
@@ -544,7 +631,7 @@ export default function SheetsEditor() {
           applySnapshot: (snap) => s.applyLogSnapshot(snap),
           encodeSnapshot: () => s.logSnapshotData(),
         })
-        opLog.hydrate().then((ok) => { if (ok) opLog.start() }).catch(() => {})
+        opLog.hydrate().then((ok) => { if (ok) opLog?.start() }).catch(() => {})
       }
 
       // Read the latch directly, AFTER the op log exists, in case the session
@@ -557,10 +644,10 @@ export default function SheetsEditor() {
       s.addEventListener('remoteOp', onRemote)
     }
 
-    const onRemote = (ev) => {
+    const onRemote = (ev: Event) => {
       // WAVE-54: a chart op carries a chart payload; merge it into sheet.charts
       // (LWW-by-id: last upsert wins, delete removes). Cell ops fall through.
-      const detail = ev?.detail
+      const detail = (ev as CustomEvent)?.detail
       if (detail && (detail.chart || detail.chartId)) {
         // WAVE-55 SECURITY: the descriptor arrives from an untrusted peer over
         // the CRDT fabric. NEVER merge it raw — run it through makeChart so the
@@ -650,7 +737,7 @@ export default function SheetsEditor() {
         markDirty(id)
         return
       }
-      const crdtCells = session.cells()
+      const crdtCells = session ? session.cells() : []
       if (crdtCells.length === 0) return
       setData((prev) => {
         const sheets = prev.map((sheet, idx) => {
@@ -659,7 +746,8 @@ export default function SheetsEditor() {
           for (const { r, c, v } of crdtCells) {
             const key = `${r}_${c}`
             const ex = existing.get(key)
-            if (!ex || (typeof ex.v === 'object' ? ex.v?.v : ex.v) !== v) {
+            const exVal = ex ? (typeof ex.v === 'object' && ex.v !== null ? ex.v?.v : ex.v) : undefined
+            if (!ex || exVal !== v) {
               existing.set(key, { r, c, v: { v, m: v, ct: { fa: 'General', t: 'n' } } })
             }
           }
@@ -670,7 +758,7 @@ export default function SheetsEditor() {
       markDirty(id)
     }
 
-    const opts = { sessionId: id, replicaId, fabricClient: fabric || null }
+    const opts: GridSessionOptions = { sessionId: id, replicaId, fabricClient: fabric || null }
     if (substrateSyncEnabled()) {
       // The SHARED KOTVA Sync engine (src/lib/crdt/substrateGrid.js) — the
       // default. It is WASM, so it must finish loading before a session exists:
@@ -701,7 +789,7 @@ export default function SheetsEditor() {
       import('../../lib/crdt/substrateGrid.js')
         .then(async (m) => {
           await m.initSubstrateSync()
-          if (!cancelled) open(new m.SubstrateGridSession(opts), onRemote)
+          if (!cancelled) open(new m.SubstrateGridSession(opts) as unknown as AnyGridSession, onRemote)
         })
         .catch((err) => {
           if (cancelled) return
@@ -710,14 +798,14 @@ export default function SheetsEditor() {
               '[sheets] the shared KOTVA Sync engine failed to load and this session can ' +
               'replicate, so falling back to the local engine would risk diverging from ' +
               'peers that loaded it. Staying local-only for this session (edits still save). ' +
-              'Cause:', err?.message,
+              'Cause:', err instanceof Error ? err.message : err,
             )
             return
           }
           console.warn(
             '[sheets] the shared KOTVA Sync engine failed to load; nothing can replicate ' +
             'in this session (no peers, no update log), so using the local engine. Cause:',
-            err?.message,
+            err instanceof Error ? err.message : err,
           )
           open(new GridSession(opts), onRemote)
         })
@@ -737,6 +825,7 @@ export default function SheetsEditor() {
   }, [id, fabric]) // eslint-disable-line — recreate session when the fabric attaches
 
   useEffect(() => {
+    if (!id) return
     const unsub = onSaveStateChange(id, (state) => setSaveStatus({ ...state }))
     return unsub
   }, [id])
@@ -744,9 +833,10 @@ export default function SheetsEditor() {
   useEffect(() => {
     if (!file && id) {
       api.getFile(id).then((f) => {
-        setFile(f)
-        setTitle(f.name)
-        loadDocument(loadContent(f.content))
+        const df = f as DiwanFile
+        setFile(df)
+        setTitle(df.name)
+        loadDocument(loadContent(df.content))
       }).catch(() => {
         showToast('Could not open this spreadsheet.', 'error')
         navigate('/sheets')
@@ -760,16 +850,22 @@ export default function SheetsEditor() {
   }, [id])
 
   // ── Live cursors + presence roster (OFFICE-25 / WAVE-27) ────────────────────
+  // FabricClient (lib/collab/webrtc/fabric.ts) extends EventTarget and so
+  // types addEventListener with the generic DOM signature, which does not
+  // structurally satisfy the narrower per-event-name overloads FabricLike /
+  // PresenceFabric declare — a pre-existing type-only mismatch between those
+  // independently-typed modules (not a runtime one: FabricClient's listeners
+  // are called with the same CustomEvent shape at runtime either way).
   const { remoteCursors, broadcastSheetCursor } = useLiveCursors({
-    fabric, localIdentity, color: identityColor(localIdentity),
+    fabric: fabric as unknown as FabricLike | null, localIdentity, color: identityColor(localIdentity),
   })
-  const { roster } = usePresence({ fabric, localIdentity })
+  const { roster } = usePresence({ fabric: fabric as unknown as PresenceFabric | null, localIdentity })
 
   // Status pill: Live / Connecting / Reconnecting / Offline from fabric state.
   const collabPill = deriveStatusPill({ configured, joined, peers: collabPeers, engineMismatch })
   const livePeerCount = countLivePeers(collabPeers)
 
-  const getCellRect = useCallback((row, col) => {
+  const getCellRect = useCallback((row: number, col: number) => {
     const container = workbookWrapRef.current
     if (!container) return null
     try {
@@ -810,19 +906,20 @@ export default function SheetsEditor() {
   }, [])
 
   // ── Save / autosave ─────────────────────────────────────────────────────────
-  const doSave = useCallback(async (contentOverride, retryNum = 0) => {
+  const doSave = useCallback(async (contentOverride?: Sheet[], retryNum = 0) => {
     if (!id) return
     const content = contentOverride !== undefined ? contentOverride : dataRef.current
     try {
       await saveFileWithDraft(id, titleRef.current, content)
       setRetryCount(0)
-    } catch (err) {
+    } catch (err: unknown) {
       // A 403 is the SERVER refusing an edit to a PROTECTED RANGE (or a role that
       // may not write). Retrying cannot succeed and would silently spin, so we
       // surface the server's own message and stop — the write is genuinely denied.
-      if (err?.status === 403) {
+      const e = err as { status?: number; error?: string; message?: string } | null
+      if (e?.status === 403) {
         setRetryCount(0)
-        showToast(err?.error || err?.message || 'This range is protected — your change was not saved.', 'error')
+        showToast(e?.error || e?.message || 'This range is protected — your change was not saved.', 'error')
         return
       }
       if (retryNum < 3) {
@@ -835,14 +932,15 @@ export default function SheetsEditor() {
     }
   }, [id, saveFileWithDraft, showToast])
 
-  const handleChange = (newData, opts = {}) => {
+  const handleChange = useCallback((newDataRaw: unknown, opts: HandleChangeOpts = {}) => {
     // WAVE-63: the Workbook is fed `renderData`, which injects derived
     // __fromColorScale band rules into luckysheet_conditionformat_save for the
     // canvas to paint. Those are RENDER-ONLY — strip them here so they never
     // enter the authoritative model / save payload (else they'd accumulate and
     // round-trip). The user's own CF rules (no marker) are kept.
+    let newData: Sheet[] | unknown = newDataRaw
     if (Array.isArray(newData)) {
-      newData = newData.map((sheet) => {
+      newData = (newData as Sheet[]).map((sheet) => {
         const cf = sheet?.luckysheet_conditionformat_save
         if (!Array.isArray(cf) || !cf.some((r) => r?.__fromColorScale)) return sheet
         return { ...sheet, luckysheet_conditionformat_save: cf.filter((r) => !r?.__fromColorScale) }
@@ -868,35 +966,38 @@ export default function SheetsEditor() {
     // are, so a plain cell edit never clobbers a live pivot. An authoritative
     // overlay update (chart OR pivot insert/edit) already carries its own array.
     setData((prev) => {
-      if (!Array.isArray(newData)) return newData
-      if (opts.overlaysAuthoritative) return newData
-      const withCharts = opts.chartsAuthoritative ? newData : mergeCharts(newData, chartsBySheetId(prev))
-      const withPivots = mergePivots(withCharts, pivotsBySheetId(prev))
-      const withScales = mergeColorScales(withPivots, colorScalesBySheetId(prev))
+      if (!Array.isArray(newData)) return newData as Sheet[]
+      if (opts.overlaysAuthoritative) return newData as Sheet[]
+      const withCharts = opts.chartsAuthoritative
+        ? cast<ChartSheet[]>(newData)
+        : mergeCharts(cast<ChartSheet[]>(newData), chartsBySheetId(cast<ChartSheet[]>(prev)))
+      const withPivots = mergePivots(cast<PivotSheet[]>(withCharts), pivotsBySheetId(cast<PivotSheet[]>(prev)))
+      const withScales = mergeColorScales(cast<CSSheet[]>(withPivots), colorScalesBySheetId(cast<CSSheet[]>(prev)))
       // importNotes is a fourth app-owned overlay FortuneSheet's onChange drops.
       // Without this merge it would evaporate on the first keystroke — i.e. on
       // exactly the import → EDIT → export path it exists to warn about.
-      const withNotes = mergeImportNotes(withScales, getImportNotes(prev))
+      const withNotes = mergeImportNotes(cast<INSheet[]>(withScales), getImportNotes(cast<INSheet[]>(prev)))
       // protectedRanges is a fifth app-owned overlay onChange drops — re-attach it
       // so a plain cell edit never silently clears a range's protection (which the
       // server would then no longer see either).
-      return mergeProtectedRanges(withNotes, getProtectedRanges(prev))
+      return cast<Sheet[]>(mergeProtectedRanges(cast<PRSheet[]>(withNotes), getProtectedRanges(cast<PRSheet[]>(prev))))
     })
-    markDirty(id)
+    markDirty(id ?? '')
     clearTimeout(saveTimer.current)
     clearTimeout(retryTimer.current)
     setRetryCount(0)
-    if (Array.isArray(newData) && newData[0]?.celldata?.length) {
-      const last = newData[0].celldata[newData[0].celldata.length - 1]
+    if (Array.isArray(newData) && (newData as Sheet[])[0]?.celldata?.length) {
+      const cells = (newData as Sheet[])[0].celldata as SheetCellEntry[]
+      const last = cells[cells.length - 1]
       if (last) broadcastSheetCursor(last.r, last.c)
     }
     // CRDT ops
     const session = gridSessionRef.current
-    if (session && Array.isArray(newData) && newData[0]?.celldata) {
-      for (const cell of newData[0].celldata) {
+    if (session && Array.isArray(newData) && (newData as Sheet[])[0]?.celldata) {
+      for (const cell of (newData as Sheet[])[0].celldata as SheetCellEntry[]) {
         const row = cell.r
         const col = cell.c
-        const val = typeof cell.v === 'object'
+        const val = typeof cell.v === 'object' && cell.v !== null
           ? (cell.v?.v ?? cell.v?.m ?? '')
           : (cell.v ?? '')
         const existing = session.cells().find((c) => c.r === row && c.c === col)
@@ -913,16 +1014,18 @@ export default function SheetsEditor() {
     // Persist the MERGED content (charts + pivots included). newData from a
     // plain grid edit lacks both overlays; merge them in for the save PUT too so
     // they reload with the sheet. An authoritative update already carries them.
-    let toSave = newData
+    let toSave: Sheet[] | unknown = newData
     if (Array.isArray(newData) && !opts.overlaysAuthoritative) {
-      toSave = opts.chartsAuthoritative ? newData : mergeCharts(newData, chartsBySheetId(dataRef.current))
-      toSave = mergePivots(toSave, pivotsBySheetId(dataRef.current))
-      toSave = mergeColorScales(toSave, colorScalesBySheetId(dataRef.current))
-      toSave = mergeImportNotes(toSave, getImportNotes(dataRef.current))
-      toSave = mergeProtectedRanges(toSave, getProtectedRanges(dataRef.current))
+      toSave = opts.chartsAuthoritative
+        ? newData
+        : mergeCharts(cast<ChartSheet[]>(newData), chartsBySheetId(cast<ChartSheet[]>(dataRef.current)))
+      toSave = mergePivots(cast<PivotSheet[]>(toSave), pivotsBySheetId(cast<PivotSheet[]>(dataRef.current)))
+      toSave = mergeColorScales(cast<CSSheet[]>(toSave), colorScalesBySheetId(cast<CSSheet[]>(dataRef.current)))
+      toSave = mergeImportNotes(cast<INSheet[]>(toSave), getImportNotes(cast<INSheet[]>(dataRef.current)))
+      toSave = mergeProtectedRanges(cast<PRSheet[]>(toSave), getProtectedRanges(cast<PRSheet[]>(dataRef.current)))
     }
-    saveTimer.current = setTimeout(() => doSave(toSave), AUTOSAVE_DELAY_MS)
-  }
+    saveTimer.current = setTimeout(() => doSave(cast<Sheet[]>(toSave)), AUTOSAVE_DELAY_MS)
+  }, [id, markDirty, broadcastSheetCursor, doSave])
 
   const handleSave = () => {
     clearTimeout(saveTimer.current)
@@ -936,11 +1039,11 @@ export default function SheetsEditor() {
   // SILENTLY is a data-loss bug. So an export that would lose or degrade content
   // goes through ExportDialog first (it names exactly what is at stake and can be
   // cancelled); a plain workbook downloads immediately, with no extra click.
-  const runExport = useCallback(async (fmt) => {
+  const runExport = useCallback(async (fmt: string) => {
     setExportFormat(null)
     try {
       if (fmt === 'xlsx') {
-        const { skipped } = await exportSheetsToXlsx(data, title)
+        const { skipped } = await exportSheetsToXlsx(cast<ExportSheet[]>(data), title)
         // The writer is the authority on what actually made it into the file: if
         // it had to skip a chart the dialog didn't predict, say so now.
         if (skipped?.length) {
@@ -948,9 +1051,9 @@ export default function SheetsEditor() {
             'ride only in the “Vulos Charts” sheet.', 'error')
         }
       } else if (fmt === 'ods') {
-        exportSheetsToOds(data, title)
+        exportSheetsToOds(cast<ExportSheet[]>(data), title)
       } else if (fmt === 'csv') {
-        exportSheetsToCsv(data, title)
+        exportSheetsToCsv(cast<ExportSheet[]>(data), title)
       } else if (fmt === 'xlsx-server') {
         // Server-rendered download (last saved version; cells only — see
         // exportFidelity('xlsx-server'), which warns before we get here).
@@ -961,13 +1064,13 @@ export default function SheetsEditor() {
         a.click()
         a.remove()
       }
-    } catch (e) {
-      showToast(`Export failed: ${e?.message || 'unknown error'}`, 'error')
+    } catch (e: unknown) {
+      showToast(`Export failed: ${e instanceof Error ? e.message : 'unknown error'}`, 'error')
     }
   }, [data, title, id, showToast])
 
-  const requestExport = useCallback((fmt) => {
-    if (exportNeedsConfirm(data, fmt)) setExportFormat(fmt)
+  const requestExport = useCallback((fmt: string) => {
+    if (exportNeedsConfirm(cast<ExportSheet[]>(data), fmt)) setExportFormat(fmt)
     else runExport(fmt)
   }, [data, runExport])
 
@@ -976,9 +1079,9 @@ export default function SheetsEditor() {
   // it via the normal path AND broadcast a chart_op so live collaborators merge
   // the same descriptor without waiting for a full re-save round-trip. We diff
   // the charts array to know which chart to upsert/remove on the fabric.
-  const handleChartChange = useCallback((nextData) => {
-    const prevCharts = Array.isArray(dataRef.current?.[0]?.charts) ? dataRef.current[0].charts : []
-    const nextCharts = Array.isArray(nextData?.[0]?.charts) ? nextData[0].charts : []
+  const handleChartChange = useCallback((nextData: Sheet[]) => {
+    const prevCharts = Array.isArray(dataRef.current?.[0]?.charts) ? dataRef.current[0].charts! : []
+    const nextCharts = Array.isArray(nextData?.[0]?.charts) ? nextData[0].charts! : []
     // chartsAuthoritative: nextData already holds the definitive charts array
     // (an insert/edit/move/delete from the wizard or ChartLayer) — do NOT let
     // handleChange's merge re-attach the PREVIOUS charts over this one.
@@ -989,13 +1092,13 @@ export default function SheetsEditor() {
       const nextIds = new Set(nextCharts.map((c) => c.id))
       for (const c of nextCharts) {
         const before = prevCharts.find((p) => p.id === c.id)
-        if (!before || JSON.stringify(before) !== JSON.stringify(c)) session.upsertChart(c)
+        if (!before || JSON.stringify(before) !== JSON.stringify(c)) session.upsertChart(c as unknown as CrdtChartDescriptor)
       }
-      for (const id of prevIds) if (!nextIds.has(id)) session.removeChart(id)
+      for (const cid of prevIds) if (!nextIds.has(cid)) session.removeChart(cid)
     }
   }, [handleChange])
 
-  const handleEditChart = useCallback((chartId) => {
+  const handleEditChart = useCallback((chartId: string) => {
     setEditingChartId(chartId)
     setShowChartWizard(true)
   }, [])
@@ -1005,9 +1108,9 @@ export default function SheetsEditor() {
   // op over the FULL data, so charts are preserved). Save it via the normal path
   // AND broadcast a pivot_op so live collaborators merge the same descriptor. We
   // diff the pivots array to know which pivot to upsert/remove on the fabric.
-  const handlePivotChange = useCallback((nextData) => {
-    const prevPivots = Array.isArray(dataRef.current?.[0]?.pivots) ? dataRef.current[0].pivots : []
-    const nextPivots = Array.isArray(nextData?.[0]?.pivots) ? nextData[0].pivots : []
+  const handlePivotChange = useCallback((nextData: Sheet[]) => {
+    const prevPivots = Array.isArray(dataRef.current?.[0]?.pivots) ? dataRef.current[0].pivots! : []
+    const nextPivots = Array.isArray(nextData?.[0]?.pivots) ? nextData[0].pivots! : []
     // overlaysAuthoritative: nextData was derived from the full current data via
     // a pivot.js op, so it already carries the definitive charts AND pivots — do
     // NOT let handleChange re-merge stale overlays over it.
@@ -1018,13 +1121,13 @@ export default function SheetsEditor() {
       const nextIds = new Set(nextPivots.map((p) => p.id))
       for (const p of nextPivots) {
         const before = prevPivots.find((x) => x.id === p.id)
-        if (!before || JSON.stringify(before) !== JSON.stringify(p)) session.upsertPivot(p)
+        if (!before || JSON.stringify(before) !== JSON.stringify(p)) session.upsertPivot(p as unknown as CrdtChartDescriptor)
       }
       for (const pid of prevIds) if (!nextIds.has(pid)) session.removePivot(pid)
     }
   }, [handleChange])
 
-  const handleEditPivot = useCallback((pivotId) => {
+  const handleEditPivot = useCallback((pivotId: string) => {
     setEditingPivotId(pivotId)
     setShowPivot(true)
   }, [])
@@ -1034,9 +1137,9 @@ export default function SheetsEditor() {
   // data, charts/pivots preserved). Save it authoritatively (do NOT let the
   // merge resurrect a just-deleted rule) AND broadcast cs_ops so collaborators
   // converge. We diff the rules to know which to upsert/remove on the fabric.
-  const handleColorScaleChange = useCallback((nextData) => {
-    const prevRules = Array.isArray(dataRef.current?.[0]?.colorScales) ? dataRef.current[0].colorScales : []
-    const nextRules = Array.isArray(nextData?.[0]?.colorScales) ? nextData[0].colorScales : []
+  const handleColorScaleChange = useCallback((nextData: Sheet[]) => {
+    const prevRules = Array.isArray(dataRef.current?.[0]?.colorScales) ? dataRef.current[0].colorScales! : []
+    const nextRules = Array.isArray(nextData?.[0]?.colorScales) ? nextData[0].colorScales! : []
     handleChange(nextData, { overlaysAuthoritative: true })
     const session = gridSessionRef.current
     if (session) {
@@ -1044,15 +1147,15 @@ export default function SheetsEditor() {
       const nextIds = new Set(nextRules.map((r) => r.id))
       for (const r of nextRules) {
         const before = prevRules.find((x) => x.id === r.id)
-        if (!before || JSON.stringify(before) !== JSON.stringify(r)) session.upsertColorScale(r)
+        if (!before || JSON.stringify(before) !== JSON.stringify(r)) session.upsertColorScale(r as unknown as CrdtChartDescriptor)
       }
       for (const rid of prevIds) if (!nextIds.has(rid)) session.removeColorScale(rid)
     }
   }, [handleChange])
 
-  const handleTitleChange = (newTitle) => {
+  const handleTitleChange = (newTitle: string) => {
     setTitle(newTitle)
-    markDirty(id)
+    markDirty(id ?? '')
     clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => doSave(dataRef.current), 1500)
   }
@@ -1065,19 +1168,19 @@ export default function SheetsEditor() {
   // path (initial useState, api.getFile, XLSX import) runs clampCharts →
   // makeChart; the restore path must too, or it reopens the wave-55 render-DoS
   // through the load door. Normalise + clamp fail-closed before it reaches data.
-  const handleRestoreDraft  = () => { if (!draft) return; loadDocument(loadContent(draft.content)); if (draft.name) setTitle(draft.name); setDraft(null); markDirty(id) }
-  const handleDiscardDraft  = () => { clearDraft(id); setDraft(null) }
+  const handleRestoreDraft  = () => { if (!draft) return; loadDocument(loadContent(draft.content)); if (draft.name) setTitle(draft.name); setDraft(null); markDirty(id ?? '') }
+  const handleDiscardDraft  = () => { if (id) clearDraft(id); setDraft(null) }
 
   // ── Import CSV ──────────────────────────────────────────────────────────────
-  const handleImportCSV = async (e) => {
+  const handleImportCSV = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     try {
       const sheet = await importCSVFile(file)
       // Append as a new sheet.
       setData((prev) => {
-        const next = [...prev, sheet]
-        markDirty(id)
+        const next = [...prev, cast<Sheet>(sheet)]
+        markDirty(id ?? '')
         clearTimeout(saveTimer.current)
         saveTimer.current = setTimeout(() => doSave(next), AUTOSAVE_DELAY_MS)
         return next
@@ -1097,7 +1200,7 @@ export default function SheetsEditor() {
   // and column widths — plus the real OOXML charts SheetJS cannot see.
   // Imported sheets are APPENDED (never destroy the open workbook); a name clash
   // is de-duplicated so Fortune-Sheet keeps distinct sheet ids.
-  const handleImportXLSX = async (e) => {
+  const handleImportXLSX = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     try {
@@ -1121,7 +1224,7 @@ export default function SheetsEditor() {
 
       setData((prev) => {
         const used = new Set(prev.map((s) => s.name))
-        const appended = imported.map((s) => {
+        const appended = cast<Sheet[]>(imported).map((s) => {
           let name = s.name || 'Sheet'
           let n = 1
           while (used.has(name)) name = `${s.name} (${++n})`
@@ -1131,10 +1234,10 @@ export default function SheetsEditor() {
           const { charts: _c, importNotes: _n, ...sheet } = s
           return { ...sheet, name }
         })
-        let next = [...prev, ...appended]
-        const merged = combineImportNotes(getImportNotes(prev), lost)
-        if (merged) next = setImportNotes(next, merged)
-        markDirty(id)
+        let next: Sheet[] = [...prev, ...appended]
+        const merged = combineImportNotes(getImportNotes(cast<INSheet[]>(prev)), lost)
+        if (merged) next = cast<Sheet[]>(setImportNotes(cast<INSheet[]>(next), merged))
+        markDirty(id ?? '')
         clearTimeout(saveTimer.current)
         saveTimer.current = setTimeout(() => doSave(next), AUTOSAVE_DELAY_MS)
         return next
@@ -1142,18 +1245,19 @@ export default function SheetsEditor() {
       const summary = importLossSummary(lost)
       if (summary) showToast(`Imported “${file.name}” — ${summary}`, 'info')
       else showToast(`Imported “${file.name}”`, 'success')
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Spreadsheet import failed:', err)
-      showToast(`Could not import “${file.name}” — ${err.message}`, 'error')
+      const msg = err instanceof Error ? err.message : String(err)
+      showToast(`Could not import “${file.name}” — ${msg}`, 'error')
     }
     e.target.value = ''
   }
 
   // ── Filter view apply ───────────────────────────────────────────────────────
-  const handleFilterApply = useCallback((hiddenRows) => {
+  const handleFilterApply = useCallback((hiddenRows: number[]) => {
     setData((prev) => prev.map((sheet, idx) => {
       if (idx !== 0) return sheet
-      const rowhidden = {}
+      const rowhidden: Record<number, number> = {}
       for (const r of hiddenRows) rowhidden[r] = 1
       return { ...sheet, config: { ...sheet.config, rowhidden } }
     }))
@@ -1187,14 +1291,13 @@ export default function SheetsEditor() {
     // by buildNativeConditionFormat's own caps; negligible for typical use.
     return data.map((sheet, idx) => {
       if (idx !== 0) return sheet
-      return { ...sheet, luckysheet_conditionformat_save: buildNativeConditionFormat(sheet, parseRangeFS) }
+      return { ...sheet, luckysheet_conditionformat_save: buildNativeConditionFormat(cast<CSSheet>(sheet), parseRangeFS) }
     })
   }, [data])
 
   const panelSetters = [setShowPivot, setShowFilter, setShowCondFormat, setShowNamedRanges, setShowProtectedRanges, setShowDataValidation]
-  const closeAllPanels = () => { for (const s of panelSetters) s(false) }
-  const togglePanel = (setter) => () => {
-    setter((v) => {
+  const togglePanel = (setter: (v: boolean | ((prev: boolean) => boolean)) => void) => () => {
+    setter((v: boolean) => {
       if (!v) { for (const s of panelSetters) if (s !== setter) s(false) }
       return !v
     })
@@ -1260,7 +1363,12 @@ export default function SheetsEditor() {
           <>
             {saveStatus.status && (
               <SaveStatus
-                status={saveStatus.status}
+                // filesStore's SaveStatus union includes 'idle', which the shared
+                // <SaveStatus> component doesn't list among its own kinds — it
+                // already falls back to its 'saved' rendering for any status it
+                // doesn't recognise (MAP[status] || MAP.saved), so this cast
+                // preserves that exact pre-existing behavior across the boundary.
+                status={saveStatus.status as UISaveStatusKind}
                 text={saveStatusText}
                 title={saveStatus.error || undefined}
               />
@@ -1295,7 +1403,7 @@ export default function SheetsEditor() {
               <NumberFormatMenu
                 selection={selectionRect}
                 activeCell={activeCell}
-                data={data}
+                data={cast<import('./numberFormats.js').SheetData[]>(data)}
                 onChange={(next) => handleChange(next)}
               />
               <FreezePanel workbookRef={workbookRef} />
@@ -1474,13 +1582,13 @@ export default function SheetsEditor() {
             // first mounted with.
             key={`${id}:${loadKey}`}
             ref={workbookRef}
-            data={renderData}
+            data={cast<FSSheet[]>(renderData)}
             onChange={handleChange}
             showFormulaBar={true}
             defaultFontSize={11}
             hooks={{
-              afterSelectionChange: (_sheetId, selection) => {
-                if (selection?.row_focus !== undefined) {
+              afterSelectionChange: (_sheetId: string, selection: FSSelection) => {
+                if (selection?.row_focus !== undefined && selection.column_focus !== undefined) {
                   setActiveCell({ row: selection.row_focus, col: selection.column_focus })
                 }
                 // Record the full selection rectangle so number-format /
@@ -1501,14 +1609,14 @@ export default function SheetsEditor() {
               where cell rects ARE measurable (getCellRect resolves); on the
               canvas grid it self-disables (no rects) rather than mis-aligning. */}
           <Suspense fallback={null}>
-            <ColorScaleLayer data={data} getCellRect={getCellRect} scrollTick={scrollTick} />
+            <ColorScaleLayer data={cast<CSSheet[]>(data)} getCellRect={getCellRect} scrollTick={scrollTick} />
           </Suspense>
           <SheetsCursorLayer remoteCursors={remoteCursors} getCellRect={getCellRect} />
           {/* WAVE-54: floating live charts over the grid */}
           <Suspense fallback={null}>
             <ChartLayer
-              data={data}
-              onChange={handleChartChange}
+              data={cast<ChartSheet[]>(data)}
+              onChange={(next) => handleChartChange(cast<Sheet[]>(next))}
               selectedId={selectedChartId}
               onSelect={setSelectedChartId}
               onEdit={handleEditChart}
@@ -1517,8 +1625,8 @@ export default function SheetsEditor() {
           {/* WAVE-63: floating live pivot tables over the grid */}
           <Suspense fallback={null}>
             <PivotLayer
-              data={data}
-              onChange={handlePivotChange}
+              data={cast<PivotSheet[]>(data)}
+              onChange={(next) => handlePivotChange(cast<Sheet[]>(next))}
               onEdit={handleEditPivot}
             />
           </Suspense>
@@ -1535,7 +1643,7 @@ export default function SheetsEditor() {
           )}
           {showFindReplace && (
             <SheetsFindReplace
-              data={data}
+              data={cast<import('./SheetsFindReplace.js').FRSheet[]>(data)}
               onChange={(newData) => handleChange(newData)}
               onClose={() => setShowFindReplace(false)}
             />
@@ -1546,39 +1654,39 @@ export default function SheetsEditor() {
         <Suspense fallback={null}>
           {showPivot && (
             <PivotPanel
-              data={data}
-              pivot={editingPivotId ? getPivots(data).find((p) => p.id === editingPivotId) : null}
+              data={cast<PivotSheet[]>(data)}
+              pivot={editingPivotId ? getPivots(cast<PivotSheet[]>(data)).find((p) => p.id === editingPivotId) || null : null}
               selectionRect={selectionRect}
               onClose={() => { setShowPivot(false); setEditingPivotId(null) }}
-              onInsert={(next) => { handlePivotChange(next) }}
+              onInsert={(next) => { handlePivotChange(cast<Sheet[]>(next)) }}
               onInsertStatic={(next) => { handleChange(next) }}
             />
           )}
           {showFilter && (
             <FilterPanel
-              data={data}
+              data={cast<import('./FilterPanel.js').FPSheet[]>(data)}
               onClose={() => setShowFilter(false)}
               onApply={handleFilterApply}
             />
           )}
           {showCondFormat && (
             <ConditionalFormatPanel
-              data={data}
+              data={cast<CSSheet[]>(data)}
               onClose={() => setShowCondFormat(false)}
               onChange={(next) => { handleChange(next) }}
-              onColorScaleChange={(next) => { handleColorScaleChange(next) }}
+              onColorScaleChange={(next) => { handleColorScaleChange(cast<Sheet[]>(next)) }}
             />
           )}
           {showNamedRanges && (
             <NamedRangesPanel
-              data={data}
+              data={cast<import('./NamedRangesPanel.js').NRSheet[]>(data)}
               onClose={() => setShowNamedRanges(false)}
               onChange={(next) => { handleChange(next) }}
             />
           )}
           {showProtectedRanges && (
             <ProtectedRangesPanel
-              data={data}
+              data={cast<PRSheet[]>(data)}
               fileId={id}
               me={myAccountId}
               selectionRect={selectionRect}
@@ -1588,7 +1696,7 @@ export default function SheetsEditor() {
           )}
           {showDataValidation && (
             <DataValidationPanel
-              data={data}
+              data={cast<DVSheet[]>(data)}
               activeCell={activeCell}
               onClose={() => setShowDataValidation(false)}
               onChange={(next) => { handleChange(next) }}
@@ -1599,7 +1707,7 @@ export default function SheetsEditor() {
         {/* Comments panel */}
         {showComments && (
           <CommentsPanel
-            fileId={id}
+            fileId={id ?? ''}
             anchorCtx={{ type: 'cell', sheet: 'Sheet1', row: 0, col: 0, snapshot: '' }}
             onClose={() => setShowComments(false)}
           />
@@ -1610,17 +1718,17 @@ export default function SheetsEditor() {
       <Suspense fallback={null}>
         {showChartWizard && (
           <ChartWizard
-            data={data}
-            chart={editingChartId ? (data?.[0]?.charts || []).find((c) => c.id === editingChartId) : null}
+            data={cast<ChartSheet[]>(data)}
+            chart={editingChartId ? (data?.[0]?.charts || []).find((c) => c.id === editingChartId) || null : null}
             selectionRect={selectionRect}
             onClose={() => { setShowChartWizard(false); setEditingChartId(null) }}
-            onChange={(next) => { handleChartChange(next); setShowChartWizard(false); setEditingChartId(null) }}
+            onChange={(next) => { handleChartChange(cast<Sheet[]>(next)); setShowChartWizard(false); setEditingChartId(null) }}
           />
         )}
         {/* Export fidelity confirmation (WAVE-64) — see runExport. */}
         {exportFormat && (
           <ExportDialog
-            data={data}
+            data={cast<ExportSheet[]>(data)}
             format={exportFormat}
             onCancel={() => setExportFormat(null)}
             onConfirm={(fmt) => runExport(fmt)}
@@ -1636,7 +1744,7 @@ export default function SheetsEditor() {
         open={showShare}
         onClose={() => setShowShare(false)}
         file={{ id, name: title }}
-        me={myAccountId}
+        me={myAccountId ?? ''}
       />
 
       {/* Transient notifier (import success / failure, …) */}
