@@ -23,7 +23,7 @@
  *
  * NOTE: Office is a document product. The service worker (public/sw.js) is
  * deliberately conservative — it never caches /api, /v1, auth, collab, or any
- * path carrying document bytes. See src/sw.security.test.js for the contract.
+ * path carrying document bytes. See src/sw.security.test.ts for the contract.
  */
 
 import { bootstrapOffline } from './endpoints/offlineBootstrap.js'

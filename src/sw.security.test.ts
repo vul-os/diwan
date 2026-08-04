@@ -1,5 +1,5 @@
 /**
- * sw.security.test.js — installability + service-worker security contract for
+ * sw.security.test.ts — installability + service-worker security contract for
  * the standalone Office PWA (public/manifest.webmanifest, public/sw.js).
  *
  * Office is a DOCUMENT product. Its shell fans out to its Go backend over
@@ -16,10 +16,29 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 
+// public/manifest.webmanifest as this suite reads it back — JSON.parse's
+// built-in return type is `any`, so this pins the fields exercised below.
+interface WebManifestIcon {
+  sizes: string
+  purpose?: string
+}
+interface WebManifest {
+  id: string
+  name: string
+  short_name: string
+  start_url: string
+  scope: string
+  display: string
+  background_color: string
+  theme_color: string
+  categories: string[]
+  icons: WebManifestIcon[]
+}
+
 const here = dirname(fileURLToPath(import.meta.url))
 const root = resolve(here, '..')
 const swSource = readFileSync(resolve(root, 'public/sw.js'), 'utf8')
-const manifest = JSON.parse(
+const manifest: WebManifest = JSON.parse(
   readFileSync(resolve(root, 'public/manifest.webmanifest'), 'utf8')
 )
 
@@ -48,7 +67,7 @@ describe('office service worker — sensitive + document routes are never cached
   test.each(SENSITIVE_PREFIXES)('NEVER_CACHE excludes %s (network-only)', (prefix) => {
     const match = swSource.match(/const\s+NEVER_CACHE\s*=\s*\[([\s\S]*?)\]/)
     expect(match).not.toBeNull()
-    expect(match[1]).toContain(`'${prefix}'`)
+    expect(match![1]).toContain(`'${prefix}'`)
   })
 
   test('the fetch handler bails out (no respondWith) for non-cacheable requests', () => {

@@ -1,5 +1,5 @@
 /**
- * manifest.test.js — vitest tests for /public/manifest.webmanifest
+ * manifest.test.ts — vitest tests for /public/manifest.webmanifest
  *
  * Validates that the PWA manifest for Diwan:
  *   1. Parses as valid JSON.
@@ -14,11 +14,27 @@ import { readFileSync } from 'fs'
 import { resolve, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
+// public/manifest.webmanifest as this suite reads it back — JSON.parse's
+// built-in return type is `any`, so this pins the fields exercised below.
+interface ManifestIcon {
+  src: string
+  sizes: string
+  type: string
+}
+interface Manifest {
+  name: string
+  short_name: string
+  start_url: string
+  display: string
+  theme_color: string
+  icons: ManifestIcon[]
+}
+
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const manifestPath = resolve(__dirname, '../public/manifest.webmanifest')
 
 describe('Diwan manifest.webmanifest', () => {
-  let manifest
+  let manifest: Manifest
 
   it('parses as valid JSON', () => {
     const raw = readFileSync(manifestPath, 'utf-8')
