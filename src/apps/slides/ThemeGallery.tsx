@@ -11,11 +11,29 @@
 
 import { useState, useRef } from 'react'
 import { X, Upload, Check, Palette } from 'lucide-react'
-import { PRESET_THEMES, getTheme } from './themes'
+import { PRESET_THEMES, getTheme, type SlideTheme } from './themes'
 import { useDialogA11y } from '../../components/ui'
 
+type ThemeTab = 'gallery' | 'custom'
+
+/** A color/font key this gallery lets the user override on a custom theme. */
+type CustomizableKey = 'headingFont' | 'bodyFont' | 'primary' | 'secondary' | 'accent' | 'background' | 'text' | 'textMuted'
+
+/** themeId + customTheme, as read from an imported deck's JSON metadata. */
+interface ImportedThemeMeta {
+  themeId?: string
+  customTheme?: Partial<SlideTheme>
+}
+
+interface ThemeGalleryProps {
+  currentThemeId?: string
+  customTheme?: Partial<SlideTheme> | null
+  onApply: (payload: { themeId: string; customTheme: Partial<SlideTheme> | null }) => void
+  onClose: () => void
+}
+
 // Tab list (key, label) — drives both the tablist render and its keyboard nav.
-const TABS = [['gallery', 'Presets'], ['custom', 'Custom']]
+const TABS: [ThemeTab, string][] = [['gallery', 'Presets'], ['custom', 'Custom']]
 
 const FONT_OPTIONS = [
   '"Inter", sans-serif',
@@ -34,7 +52,13 @@ const FONT_OPTIONS = [
   'Impact, sans-serif',
 ]
 
-function ThemeTile({ theme, active, onSelect }) {
+interface ThemeTileProps {
+  theme: SlideTheme
+  active: boolean
+  onSelect: (id: string) => void
+}
+
+function ThemeTile({ theme, active, onSelect }: ThemeTileProps) {
   return (
     <button
       type="button"
@@ -81,12 +105,12 @@ function ThemeTile({ theme, active, onSelect }) {
   )
 }
 
-export default function ThemeGallery({ currentThemeId, customTheme, onApply, onClose }) {
+export default function ThemeGallery({ currentThemeId, customTheme, onApply, onClose }: ThemeGalleryProps) {
   const [selected, setSelected] = useState(currentThemeId || PRESET_THEMES[0].id)
-  const [custom, setCustom] = useState(customTheme || null)
-  const [tab, setTab] = useState('gallery') // 'gallery' | 'custom'
-  const importRef = useRef(null)
-  const dialogRef = useRef(null)
+  const [custom, setCustom] = useState<Partial<SlideTheme> | null>(customTheme || null)
+  const [tab, setTab] = useState<ThemeTab>('gallery') // 'gallery' | 'custom'
+  const importRef = useRef<HTMLInputElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
   useDialogA11y(dialogRef, onClose)
 
   // derive preview theme
@@ -94,13 +118,13 @@ export default function ThemeGallery({ currentThemeId, customTheme, onApply, onC
     ? { ...getTheme(selected), ...custom }
     : getTheme(selected)
 
-  const handleImport = (e) => {
+  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     const reader = new FileReader()
     reader.onload = (ev) => {
       try {
-        const data = JSON.parse(ev.target.result)
+        const data = JSON.parse(ev.target?.result as string) as ImportedThemeMeta
         if (data.themeId) setSelected(data.themeId)
         if (data.customTheme && typeof data.customTheme === 'object') {
           setCustom(data.customTheme)
@@ -120,16 +144,16 @@ export default function ThemeGallery({ currentThemeId, customTheme, onApply, onC
     onClose()
   }
 
-  const updateCustom = (key, value) => {
+  const updateCustom = (key: CustomizableKey, value: string) => {
     setCustom((prev) => ({ ...(prev || {}), [key]: value }))
   }
 
   // Roving arrow-key navigation across the tablist (WAI-ARIA tabs pattern):
   // Left/Right move + activate; Home/End jump to the ends.
-  const onTabKeyDown = (e) => {
+  const onTabKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
     const keys = TABS.map(([k]) => k)
     const i = keys.indexOf(tab)
-    let next = null
+    let next: ThemeTab | null = null
     if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = keys[(i + 1) % keys.length]
     else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') next = keys[(i - 1 + keys.length) % keys.length]
     else if (e.key === 'Home') next = keys[0]
@@ -282,14 +306,14 @@ export default function ThemeGallery({ currentThemeId, customTheme, onApply, onC
 
               {/* Colours */}
               <div className="grid grid-cols-4 gap-3">
-                {[
+                {([
                   ['primary', 'Primary'],
                   ['secondary', 'Secondary'],
                   ['accent', 'Accent'],
                   ['background', 'Background'],
                   ['text', 'Text'],
                   ['textMuted', 'Text Muted'],
-                ].map(([key, lbl]) => (
+                ] as [CustomizableKey, string][]).map(([key, lbl]) => (
                   <div key={key}>
                     <label htmlFor={`theme-color-${key}`} className="block text-2xs font-semibold text-ink-faint uppercase tracking-eyebrow mb-1">
                       {lbl}
@@ -335,7 +359,7 @@ export default function ThemeGallery({ currentThemeId, customTheme, onApply, onC
                   Body copy goes here — lorem ipsum dolor sit amet.
                 </p>
                 <div className="flex gap-2 mt-3">
-                  {['primary', 'secondary', 'accent'].map((k) => (
+                  {(['primary', 'secondary', 'accent'] as CustomizableKey[]).map((k) => (
                     <span
                       key={k}
                       className="inline-block rounded-md px-3 py-1 text-xs font-semibold text-white"
