@@ -2,7 +2,7 @@
 // comment about STUN/TURN config — this file only calls same-origin/relative paths
 // (/api/peering/ice, /api/turn/credentials), never a broker-specific endpoint.
 //
-// ice.js — shared ICE-server fetch helper.
+// ice.ts — shared ICE-server fetch helper.
 //
 // Both the OS fabric path (/api/peering/ice → body.ice_servers) and
 // the call/TURN path (/api/turn/credentials → body.iceServers) implement
@@ -23,7 +23,7 @@
 //   Priority (highest first):
 //     1. window.__VULOS_ENDPOINTS__.iceServersFallback — explicit full
 //        override (array of RTCIceServer), used verbatim. Escape hatch for
-//        hosts that want to inject something ice.js doesn't model.
+//        hosts that want to inject something ice.ts doesn't model.
 //     2. window.__VULOS_ENDPOINTS__.stunUrls / .turn (runtime host injection),
 //        or the build-time env vars below — merged into one ICE server list:
 //          VITE_STUN_URLS         comma-separated stun: URLs
@@ -47,17 +47,20 @@
  * The classic Google public STUN server. Exported so callers can opt into it
  * explicitly, or compare against it.
  */
-export const GOOGLE_STUN_FALLBACK = [{ urls: ['stun:stun.l.google.com:19302'] }]
+export const GOOGLE_STUN_FALLBACK: RTCIceServer[] = [{ urls: ['stun:stun.l.google.com:19302'] }]
 
-function _readEnv(name) {
+function _readEnv(name: string): string {
   try {
-    return (import.meta && import.meta.env && import.meta.env[name]) || ''
+    // import.meta.env is replaced at build time by Vite; guard for non-Vite
+    // consumers of the library build (jest/node) where it may be undefined.
+    const e = typeof import.meta !== 'undefined' ? import.meta.env : undefined
+    return (e && (e as Record<string, unknown>)[name]) ? String((e as Record<string, unknown>)[name]) : ''
   } catch {
     return ''
   }
 }
 
-function _csv(s) {
+function _csv(s: string | null | undefined): string[] {
   return String(s || '')
     .split(',')
     .map((x) => x.trim())
@@ -70,10 +73,10 @@ function _csv(s) {
  * unreachable or yields nothing — most notably a standalone Diwan with
  * neither. See the module doc above and docs/COTURN.md.
  *
- * @returns {Array<RTCIceServer>} ICE server objects to fall back to (may be
- *   just STUN, STUN+TURN, or — only if explicitly disabled — empty)
+ * @returns ICE server objects to fall back to (may be just STUN, STUN+TURN,
+ *   or — only if explicitly disabled — empty)
  */
-export function resolveStunFallback() {
+export function resolveStunFallback(): RTCIceServer[] {
   try {
     const inj = typeof window !== 'undefined' ? window.__VULOS_ENDPOINTS__ : null
 
@@ -99,7 +102,7 @@ export function resolveStunFallback() {
         ? true
         : false
 
-    const servers = []
+    const servers: RTCIceServer[] = []
     if (stunUrls.length) servers.push({ urls: stunUrls })
     if (turnUrls.length) {
       servers.push({
@@ -121,27 +124,32 @@ export function resolveStunFallback() {
   return GOOGLE_STUN_FALLBACK
 }
 
+/** Options for {@link fetchIce}. */
+export interface FetchIceOptions {
+  /** key in the JSON body that holds the array (default 'iceServers') */
+  responseKey?: string
+  /** extra options forwarded to fetch() */
+  fetchOptions?: RequestInit
+  /** servers to return on any fetch error, non-ok response, or empty array */
+  fallbackIceServers?: RTCIceServer[]
+}
+
 /**
  * Fetch ICE servers from a relay/TURN endpoint.
  *
- * @param {string} endpoint      - URL path to GET (e.g. '/api/turn/credentials')
- * @param {object} [opts]
- * @param {string} [opts.responseKey='iceServers']  - key in the JSON body that holds the array
- * @param {object} [opts.fetchOptions={}]           - extra options forwarded to fetch()
- * @param {Array}  [opts.fallbackIceServers=[]]     - servers to return on any
- *        fetch error, non-ok response, or empty array.
- * @returns {Promise<Array>}     - ICE server objects (may be empty)
+ * @param endpoint  URL path to GET (e.g. '/api/turn/credentials')
+ * @returns ICE server objects (may be empty)
  */
 export async function fetchIce(
-  endpoint,
-  { responseKey = 'iceServers', fetchOptions = {}, fallbackIceServers = [] } = {},
-) {
+  endpoint: string,
+  { responseKey = 'iceServers', fetchOptions = {}, fallbackIceServers = [] }: FetchIceOptions = {},
+): Promise<RTCIceServer[]> {
   try {
     const r = await fetch(endpoint, fetchOptions)
     if (r.ok) {
-      const body = await r.json()
+      const body = (await r.json()) as Record<string, unknown>
       const servers = body[responseKey]
-      if (Array.isArray(servers) && servers.length) return servers
+      if (Array.isArray(servers) && servers.length) return servers as RTCIceServer[]
     }
   } catch { /* ignore — fall through to the configured fallback */ }
   return Array.isArray(fallbackIceServers) ? fallbackIceServers : []
