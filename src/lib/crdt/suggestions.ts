@@ -40,13 +40,17 @@
 // ---------------------------------------------------------------------------
 
 class HLC {
-  constructor(nodeId) {
+  nodeId: string
+  wallMs: number
+  counter: number
+
+  constructor(nodeId?: string) {
     this.nodeId = nodeId || crypto.randomUUID().slice(0, 8)
     this.wallMs = 0
     this.counter = 0
   }
 
-  tick() {
+  tick(): string {
     const now = Date.now()
     if (now > this.wallMs) {
       this.wallMs = now
@@ -57,7 +61,7 @@ class HLC {
     return this._fmt(this.wallMs, this.counter)
   }
 
-  receive(remote) {
+  receive(remote: string): void {
     const { wallMs: rw, counter: rc } = HLC._parse(remote)
     const now = Date.now()
     if (rw > this.wallMs && rw > now) {
@@ -71,7 +75,7 @@ class HLC {
     }
   }
 
-  _fmt(wallMs, counter) {
+  _fmt(wallMs: number, counter: number): string {
     return (
       String(wallMs).padStart(20, '0') + '-' +
       String(counter).padStart(10, '0') + '-' +
@@ -79,7 +83,7 @@ class HLC {
     )
   }
 
-  static _parse(clock) {
+  static _parse(clock: string): { wallMs: number; counter: number } {
     if (!clock) return { wallMs: 0, counter: 0 }
     const parts = clock.split('-')
     return { wallMs: parseInt(parts[0], 10) || 0, counter: parseInt(parts[1], 10) || 0 }
@@ -94,17 +98,50 @@ export const OP_ADD_SUGGESTION    = 'add'
 export const OP_ACCEPT_SUGGESTION = 'accept'
 export const OP_REJECT_SUGGESTION = 'reject'
 
+export type SuggestionKind = 'insert' | 'delete'
+export type SuggestionState = 'pending' | 'accepted' | 'rejected'
+
+export type Suggestion = {
+  id: string
+  kind: SuggestionKind
+  state: SuggestionState
+  author_id: string
+  reviewer_id?: string
+  from: number
+  to: number
+  text: string
+  seq_clock: string
+  created_at: string
+  updated_at: string
+}
+
+export type SuggestionOp = {
+  op: typeof OP_ADD_SUGGESTION | typeof OP_ACCEPT_SUGGESTION | typeof OP_REJECT_SUGGESTION
+  suggestion: Suggestion
+  applied_at: string
+}
+
+export type SuggestionStoreOptions = {
+  /** broadcast hook */
+  onOp?: ((op: SuggestionOp) => void) | null
+}
+
 // ---------------------------------------------------------------------------
 // SuggestionStore
 // ---------------------------------------------------------------------------
 
 export class SuggestionStore {
+  private _clock: HLC
+  private _nodeId: string
+  private _onOp: ((op: SuggestionOp) => void) | null
+  private _items: Map<string, Suggestion>
+  private _ops: SuggestionOp[]
+  private _opKeys: Set<string>
+
   /**
-   * @param {string} nodeId     unique id for this replica
-   * @param {object} [opts]
-   * @param {(op: object) => void} [opts.onOp]  broadcast hook
+   * @param nodeId  unique id for this replica
    */
-  constructor(nodeId, opts = {}) {
+  constructor(nodeId: string, opts: SuggestionStoreOptions = {}) {
     this._clock = new HLC(nodeId)
     this._nodeId = nodeId
     this._onOp = opts.onOp || null
@@ -120,7 +157,7 @@ export class SuggestionStore {
   // Hydrate from server (REST GET /files/:id/suggestions)
   // -------------------------------------------------------------------------
 
-  loadFromServer(items) {
+  loadFromServer(items: Suggestion[] | null | undefined): void {
     for (const item of (items || [])) {
       this._items.set(item.id, { ...item })
     }
@@ -130,17 +167,17 @@ export class SuggestionStore {
   // Local mutations
   // -------------------------------------------------------------------------
 
-  addInsert(from, to, text, authorId) {
+  addInsert(from: number, to: number, text: string, authorId: string): Suggestion {
     return this._add('insert', from, to, text, authorId)
   }
 
-  addDelete(from, to, authorId) {
+  addDelete(from: number, to: number, authorId: string): Suggestion {
     return this._add('delete', from, to, '', authorId)
   }
 
-  _add(kind, from, to, text, authorId) {
+  private _add(kind: SuggestionKind, from: number, to: number, text: string, authorId: string): Suggestion {
     const now = new Date().toISOString()
-    const suggestion = {
+    const suggestion: Suggestion = {
       id: crypto.randomUUID(),
       kind,
       state: 'pending',
@@ -152,31 +189,36 @@ export class SuggestionStore {
       created_at: now,
       updated_at: now,
     }
-    const op = { op: OP_ADD_SUGGESTION, suggestion, applied_at: now }
+    const op: SuggestionOp = { op: OP_ADD_SUGGESTION, suggestion, applied_at: now }
     this._applyLocal(op)
     return suggestion
   }
 
-  accept(suggestionId, reviewerId = '') {
+  accept(suggestionId: string, reviewerId = ''): Suggestion {
     return this._decide(suggestionId, 'accepted', reviewerId, OP_ACCEPT_SUGGESTION)
   }
 
-  reject(suggestionId, reviewerId = '') {
+  reject(suggestionId: string, reviewerId = ''): Suggestion {
     return this._decide(suggestionId, 'rejected', reviewerId, OP_REJECT_SUGGESTION)
   }
 
-  _decide(suggestionId, state, reviewerId, opType) {
+  private _decide(
+    suggestionId: string,
+    state: SuggestionState,
+    reviewerId: string,
+    opType: typeof OP_ACCEPT_SUGGESTION | typeof OP_REJECT_SUGGESTION,
+  ): Suggestion {
     const existing = this._items.get(suggestionId)
     if (!existing) throw new Error(`suggestion not found: ${suggestionId}`)
     const now = new Date().toISOString()
-    const updated = {
+    const updated: Suggestion = {
       ...existing,
       state,
       reviewer_id: reviewerId,
       seq_clock: this._clock.tick(),
       updated_at: now,
     }
-    const op = { op: opType, suggestion: updated, applied_at: now }
+    const op: SuggestionOp = { op: opType, suggestion: updated, applied_at: now }
     this._applyLocal(op)
     return updated
   }
@@ -185,7 +227,7 @@ export class SuggestionStore {
   // CRDT merge — apply ops from a remote peer (idempotent + commutative)
   // -------------------------------------------------------------------------
 
-  mergeOps(ops) {
+  mergeOps(ops: SuggestionOp[]): void {
     for (const op of ops) {
       const clock = op.suggestion?.seq_clock
       if (clock) this._clock.receive(clock)
@@ -200,9 +242,9 @@ export class SuggestionStore {
 
   /**
    * Returns suggestions sorted by created_at.
-   * @param {string} [filterState]  'pending' | 'accepted' | 'rejected' | undefined = all
+   * @param filterState  'pending' | 'accepted' | 'rejected' | undefined = all
    */
-  list(filterState) {
+  list(filterState?: SuggestionState): Suggestion[] {
     const items = [...this._items.values()]
     items.sort((a, b) =>
       (a.created_at < b.created_at ? -1 : a.created_at > b.created_at ? 1 : 0)
@@ -210,11 +252,11 @@ export class SuggestionStore {
     return filterState ? items.filter((s) => s.state === filterState) : items
   }
 
-  get(id) {
+  get(id: string): Suggestion | null {
     return this._items.get(id) || null
   }
 
-  exportOps(afterClock = '') {
+  exportOps(afterClock = ''): SuggestionOp[] {
     if (!afterClock) return [...this._ops]
     return this._ops.filter((op) => {
       const clock = op.suggestion?.seq_clock || ''
@@ -226,13 +268,13 @@ export class SuggestionStore {
   // Internal helpers
   // -------------------------------------------------------------------------
 
-  _applyLocal(op) {
+  private _applyLocal(op: SuggestionOp): void {
     this._applyToIndex(op)
     this._appendToLog(op)
     if (this._onOp) this._onOp(op)
   }
 
-  _applyToIndex(op) {
+  private _applyToIndex(op: SuggestionOp): void {
     switch (op.op) {
       case OP_ADD_SUGGESTION: {
         if (!this._items.has(op.suggestion.id)) {
@@ -258,11 +300,11 @@ export class SuggestionStore {
         break
       }
       default:
-        console.warn('[SuggestionStore] unknown op:', op.op)
+        console.warn('[SuggestionStore] unknown op:', (op as SuggestionOp).op)
     }
   }
 
-  _appendToLog(op) {
+  private _appendToLog(op: SuggestionOp): void {
     const clock = op.suggestion?.seq_clock || ''
     const id = op.suggestion?.id || ''
     const key = `${op.op}:${id}:${clock}`
@@ -277,10 +319,11 @@ export class SuggestionStore {
 // Per-file singletons
 // ---------------------------------------------------------------------------
 
-const _stores = new Map()
+const _stores = new Map<string, SuggestionStore>()
 
-export function getSuggestionStore(fileId, opts = {}) {
-  if (_stores.has(fileId)) return _stores.get(fileId)
+export function getSuggestionStore(fileId: string, opts: SuggestionStoreOptions = {}): SuggestionStore {
+  const existing = _stores.get(fileId)
+  if (existing) return existing
   let nodeId = sessionStorage.getItem('suggestions_node_id')
   if (!nodeId) {
     nodeId = crypto.randomUUID().slice(0, 8)
@@ -291,6 +334,6 @@ export function getSuggestionStore(fileId, opts = {}) {
   return store
 }
 
-export function evictSuggestionStore(fileId) {
+export function evictSuggestionStore(fileId: string): void {
   _stores.delete(fileId)
 }
