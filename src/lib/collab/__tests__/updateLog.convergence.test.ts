@@ -10,10 +10,10 @@
 
 import { describe, it, expect } from 'vitest'
 import * as Y from 'yjs'
-import { UpdateLogSync, createMemoryUpdateLog } from '../updateLog.js'
+import { UpdateLogSync, createMemoryUpdateLog, type UpdateLogTransport, type UpdateLogTransportError } from '../updateLog.js'
 
 // Reload = a fresh Y.Doc that hydrates from the shared log.
-async function reload(log) {
+async function reload(log: UpdateLogTransport): Promise<Y.Doc> {
   const ydoc = new Y.Doc()
   const sync = new UpdateLogSync({ ydoc, transport: log })
   await sync.hydrate()
@@ -87,9 +87,12 @@ describe('UpdateLogSync convergence', () => {
     await syncA.stop()
 
     const dbg = log._debug()
-    expect(dbg.snapshot).not.toBeNull()
+    const snap = dbg.snapshot
+    expect(snap).not.toBeNull()
+    if (!snap) throw new Error('expected snapshot to be set')
     // Every frame at or below the snapshot floor was pruned.
-    expect(dbg.frames.every((f) => f.seq > dbg.snapshot.floor)).toBe(true)
+    const floor = snap.floor ?? 0
+    expect(dbg.frames.every((f) => f.seq > floor)).toBe(true)
 
     // A brand-new client reconstructs the document from snapshot + tail.
     const fresh = await reload(log)
@@ -125,8 +128,8 @@ describe('UpdateLogSync convergence', () => {
   })
 
   it('hydrate disables cleanly when the server has no update log (404)', async () => {
-    const failing = {
-      load: async () => { const e = new Error('not found'); e.status = 404; throw e },
+    const failing: UpdateLogTransport = {
+      load: async () => { const e: UpdateLogTransportError = Object.assign(new Error('not found'), { status: 404 }); throw e },
       append: async () => { throw new Error('should not be called') },
     }
     const ydoc = new Y.Doc()

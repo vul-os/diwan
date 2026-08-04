@@ -10,24 +10,26 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest'
-import { OpLogSync } from '../opLogSync.js'
-import { createMemoryUpdateLog } from '../updateLog.js'
+import { OpLogSync, type OpLogSyncOptions } from '../opLogSync.js'
+import { createMemoryUpdateLog, type UpdateLogTransportError } from '../updateLog.js'
 import { GridSession } from '../../crdt/grid.js'
 import { TreeSession, ordKeyBetween } from '../../crdt/tree.js'
 
 // A fresh, unique session/replica id per call so localStorage (jsdom) and LWW
 // opIds never collide across sessions or tests.
 let n = 0
-function uid(prefix) { return `${prefix}-${Date.now()}-${n++}` }
+function uid(prefix: string): string { return `${prefix}-${Date.now()}-${n++}` }
 
 beforeEach(() => {
   try { localStorage.clear() } catch { /* no localStorage */ }
 })
 
-function gridAdapter(session) {
+type LogAdapter = Pick<OpLogSyncOptions, 'subscribeLocal' | 'applyOp' | 'applySnapshot' | 'encodeSnapshot'>
+
+function gridAdapter(session: GridSession): LogAdapter {
   return {
     subscribeLocal: (cb) => {
-      const h = (e) => cb(e.detail.op)
+      const h = (e: Event) => cb((e as CustomEvent).detail.op)
       session.addEventListener('localOp', h)
       return () => session.removeEventListener('localOp', h)
     },
@@ -37,10 +39,10 @@ function gridAdapter(session) {
   }
 }
 
-function treeAdapter(session) {
+function treeAdapter(session: TreeSession): LogAdapter {
   return {
     subscribeLocal: (cb) => {
-      const h = (e) => cb(e.detail.op)
+      const h = (e: Event) => cb((e as CustomEvent).detail.op)
       session.addEventListener('localOp', h)
       return () => session.removeEventListener('localOp', h)
     },
@@ -50,18 +52,18 @@ function treeAdapter(session) {
   }
 }
 
-async function newGrid(log) {
+async function newGrid(log: OpLogSyncOptions['transport']): Promise<{ s: GridSession, sync: OpLogSync }> {
   const s = new GridSession({ sessionId: uid('grid'), replicaId: uid('rep'), fabricClient: null })
   const sync = new OpLogSync({ transport: log, ...gridAdapter(s), debounceMs: 0 })
   await sync.hydrate()
   return { s, sync }
 }
 
-async function reloadGrid(log) {
+async function reloadGrid(log: OpLogSyncOptions['transport']): Promise<Record<string, string>> {
   const { s, sync } = await newGrid(log)
   await sync.stop()
   // Return sorted cell map for comparison.
-  const out = {}
+  const out: Record<string, string> = {}
   for (const { r, c, v } of s.cells()) out[`${r},${c}`] = v
   return out
 }
@@ -118,7 +120,8 @@ describe('OpLogSync grid convergence (Sheets)', () => {
 
     const dbg = log._debug()
     expect(dbg.snapshot).not.toBeNull()
-    expect(dbg.frames.every((f) => f.seq > dbg.snapshot.floor)).toBe(true)
+    const snapshotFloor = dbg.snapshot!.floor
+    expect(dbg.frames.every((f) => f.seq > snapshotFloor!)).toBe(true)
 
     const reloaded = await reloadGrid(log)
     expect(reloaded).toEqual({ '0,0': 'x', '0,1': 'y', '1,1': 'z' })
@@ -146,17 +149,17 @@ describe('OpLogSync grid convergence (Sheets)', () => {
   })
 })
 
-async function newTree(log) {
+async function newTree(log: OpLogSyncOptions['transport']): Promise<{ s: TreeSession, sync: OpLogSync }> {
   const s = new TreeSession({ sessionId: uid('tree'), replicaId: uid('rep'), fabricClient: null })
   const sync = new OpLogSync({ transport: log, ...treeAdapter(s), debounceMs: 0 })
   await sync.hydrate()
   return { s, sync }
 }
 
-async function reloadTreeTitles(log) {
+async function reloadTreeTitles(log: OpLogSyncOptions['transport']): Promise<string[]> {
   const { s, sync } = await newTree(log)
   await sync.stop()
-  return s.orderedSlides().map(({ data }) => data.title)
+  return s.orderedSlides().map(({ data }: { data: { title: string } }) => data.title)
 }
 
 describe('OpLogSync tree convergence (Slides)', () => {
@@ -210,12 +213,12 @@ describe('OpLogSync tree convergence (Slides)', () => {
     const slide = s.orderedSlides()[0].data
     // Object edit from A and title edit from B both survive (object-granular LWW).
     expect(slide.title).toBe('B-TITLE')
-    expect(slide.objects.find((o) => o.id === 'o1').text).toBe('EDITED')
+    expect(slide.objects.find((o: { id: string, text: string }) => o.id === 'o1').text).toBe('EDITED')
   })
 
   it('hydrate disables cleanly when the server has no update log (404)', async () => {
-    const failing = {
-      load: async () => { const e = new Error('not found'); e.status = 404; throw e },
+    const failing: OpLogSyncOptions['transport'] = {
+      load: async () => { const e: UpdateLogTransportError = new Error('not found'); e.status = 404; throw e },
       append: async () => { throw new Error('should not be called') },
     }
     const s = new GridSession({ sessionId: uid('grid'), replicaId: uid('rep'), fabricClient: null })

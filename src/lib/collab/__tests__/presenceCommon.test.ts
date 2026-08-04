@@ -1,5 +1,5 @@
 /**
- * presenceCommon.test.js — WAVE-27 collaboration-presence pure helpers.
+ * presenceCommon.test.ts — WAVE-27 collaboration-presence pure helpers.
  *
  * Covers the transport-agnostic logic that drives the Sheets/Slides presence
  * roster projection, local-identity derivation, and status-pill state mapping.
@@ -109,14 +109,16 @@ describe('getCollabIdentity', () => {
   const realLocal = globalThis.localStorage
   const realSession = globalThis.sessionStorage
 
-  function mkStore() {
-    const m = new Map()
+  function mkStore(): Storage {
+    const m = new Map<string, string>()
     return {
-      getItem: (k) => (m.has(k) ? m.get(k) : null),
-      setItem: (k, v) => m.set(k, String(v)),
-      removeItem: (k) => m.delete(k),
-      clear: () => m.clear(),
-    }
+      getItem: (k: string) => (m.has(k) ? m.get(k)! : null),
+      setItem: (k: string, v: string) => { m.set(k, String(v)) },
+      removeItem: (k: string) => { m.delete(k) },
+      clear: () => { m.clear() },
+      key: (i: number) => [...m.keys()][i] ?? null,
+      get length() { return m.size },
+    } as Storage
   }
 
   beforeEach(() => {

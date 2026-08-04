@@ -1,5 +1,5 @@
 /**
- * reachableBase.test.js — NAT-reachability client wiring.
+ * reachableBase.test.ts — NAT-reachability client wiring.
  *
  * Verifies that invite-link generation resolves Office's externally-reachable
  * base from GET /api/reachability (DIWAN_PUBLIC_URL), caches it, and falls

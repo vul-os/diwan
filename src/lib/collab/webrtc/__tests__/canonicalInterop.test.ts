@@ -1,5 +1,5 @@
 /**
- * canonicalInterop.test.js — the browser half of a two-language pin.
+ * canonicalInterop.test.ts — the browser half of a two-language pin.
  *
  * Diwan now serves its OWN peer-discovery surface from the Go binary
  * (backend/rendezvous), and every request to it is authenticated by an Ed25519
@@ -35,14 +35,22 @@ const SEED = new Uint8Array(32).fill(7)
  *  field. */
 const PUBLIC_KEY = '6kpsY-KcUgq-9VB7Ey7F-ZVHdq6-vnuSQh7qaRRG0iw'
 
-const hex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
+const hex = (bytes: Uint8Array): string => [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
+
+interface Vector {
+  name: string
+  domain: string
+  fields: string[]
+  msgHex: string
+  sig: string
+}
 
 /**
  * The vectors. `<KEY>` is substituted with PUBLIC_KEY so the fields read the way
  * the real client builds them (a key is both the signer and, for a deposit, the
  * address).
  */
-const VECTORS = [
+const VECTORS: Vector[] = [
   {
     name: 'announce',
     domain: RENDEZVOUS_DOMAINS.announce,
@@ -78,7 +86,7 @@ const VECTORS = [
 
 describe('rendezvous canonical message — cross-language pin', () => {
   const id = new RendezvousIdentity(SEED)
-  const resolve = (fields) => fields.map((f) => (f === '<KEY>' ? id.key : f))
+  const resolve = (fields: string[]): string[] => fields.map((f) => (f === '<KEY>' ? id.key : f))
 
   it('derives the pinned public key from the pinned seed', () => {
     expect(id.key).toBe(PUBLIC_KEY)

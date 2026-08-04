@@ -2,7 +2,7 @@
 // built-in surface is the DEFAULT "with no Pier and no other product deployed" — this is a
 // unit test PROVING the default-off/no-broker behaviour, not a dependency.
 /**
- * transportSelection.test.js — the collab transport decision.
+ * transportSelection.test.ts — the collab transport decision.
  *
  * Pure logic test: probeHostPeering / resolveRendezvous / resolveBuiltinPrefix
  * are injected fakes, so this never touches fetch, the DOM, or a real relay.
@@ -31,6 +31,8 @@ import {
   TRANSPORT_HOST_PEERING,
   TRANSPORT_RENDEZVOUS,
   TRANSPORT_LOCAL_ONLY,
+  type SelectCollabTransportOptions,
+  type TransportChoice,
 } from '../transportSelection.js'
 
 const RDV_URL = 'https://relay.example.org'
@@ -38,12 +40,12 @@ const BUILTIN_PREFIX = '/api/rendezvous'
 const ORIGIN = 'https://office.example.org'
 
 /** The shape every non-rendezvous outcome must have: no rendezvous facts at all. */
-const NO_RENDEZVOUS = (transport) => ({
+const NO_RENDEZVOUS = (transport: TransportChoice['transport']): TransportChoice => ({
   transport, rendezvousBaseUrl: '', rendezvousPrefix: '', builtin: false,
 })
 
 /** Defaults for the injected seams: nothing available anywhere. */
-function seams(over = {}) {
+function seams(over: Partial<SelectCollabTransportOptions> = {}): SelectCollabTransportOptions {
   return {
     probeHostPeering: vi.fn().mockResolvedValue(false),
     resolveRendezvous: vi.fn().mockResolvedValue(''),
@@ -186,10 +188,13 @@ describe('selectCollabTransport', () => {
 
   it('treats a non-string resolver result as unconfigured', async () => {
     // Honesty contract: anything that is not a usable URL/path must degrade,
-    // never become a half-built base the fabric would fetch against.
+    // never become a half-built base the fabric would fetch against. The seam
+    // contract promises a string; these mocks deliberately violate it at
+    // runtime (an untrusted/misbehaving resolver) to prove the guard holds —
+    // hence the casts, not a claim that this is well-typed input.
     const choice = await selectCollabTransport(seams({
-      resolveRendezvous: vi.fn().mockResolvedValue({ url: RDV_URL }),
-      resolveBuiltinPrefix: vi.fn().mockResolvedValue({ prefix: BUILTIN_PREFIX }),
+      resolveRendezvous: vi.fn().mockResolvedValue({ url: RDV_URL } as unknown as string),
+      resolveBuiltinPrefix: vi.fn().mockResolvedValue({ prefix: BUILTIN_PREFIX } as unknown as string),
     }))
 
     expect(choice).toEqual(NO_RENDEZVOUS(TRANSPORT_LOCAL_ONLY))
