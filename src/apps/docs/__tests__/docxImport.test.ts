@@ -65,7 +65,10 @@ describe('docx import — zip-bomb rejected BEFORE mammoth parses', () => {
     const bomb = buildLyingZip('word/document.xml', Buffer.from('<x/>'), 200 * 1024 * 1024)
     expect(200 * 1024 * 1024).toBeGreaterThan(MAX_SINGLE_ENTRY)
     const spy = vi.spyOn(mammoth, 'convertToHtml')
-    const file = new File([bomb], 'bomb.docx')
+    // buildLyingZip returns Uint8Array<ArrayBufferLike>; File's BlobPart wants
+    // Uint8Array<ArrayBuffer> specifically (rules out a SharedArrayBuffer
+    // backing, which this never has) — a real BlobPart at runtime either way.
+    const file = new File([bomb as BlobPart], 'bomb.docx')
     await expect(convertToDocContent(file)).rejects.toThrow(ImportError)
     expect(spy).not.toHaveBeenCalled()   // parser never reached
     spy.mockRestore()
