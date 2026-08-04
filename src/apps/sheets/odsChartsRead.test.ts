@@ -7,7 +7,7 @@ import { readOdsObjects } from './odsChartsRead.js'
 // manifest.xml listing every part with its media-type, and content.xml — so the
 // detector is exercised against a genuine ODS structure (we just don't have
 // LibreOffice to generate one, so we assemble the spec-accurate bytes ourselves).
-async function buildOds({ charts = 0, pivots = 0 } = {}) {
+async function buildOds({ charts = 0, pivots = 0 }: { charts?: number; pivots?: number } = {}): Promise<ArrayBuffer> {
   const zip = new JSZip()
   zip.file('mimetype', 'application/vnd.oasis.opendocument.spreadsheet')
 
