@@ -19,35 +19,37 @@ vi.mock('../../lib/draftStore', () => ({
 }))
 
 import { api } from '../../lib/api'
-import { useFilesStore } from '../filesStore'
+import { useFilesStore, type DiwanFile } from '../filesStore'
 
-function seed(files) {
+const updateFile = vi.mocked(api.updateFile)
+
+function seed(files: DiwanFile[]) {
   useFilesStore.setState({ files })
 }
 
 beforeEach(() => {
-  api.updateFile.mockReset()
-  seed([{ id: 'f1', name: 'Doc', content: 'v1', rev: 1 }])
+  updateFile.mockReset()
+  seed([{ id: 'f1', name: 'Doc', type: 'doc', content: 'v1', rev: 1 }])
 })
 
 describe('P2: filesStore optimistic-concurrency reconcile', () => {
   it('a normal sequential save sends the last-known rev and stores the result', async () => {
-    api.updateFile.mockResolvedValueOnce({ id: 'f1', name: 'Doc', content: 'v2', rev: 2 })
+    updateFile.mockResolvedValueOnce({ id: 'f1', name: 'Doc', type: 'doc', content: 'v2', rev: 2 })
 
     const out = await useFilesStore.getState().updateFile('f1', 'Doc', 'v2')
 
     // Sent the rev the store held (1).
     expect(api.updateFile).toHaveBeenCalledWith('f1', 'Doc', 'v2', 1)
     expect(out.rev).toBe(2)
-    expect(useFilesStore.getState().files.find((f) => f.id === 'f1').rev).toBe(2)
+    expect(useFilesStore.getState().files.find((f) => f.id === 'f1')?.rev).toBe(2)
   })
 
   it('a 409 adopts the newer file and retries once against the newer rev', async () => {
-    const newer = { id: 'f1', name: 'Doc', content: 'peerEdit', rev: 5 }
+    const newer = { id: 'f1', name: 'Doc', type: 'doc', content: 'peerEdit', rev: 5 }
     // First call: stale rev → 409 carrying the current (newer) file.
-    api.updateFile.mockRejectedValueOnce(Object.assign(new Error('revision conflict'), { status: 409, current: newer }))
+    updateFile.mockRejectedValueOnce(Object.assign(new Error('revision conflict'), { status: 409, current: newer }))
     // Retry against rev 5 → success, rev advances to 6, our content re-applied.
-    api.updateFile.mockResolvedValueOnce({ id: 'f1', name: 'Doc', content: 'myEdit', rev: 6 })
+    updateFile.mockResolvedValueOnce({ id: 'f1', name: 'Doc', type: 'doc', content: 'myEdit', rev: 6 })
 
     const out = await useFilesStore.getState().updateFile('f1', 'Doc', 'myEdit')
 
@@ -56,12 +58,12 @@ describe('P2: filesStore optimistic-concurrency reconcile', () => {
     expect(out.content).toBe('myEdit')
     expect(out.rev).toBe(6)
     // No update was lost — this caller's content is what landed.
-    expect(useFilesStore.getState().files.find((f) => f.id === 'f1').content).toBe('myEdit')
+    expect(useFilesStore.getState().files.find((f) => f.id === 'f1')?.content).toBe('myEdit')
   })
 
   it('a persistent conflict (retry also 409) surfaces the conflict, no silent loss', async () => {
-    const newer = { id: 'f1', name: 'Doc', content: 'peer', rev: 5 }
-    api.updateFile
+    const newer = { id: 'f1', name: 'Doc', type: 'doc', content: 'peer', rev: 5 }
+    updateFile
       .mockRejectedValueOnce(Object.assign(new Error('conflict'), { status: 409, current: newer }))
       .mockRejectedValueOnce(Object.assign(new Error('conflict'), { status: 409, current: { ...newer, rev: 7 } }))
 
@@ -72,9 +74,9 @@ describe('P2: filesStore optimistic-concurrency reconcile', () => {
   })
 
   it('onConflict lets a caller reconcile non-CRDT structure before the retry', async () => {
-    const newer = { id: 'f1', name: 'Doc', content: 'peer', rev: 5 }
-    api.updateFile.mockRejectedValueOnce(Object.assign(new Error('conflict'), { status: 409, current: newer }))
-    api.updateFile.mockResolvedValueOnce({ id: 'f1', name: 'Doc', content: 'reconciled', rev: 6 })
+    const newer = { id: 'f1', name: 'Doc', type: 'doc', content: 'peer', rev: 5 }
+    updateFile.mockRejectedValueOnce(Object.assign(new Error('conflict'), { status: 409, current: newer }))
+    updateFile.mockResolvedValueOnce({ id: 'f1', name: 'Doc', type: 'doc', content: 'reconciled', rev: 6 })
     const onConflict = vi.fn()
 
     await useFilesStore.getState().updateFile('f1', 'Doc', 'reconciled', { onConflict })
@@ -83,7 +85,7 @@ describe('P2: filesStore optimistic-concurrency reconcile', () => {
   })
 
   it('a non-409 error propagates untouched (no reconcile attempt)', async () => {
-    api.updateFile.mockRejectedValueOnce(Object.assign(new Error('server error'), { status: 500 }))
+    updateFile.mockRejectedValueOnce(Object.assign(new Error('server error'), { status: 500 }))
     await expect(useFilesStore.getState().updateFile('f1', 'Doc', 'v2'))
       .rejects.toThrow('server error')
     expect(api.updateFile).toHaveBeenCalledTimes(1) // no retry
