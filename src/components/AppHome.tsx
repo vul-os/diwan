@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import type { ChangeEvent, DragEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Plus, Search, LayoutGrid, List, MoreVertical, Clock,
@@ -7,8 +8,11 @@ import {
   Star, Folder, FolderPlus, RotateCcw, ChevronRight, Home, FolderInput,
   Share2, Users,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { useFilesStore } from '../store/filesStore'
+import type { DiwanFile, DiwanFolder } from '../store/filesStore'
 import { useLocalFilesStore } from '../store/localFilesStore'
+import type { LocalFileEntry } from '../store/localFilesStore'
 import { useAuthStore } from '../store/authStore'
 import NewFileModal from './NewFileModal'
 import AccountShareModal from './AccountShareModal'
@@ -17,8 +21,37 @@ import { api } from '../lib/api'
 import { timeAgo, formatBytes } from '../lib/format'
 import { Button, IconButton, Input, Card, Tooltip, useToast, DocThumb, Skeleton, Avatar, hueFor, ThemeSwitch } from './ui'
 
+// ─── Local shapes — `api.searchDocs` returns `unknown` by design; this
+// documents just what this panel reads (see lib/api.ts searchDocs comment). ──
+interface SearchResult {
+  id: string
+  name?: string
+  type?: string
+  snippet?: string
+  owner?: string
+  shared?: boolean
+}
+interface SearchDocsResponse {
+  query?: string
+  results?: SearchResult[]
+}
+
 // ─── Token-aligned config ─────────────────────────────────────────────────────
-const CONFIG = {
+interface AppConfig {
+  label: string
+  singularLabel: string
+  icon: LucideIcon
+  iconCn: string
+  bgCn: string
+  route: string
+  emptyMsg: string
+  localExts: string[]
+  extLabel: string
+  importExts: string
+  canCreate: boolean
+}
+
+const CONFIG: Record<'doc' | 'sheet' | 'slide' | 'whiteboard' | 'pdf', AppConfig> = {
   doc: {
     label: 'Documents', singularLabel: 'Document',
     icon: FileText,
@@ -71,7 +104,13 @@ const CONFIG = {
   },
 }
 
-export default function AppHome({ type }) {
+type AppType = keyof typeof CONFIG
+
+interface AppHomeProps {
+  type: AppType
+}
+
+export default function AppHome({ type }: AppHomeProps) {
   const cfg = CONFIG[type]
   const Icon = cfg.icon
   const navigate = useNavigate()
@@ -85,30 +124,30 @@ export default function AppHome({ type }) {
   const myAccountId = useAuthStore((s) => s.accountId)
   const [showNew, setShowNew] = useState(false)
   // The file currently open in the account-share dialog (or null).
-  const [sharing, setSharing] = useState(null)
+  const [sharing, setSharing] = useState<DiwanFile | null>(null)
   const [search, setSearch] = useState('')
   // Global full-text search across the caller's ACL-scoped documents (owned +
   // shared). Fires against the backend, debounced, when the query is >= 2 chars.
   // Results carry per-file snippets; ACL is enforced server-side at query time.
-  const [contentResults, setContentResults] = useState(null) // null = idle, [] = no matches
+  const [contentResults, setContentResults] = useState<SearchResult[] | null>(null) // null = idle, [] = no matches
   const [contentSearching, setContentSearching] = useState(false)
-  const [viewMode, setViewMode] = useState('grid')
-  const [menuOpen, setMenuOpen] = useState(null)
-  const [renaming, setRenaming] = useState(null)
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
+  const [menuOpen, setMenuOpen] = useState<string | null>(null)
+  const [renaming, setRenaming] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
-  const [importing, setImporting] = useState(null)
+  const [importing, setImporting] = useState<string | null>(null)
   const [dragActive, setDragActive] = useState(false)
-  const fileInputRef = useRef(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Parity: file organization.
   //   view    — 'browse' | 'starred' | 'trash'
   //   folderId— current folder in the tree ('' = root); only meaningful in browse
   //   moving  — the file being placed via the "Move to…" picker (or null)
-  const [view, setView] = useState('browse')
+  const [view, setView] = useState<'browse' | 'starred' | 'trash'>('browse')
   const [folderId, setFolderId] = useState('')
-  const [moving, setMoving] = useState(null)
+  const [moving, setMoving] = useState<DiwanFile | null>(null)
 
-  const openImportedFile = async (file) => {
+  const openImportedFile = async (file: File | null | undefined) => {
     if (!file) return
     setImporting('__file__')
     try {
@@ -117,24 +156,24 @@ export default function AppHome({ type }) {
       }
       await importFile(file, navigate)
     } catch (err) {
-      showToast(`Could not open ${file.name}: ${err.message}`, 'error')
+      showToast(`Could not open ${file.name}: ${err instanceof Error ? err.message : String(err)}`, 'error')
     } finally {
       setImporting(null)
     }
   }
 
-  const handleImportFile = async (e) => {
-    const file = e.target.files[0]
+  const handleImportFile = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
     e.target.value = ''
     await openImportedFile(file)
   }
 
-  const onDragOver = (e) => { e.preventDefault(); if (!dragActive) setDragActive(true) }
-  const onDragLeave = (e) => {
-    if (e.currentTarget.contains(e.relatedTarget)) return
+  const onDragOver = (e: DragEvent<HTMLDivElement>) => { e.preventDefault(); if (!dragActive) setDragActive(true) }
+  const onDragLeave = (e: DragEvent<HTMLDivElement>) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
     setDragActive(false)
   }
-  const onDrop = async (e) => {
+  const onDrop = async (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     setDragActive(false)
     const file = e.dataTransfer?.files?.[0]
@@ -154,7 +193,7 @@ export default function AppHome({ type }) {
     let live = true
     const t = setTimeout(async () => {
       try {
-        const res = await api.searchDocs(q, type)
+        const res = await api.searchDocs(q, type) as SearchDocsResponse
         if (live) setContentResults(res?.results || [])
       } catch {
         if (live) setContentResults([])
@@ -188,8 +227,8 @@ export default function AppHome({ type }) {
   }, [files, type, view, folderId, searchLc])
 
   const myLocalFiles = localFiles
-    .filter(f => cfg.localExts.includes(f.ext))
-    .filter(f => f.name.toLowerCase().includes(searchLc))
+    .filter(f => f.ext && cfg.localExts.includes(f.ext))
+    .filter(f => f.name.toLowerCase().includes(searchLc)) as (LocalFileEntry & { ext: string; appType: string })[]
 
   // Files shared TO the user by others, scoped to this app's type + search.
   const sharedFiles = useMemo(() => (
@@ -202,42 +241,42 @@ export default function AppHome({ type }) {
   const crumbs = useMemo(() => {
     if (view !== 'browse' || !folderId) return []
     const byId = new Map((folders || []).map(f => [f.id, f]))
-    const out = []
+    const out: DiwanFolder[] = []
     let cur = byId.get(folderId)
     let guard = 0
     while (cur && guard++ < 64) {
       out.unshift(cur)
-      cur = cur.parent_id ? byId.get(cur.parent_id) : null
+      cur = cur.parent_id ? byId.get(cur.parent_id) : undefined
     }
     return out
   }, [folders, folderId, view])
 
-  const openFile = (f) => navigate(`/${cfg.route}/${f.id}`)
-  const startRename = (f) => { setRenaming(f.id); setRenameValue(f.name); setMenuOpen(null) }
-  const commitRename = async (id) => { if (renameValue.trim()) await renameFile(id, renameValue.trim()); setRenaming(null) }
-  const startRenameFolder = (f) => { setRenaming('folder:' + f.id); setRenameValue(f.name); setMenuOpen(null) }
-  const commitRenameFolder = async (id) => { if (renameValue.trim()) await renameFolder(id, renameValue.trim()); setRenaming(null) }
+  const openFile = (f: { id: string }) => navigate(`/${cfg.route}/${f.id}`)
+  const startRename = (f: DiwanFile) => { setRenaming(f.id); setRenameValue(f.name); setMenuOpen(null) }
+  const commitRename = async (id: string) => { if (renameValue.trim()) await renameFile(id, renameValue.trim()); setRenaming(null) }
+  const startRenameFolder = (f: DiwanFolder) => { setRenaming('folder:' + f.id); setRenameValue(f.name); setMenuOpen(null) }
+  const commitRenameFolder = async (id: string) => { if (renameValue.trim()) await renameFolder(id, renameValue.trim()); setRenaming(null) }
 
   const handleNewFolder = async () => {
     const name = window.prompt('New folder name')
     if (name && name.trim()) {
       try { await createFolder(name.trim(), view === 'browse' ? folderId : '') }
-      catch (e) { showToast(`Could not create folder: ${e.message}`, 'error') }
+      catch (e) { showToast(`Could not create folder: ${e instanceof Error ? e.message : String(e)}`, 'error') }
     }
   }
 
-  const wrap = (label, fn) => async (...a) => {
-    try { await fn(...a) } catch (e) { showToast(`${label}: ${e.message}`, 'error') }
+  const wrap = <A extends unknown[]>(label: string, fn: (...a: A) => Promise<unknown>) => async (...a: A) => {
+    try { await fn(...a) } catch (e) { showToast(`${label}: ${e instanceof Error ? e.message : String(e)}`, 'error') }
     setMenuOpen(null)
   }
 
-  const openLocalFile = async (file) => {
+  const openLocalFile = async (file: LocalFileEntry & { appType: string }) => {
     setImporting(file.path)
     try {
       await importFromUrl(file, navigate)
     } catch (e) {
       console.error(e)
-      showToast(`Could not open ${file.name}: ${e.message}`, 'error')
+      showToast(`Could not open ${file.name}: ${e instanceof Error ? e.message : String(e)}`, 'error')
     } finally {
       setImporting(null)
     }
@@ -359,9 +398,7 @@ export default function AppHome({ type }) {
             results={contentResults}
             searching={contentSearching}
             query={search.trim()}
-            cfg={cfg}
             onOpen={openFile}
-            myAccountId={myAccountId}
           />
         )}
 
@@ -530,7 +567,7 @@ export default function AppHome({ type }) {
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0 text-2xs text-ink-faint tracking-tightish">
                     <span className="px-1.5 py-0.5 rounded-xs bg-bg-elev2 border border-line font-semibold uppercase text-[9px] capitalize">
-                      {file.role || 'shared'}
+                      {(file.role as string | undefined) || 'shared'}
                     </span>
                     <span>{timeAgo(file.updated_at)}</span>
                     <ArrowUpRight size={12} className="opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -579,7 +616,7 @@ export default function AppHome({ type }) {
                     <p className="text-2xs text-ink-faint truncate">{file.path.replace(/\/Users\/[^/]+/, '~')}</p>
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0 text-2xs text-ink-faint tracking-tightish">
-                    <span>{formatBytes(file.size)}</span>
+                    <span>{formatBytes(file.size || 0)}</span>
                     <span className={`px-1.5 py-0.5 rounded-xs ${cfg.bgCn} ${cfg.iconCn} font-semibold uppercase text-[9px]`}>
                       {file.ext.slice(1)}
                     </span>
@@ -594,7 +631,10 @@ export default function AppHome({ type }) {
         )}
       </div>
 
-      {showNew && <NewFileModal onClose={() => setShowNew(false)} lockType={type} parentId={view === 'browse' ? folderId : ''} />}
+      {/* `showNew` is only ever set true from behind a `cfg.canCreate` guard, so
+          `type` here is never 'pdf' (the one non-creatable app) even though the
+          broader AppType union includes it. */}
+      {showNew && <NewFileModal onClose={() => setShowNew(false)} lockType={type as 'doc' | 'sheet' | 'slide' | 'whiteboard'} parentId={view === 'browse' ? folderId : ''} />}
       {moving && (
         <MoveToFolderModal
           file={moving}
@@ -602,7 +642,7 @@ export default function AppHome({ type }) {
           onClose={() => setMoving(null)}
           onMove={async (targetId) => {
             try { await moveFile(moving.id, { parentId: targetId }) }
-            catch (e) { showToast(`Move failed: ${e.message}`, 'error') }
+            catch (e) { showToast(`Move failed: ${e instanceof Error ? e.message : String(e)}`, 'error') }
             setMoving(null)
           }}
         />
@@ -611,7 +651,7 @@ export default function AppHome({ type }) {
         <AccountShareModal
           open
           file={sharing}
-          me={myAccountId}
+          me={myAccountId ?? undefined}
           onClose={() => { setSharing(null); fetchSharedWithMe() }}
         />
       )}
@@ -621,7 +661,7 @@ export default function AppHome({ type }) {
   )
 }
 
-function ViewTab({ active, onClick, children }) {
+function ViewTab({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
       onClick={onClick}
@@ -641,7 +681,14 @@ function ViewTab({ active, onClick, children }) {
 // just names) with a highlighted snippet. The server returns only files the
 // caller may read (ACL enforced at query time), so nothing here can leak another
 // account's content.
-export function ContentSearchResults({ results, searching, query, cfg, onOpen, myAccountId }) {
+interface ContentSearchResultsProps {
+  results: SearchResult[] | null
+  searching: boolean
+  query: string
+  onOpen: (r: SearchResult) => void
+}
+
+export function ContentSearchResults({ results, searching, query, onOpen }: ContentSearchResultsProps) {
   // Idle (results === null) with no in-flight request → render nothing.
   if (results === null && !searching) return null
 
@@ -683,9 +730,9 @@ export function ContentSearchResults({ results, searching, query, cfg, onOpen, m
 // SnippetText renders a server snippet, highlighting the «matched» span the
 // backend delimits with « » guillemets. Rendered as plain text nodes (no HTML
 // injection) so document content can never inject markup.
-export function SnippetText({ snippet }) {
+export function SnippetText({ snippet }: { snippet?: string }) {
   if (!snippet) return null
-  const parts = []
+  const parts: React.ReactNode[] = []
   let rest = snippet
   let k = 0
   while (true) {
@@ -701,10 +748,27 @@ export function SnippetText({ snippet }) {
 }
 
 // ─── FolderCard ───────────────────────────────────────────────────────────────
+interface FolderCardProps {
+  folder: DiwanFolder
+  view: 'browse' | 'starred' | 'trash'
+  renaming: string | null
+  renameValue: string
+  setRenameValue: (v: string) => void
+  setRenaming: (v: string | null) => void
+  menuOpen: string | null
+  setMenuOpen: (v: string | null) => void
+  onOpen: () => void
+  onRename: () => void
+  onRenameCommit: () => void
+  onTrash: () => void
+  onRestore: () => void
+  onDelete: () => void
+}
+
 function FolderCard({
   folder, view, renaming, renameValue, setRenameValue, setRenaming,
   menuOpen, setMenuOpen, onOpen, onRename, onRenameCommit, onTrash, onRestore, onDelete,
-}) {
+}: FolderCardProps) {
   const key = 'folder:' + folder.id
   const menuKey = 'foldermenu:' + folder.id
   return (
@@ -761,7 +825,7 @@ function FolderCard({
   )
 }
 
-function MenuItem({ danger, onClick, children }) {
+function MenuItem({ danger, onClick, children }: { danger?: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
       className={[
@@ -776,11 +840,33 @@ function MenuItem({ danger, onClick, children }) {
 }
 
 // ─── FileCard ─────────────────────────────────────────────────────────────────
+interface FileCardProps {
+  file: DiwanFile
+  Icon: LucideIcon
+  type: AppType
+  view: 'browse' | 'starred' | 'trash'
+  renaming: string | null
+  renameValue: string
+  setRenaming: (v: string | null) => void
+  setRenameValue: (v: string) => void
+  menuOpen: string | null
+  setMenuOpen: (v: string | null) => void
+  onOpen: () => void
+  onRename: () => void
+  onRenameCommit: () => void
+  onStar: () => void
+  onMove: () => void
+  onShare: () => void
+  onTrash: () => void
+  onRestore: () => void
+  onDelete: () => void
+}
+
 function FileCard({
   file, Icon, type, view, renaming, renameValue, setRenaming, setRenameValue,
   menuOpen, setMenuOpen, onOpen, onRename, onRenameCommit,
   onStar, onMove, onShare, onTrash, onRestore, onDelete,
-}) {
+}: FileCardProps) {
   const inTrash = view === 'trash'
   return (
     <div className="group bg-paper rounded-lg border border-line hover:border-line-strong hover:shadow-e2 hover:-translate-y-0.5 transition-[transform,box-shadow,border-color] duration-base ease-out cursor-pointer overflow-hidden">
@@ -870,11 +956,33 @@ function FileCard({
 }
 
 // ─── FileListTable ────────────────────────────────────────────────────────────
+interface FileListTableProps {
+  files: DiwanFile[]
+  cfg: AppConfig
+  Icon: LucideIcon
+  view: 'browse' | 'starred' | 'trash'
+  renaming: string | null
+  renameValue: string
+  setRenaming: (v: string | null) => void
+  setRenameValue: (v: string) => void
+  menuOpen: string | null
+  setMenuOpen: (v: string | null) => void
+  onOpen: (file: DiwanFile) => void
+  onRename: (file: DiwanFile) => void
+  onRenameCommit: (id: string) => void
+  onStar: (id: string) => void
+  onMove: (file: DiwanFile) => void
+  onShare: (file: DiwanFile) => void
+  onTrash: (id: string) => void
+  onRestore: (id: string) => void
+  onDelete: (id: string) => void
+}
+
 function FileListTable({
   files, cfg, Icon, view, renaming, renameValue, setRenaming, setRenameValue,
   menuOpen, setMenuOpen, onOpen, onRename, onRenameCommit,
   onStar, onMove, onShare, onTrash, onRestore, onDelete,
-}) {
+}: FileListTableProps) {
   const inTrash = view === 'trash'
   return (
     <Card>
@@ -957,18 +1065,25 @@ function FileListTable({
 }
 
 // ─── MoveToFolderModal ────────────────────────────────────────────────────────
-function MoveToFolderModal({ file, folders, onClose, onMove }) {
+interface MoveToFolderModalProps {
+  file: DiwanFile
+  folders: DiwanFolder[]
+  onClose: () => void
+  onMove: (targetId: string) => void
+}
+
+function MoveToFolderModal({ file, folders, onClose, onMove }: MoveToFolderModalProps) {
   const byParent = useMemo(() => {
-    const m = new Map()
+    const m = new Map<string, DiwanFolder[]>()
     for (const f of folders) {
       const p = f.parent_id || ''
       if (!m.has(p)) m.set(p, [])
-      m.get(p).push(f)
+      m.get(p)!.push(f)
     }
     return m
   }, [folders])
 
-  const renderTree = (parent, depth) => (byParent.get(parent) || []).map(f => (
+  const renderTree = (parent: string, depth: number): React.ReactNode => (byParent.get(parent) || []).map(f => (
     <div key={f.id}>
       <button
         className={[

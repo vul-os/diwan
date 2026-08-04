@@ -20,7 +20,7 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import { ContentSearchResults, SnippetText } from '../../components/AppHome.jsx'
+import { ContentSearchResults, SnippetText } from '../../components/AppHome'
 import { api } from '../../lib/api.js'
 import { server, resetMock, mockState } from './server.js'
 
