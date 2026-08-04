@@ -13,16 +13,26 @@
  */
 import { describe, it, expect } from 'vitest'
 import { compute } from '@fortune-sheet/core'
-import { makeColorScale, buildNativeConditionFormat } from './colorScales.js'
+import type { Context, CellMatrix } from '@fortune-sheet/core'
+import { makeColorScale, buildNativeConditionFormat, type CSSheet, type CSCellEntry, type CSCellValue, type ColorScaleRule } from './colorScales.js'
+
+// compute()'s ctx/d params are the real FortuneSheet Context/CellMatrix shapes
+// (huge, mostly-required internal state); these fixtures are deliberately a
+// tiny plain-data slice of them, cast through unknown the way production
+// crosses sibling-module boundaries elsewhere (SheetsEditor.tsx's `cast<T>`).
+function cast<T>(v: unknown): T { return v as T }
+
+/** SHEET/withRules always carry row, column and celldata — flowdata() needs them. */
+type FlowSheet = CSSheet & { row: number; column: number; celldata: CSCellEntry[] }
 
 /** celldata → the dense 2-D `flowdata` array FS's compute() indexes. */
-function flowdata(sheet) {
-  const d = Array.from({ length: sheet.row }, () => Array.from({ length: sheet.column }, () => null))
+function flowdata(sheet: FlowSheet): CellMatrix {
+  const d: (CSCellValue | null)[][] = Array.from({ length: sheet.row }, () => Array.from({ length: sheet.column }, () => null))
   for (const cell of sheet.celldata) d[cell.r][cell.c] = cell.v
-  return d
+  return cast<CellMatrix>(d)
 }
 
-const SHEET = {
+const SHEET: FlowSheet = {
   name: 'Sheet1', row: 10, column: 5, config: {},
   celldata: [
     { r: 0, c: 0, v: { v: 5, m: '5', ct: { t: 'n' } } },
@@ -32,8 +42,9 @@ const SHEET = {
     { r: 4, c: 0, v: { v: 'dup', m: 'dup', ct: { t: 's' } } },
   ],
 }
-const withRules = (...rules) => ({ ...SHEET, colorScales: rules })
-const paint = (sheet, ctx = {}) => compute(ctx, buildNativeConditionFormat(sheet), flowdata(sheet))
+const withRules = (...rules: ColorScaleRule[]): FlowSheet => ({ ...SHEET, colorScales: rules })
+const paint = (sheet: FlowSheet, ctx: unknown = {}) =>
+  compute(cast<Context>(ctx), buildNativeConditionFormat(sheet, undefined), flowdata(sheet))
 
 describe('FS compute() — single-colour rules paint exactly the matched cells', () => {
   it('greaterThan paints only the cell that beats the operand', () => {
@@ -88,15 +99,17 @@ describe('FS compute() — single-colour rules paint exactly the matched cells',
   })
 
   it('a poisoned rule reaching the render path paints safely (or not at all) — never throws', () => {
-    const sheet = {
+    // Deliberately incomplete/hostile — never went through makeColorScale, which
+    // is exactly what buildNativeConditionFormat's own re-clamp must catch.
+    const sheet: FlowSheet = {
       ...SHEET,
-      colorScales: [{ id: 'x', kind: 'isEmpty', range: 'A1:A99999', fill: 'url(javascript:alert(1))' }],
+      colorScales: cast<ColorScaleRule[]>([{ id: 'x', kind: 'isEmpty', range: 'A1:A99999', fill: 'url(javascript:alert(1))' }]),
     }
-    let map
+    let map: Record<string, { cellColor: string }> | undefined
     expect(() => { map = paint(sheet) }).not.toThrow() // an out-of-extent rect would throw inside FS
-    for (const key of Object.keys(map)) {
+    for (const key of Object.keys(map!)) {
       expect(Number(key.split('_')[0])).toBeLessThan(SHEET.row)
-      expect(map[key].cellColor).toMatch(/^#[0-9a-f]{3,6}$/)
+      expect(map![key].cellColor).toMatch(/^#[0-9a-f]{3,6}$/)
     }
   })
 })
