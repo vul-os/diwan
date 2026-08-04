@@ -16,8 +16,18 @@
  */
 
 import { forwardRef } from 'react'
+import type { ButtonHTMLAttributes, Ref } from 'react'
 
-const sizeClasses = {
+export type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'destructive' | 'link'
+export type ButtonSize = 'sm' | 'md' | 'lg'
+
+interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: ButtonVariant
+  size?: ButtonSize
+  fullWidth?: boolean
+}
+
+const sizeClasses: Record<ButtonSize, string> = {
   sm: 'h-7 px-2.5 text-xs gap-1.5',
   md: 'h-8 px-3 text-sm gap-2',
   lg: 'h-10 px-4 text-md gap-2',
@@ -33,7 +43,7 @@ const base =
   'focus-visible:outline-none focus-visible:shadow-focus ' +
   'active:translate-y-px'
 
-const variantClasses = {
+const variantClasses: Record<ButtonVariant, string> = {
   primary:
     'bg-accent text-white shadow-e1 ' +
     'hover:bg-accent-hover ' +
@@ -61,8 +71,8 @@ const Button = forwardRef(function Button(
     fullWidth = false,
     children,
     ...rest
-  },
-  ref,
+  }: ButtonProps,
+  ref: Ref<HTMLButtonElement>,
 ) {
   const cn = [
     base,

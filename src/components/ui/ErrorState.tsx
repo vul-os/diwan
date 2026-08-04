@@ -20,10 +20,20 @@
 import { AlertCircle } from 'lucide-react'
 import Button from './Button'
 
-const SIZES = {
+type ErrorStateSize = 'sm' | 'md' | 'lg'
+
+const SIZES: Record<ErrorStateSize, { pad: string; icon: number; gap: string }> = {
   sm: { pad: 'py-8',  icon: 18, gap: 'gap-2'   },
   md: { pad: 'py-12', icon: 22, gap: 'gap-2.5' },
   lg: { pad: 'py-16', icon: 26, gap: 'gap-3'   },
+}
+
+interface ErrorStateProps {
+  message?: string
+  onRetry?: () => void
+  retryLabel?: string
+  size?: ErrorStateSize
+  className?: string
 }
 
 export default function ErrorState({
@@ -32,7 +42,7 @@ export default function ErrorState({
   retryLabel = 'Retry',
   size = 'md',
   className = '',
-}) {
+}: ErrorStateProps) {
   const s = SIZES[size] || SIZES.md
   return (
     <div
