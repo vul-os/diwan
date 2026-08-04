@@ -16,11 +16,12 @@
  *   • export menu wiring (DOCX/PDF/Markdown) — real exporters, saveAs mocked.
  */
 
+import type { FC } from 'react'
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderHook, act } from '@testing-library/react'
-import { useEditor } from '@tiptap/react'
+import { useEditor, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import TextStyle from '@tiptap/extension-text-style'
 import Color from '@tiptap/extension-color'
@@ -29,15 +30,26 @@ import Underline from '@tiptap/extension-underline'
 import Highlight from '@tiptap/extension-highlight'
 import TextAlign from '@tiptap/extension-text-align'
 import { FontSize, FontFamily } from '../../lib/tiptap/fontStyle.js'
-import DocsToolbar from '../../apps/docs/DocsToolbar.jsx'
+import DocsToolbarUntyped from '../../apps/docs/DocsToolbar.jsx'
 
 // Mock file-saver so export tests don't actually write blobs.
 vi.mock('file-saver', () => ({ saveAs: vi.fn() }))
 import { saveAs } from 'file-saver'
 
+// DocsToolbar.jsx lives on a sibling ts-migration lane (src/apps/docs) and is
+// intentionally left untouched here (still plain JS) — its inferred prop type
+// pulls in every optional prop other DocsToolbar call sites pass (page setup,
+// header/footer, spellcheck, …), all of which this test's real usage never
+// passes (same as the JS test before it). Assert the narrow slice this file
+// actually exercises rather than widen the untyped component itself.
+const DocsToolbar = DocsToolbarUntyped as unknown as FC<{ editor: Editor; title: string }>
+
 // Build a real editor with the DocsEditor extension subset relevant to these
 // assertions (kept lean so jsdom mounts fast, but genuinely a live PM doc).
-function useRealEditor(content = '<p></p>') {
+// useEditor() is typed `Editor | null` (it can be briefly null while async
+// extensions load); this harness's synchronous extension set always yields a
+// live editor by the time a test reads it, same as the untyped JS before it.
+function useRealEditor(content = '<p></p>'): Editor {
   return useEditor({
     extensions: [
       StarterKit.configure({ heading: { levels: [1, 2, 3, 4] } }),
@@ -47,10 +59,10 @@ function useRealEditor(content = '<p></p>') {
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
     ],
     content,
-  })
+  })!
 }
 
-function renderToolbar(content) {
+function renderToolbar(content: string): Editor {
   const { result } = renderHook(() => useRealEditor(content))
   const editor = result.current
   render(<DocsToolbar editor={editor} title="Test Doc" />)
@@ -58,7 +70,7 @@ function renderToolbar(content) {
 }
 
 describe('Docs editor — real TipTap integration (MSW/RTL)', () => {
-  beforeEach(() => { saveAs.mockClear() })
+  beforeEach(() => { vi.mocked(saveAs).mockClear() })
 
   // ── a11y: the toolbar is a proper labelled, horizontally-oriented toolbar ──
   it('exposes the formatting toolbar as an oriented ARIA toolbar', () => {
@@ -150,8 +162,8 @@ describe('Docs editor — real TipTap integration (MSW/RTL)', () => {
     fireEvent.click(screen.getByLabelText('Export document'))
     const md = await screen.findByText(/Markdown/i)
     fireEvent.click(md)
-    await waitFor(() => expect(saveAs).toHaveBeenCalled())
-    const [, filename] = saveAs.mock.calls[0]
+    await waitFor(() => expect(vi.mocked(saveAs)).toHaveBeenCalled())
+    const [, filename] = vi.mocked(saveAs).mock.calls[0] as [Blob, string]
     expect(filename).toMatch(/\.md$/)
   })
 
@@ -160,8 +172,8 @@ describe('Docs editor — real TipTap integration (MSW/RTL)', () => {
     fireEvent.click(screen.getByLabelText('Export document'))
     const docx = await screen.findByText('Word document')
     fireEvent.click(docx)
-    await waitFor(() => expect(saveAs).toHaveBeenCalled())
-    const [, filename] = saveAs.mock.calls[0]
+    await waitFor(() => expect(vi.mocked(saveAs)).toHaveBeenCalled())
+    const [, filename] = vi.mocked(saveAs).mock.calls[0] as [Blob, string]
     expect(filename).toMatch(/\.docx$/)
   })
 })
