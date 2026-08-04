@@ -14,9 +14,115 @@
 
 import { http, HttpResponse } from 'msw'
 
+// ─── In-memory backend record shapes — a loose mirror of the real API's JSON,
+// pinned just to the fields these mock handlers themselves read/write. ───────
+
+interface MockFile {
+  id: string
+  name: string
+  type: string
+  content?: unknown
+  [key: string]: unknown
+}
+interface MockVersion {
+  id: string
+  name?: string
+  author?: string
+  created_at: string
+  label?: string
+  _restoredFrom?: string
+}
+interface MockReply {
+  id: string
+  author_id?: string
+  body?: string
+  mentions?: string[]
+  created_at: string
+}
+interface MockComment {
+  id: string
+  anchor?: unknown
+  author_id?: string
+  body?: string
+  mentions?: string[]
+  assignee?: string
+  state: string
+  created_at: string
+  replies: MockReply[]
+}
+interface MockCollaborator {
+  account_id: string
+  role: string
+}
+interface MockSuggestion {
+  id: string
+  kind?: string
+  author_id?: string
+  from?: unknown
+  to?: unknown
+  text?: string
+  state: string
+  reviewer_id?: string
+  created_at: string
+}
+interface MockShareLink {
+  id: string
+  file_id: string
+  token: string
+  created_by?: string
+  has_password: boolean
+  expires_at: string | null
+  revoked: boolean
+  created_at: string
+}
+interface LinkByTokenEntry {
+  link: MockShareLink
+  content: unknown
+  name?: string
+  requires_password: boolean
+  password: string
+}
+interface SearchSeedEntry {
+  id: string
+  name: string
+  type?: string
+  snippet?: string
+  owner?: string
+  shared?: boolean
+  _body?: string
+}
+interface SharedWithMeEntry {
+  id: string
+  name?: string
+  type?: string
+  owner?: string
+  role?: string
+  updated_at?: string
+  [key: string]: unknown
+}
+
+interface MockStateShape {
+  role: string // 'owner' | 'editor' | 'commenter' | 'viewer'
+  files: Record<string, MockFile>
+  versions: Record<string, MockVersion[]>
+  comments: Record<string, MockComment[]>
+  collaborators: Record<string, MockCollaborator[]>
+  suggestions: Record<string, MockSuggestion[]>
+  // WAVE37 server-collab authoritative op log: fileId → { seq, ops:[{seq,origin,op}] }.
+  collab: Record<string, unknown>
+  // Call log so tests can assert an endpoint was (or wasn't) hit.
+  calls: string[]
+  shareLinks: Record<string, MockShareLink[]>
+  linksByToken: Record<string, LinkByTokenEntry>
+  searchResults: SearchSeedEntry[]
+  me: string
+  owner: string
+  sharedWithMe: SharedWithMeEntry[]
+}
+
 // ─── Mutable in-memory backend state ────────────────────────────────────────
 
-export const mockState = {
+export const mockState: MockStateShape = {
   role: 'owner', // 'owner' | 'editor' | 'commenter' | 'viewer'
   files: {},
   versions: {},     // fileId → [{ id, name, created_at, label }]
@@ -27,13 +133,19 @@ export const mockState = {
   collab: {},
   // Call log so tests can assert an endpoint was (or wasn't) hit.
   calls: [],
+  shareLinks: {},
+  linksByToken: {},
+  searchResults: [],
+  me: 'you@vulos.test',
+  owner: 'you@vulos.test',
+  sharedWithMe: [],
 }
 
 let seq = 1
-const uid = (p) => `${p}_${seq++}`
+const uid = (p: string) => `${p}_${seq++}`
 
 /** Reset the backend to a clean, seeded slate. Call in beforeEach. */
-export function resetMock({ role = 'owner' } = {}) {
+export function resetMock({ role = 'owner' }: { role?: string } = {}) {
   seq = 1
   mockState.role = role
   mockState.calls = []
@@ -73,12 +185,12 @@ const CAN_EDIT = new Set(['owner', 'editor'])
 // This mirrors the wave-14 server-side authorization the UI relies on.
 const CAN_RESTORE = new Set(['owner', 'editor'])
 
-const log = (method, path) => mockState.calls.push(`${method} ${path}`)
+const log = (method: string, path: string) => mockState.calls.push(`${method} ${path}`)
 
 // validAssignee — the mock's copy of the server authz boundary: a comment can
 // only be assigned to the file owner or a recorded collaborator; anything else
 // (including a stranger id) is dropped to ''.
-function validAssignee(fileId, requested) {
+function validAssignee(fileId: string, requested: string | undefined): string {
   if (!requested) return ''
   const owner = mockState.owner || 'you@vulos.test'
   if (requested === owner) return requested
@@ -92,28 +204,28 @@ export const handlers = [
   http.get('/api/auth/status', () =>
     HttpResponse.json({ authenticated: true, account_id: 'you@vulos.test' })),
 
-  http.get('/api/files/:id', ({ params }) => {
+  http.get<{ id: string }>('/api/files/:id', ({ params }) => {
     log('GET', `/files/${params.id}`)
     const f = mockState.files[params.id]
     if (!f) return HttpResponse.json({ error: 'not found' }, { status: 404 })
     return HttpResponse.json(f)
   }),
 
-  http.put('/api/files/:id', async ({ params, request }) => {
+  http.put<{ id: string }>('/api/files/:id', async ({ params, request }) => {
     log('PUT', `/files/${params.id}`)
-    const body = await request.json()
+    const body = await request.json() as { name?: string; content?: unknown }
     const f = mockState.files[params.id]
     if (f) Object.assign(f, { name: body.name ?? f.name, content: body.content ?? f.content })
     return HttpResponse.json(f || { id: params.id, ...body })
   }),
 
   // ── Version history ──────────────────────────────────────────────────────
-  http.get('/api/files/:id/versions', ({ params }) => {
+  http.get<{ id: string }>('/api/files/:id/versions', ({ params }) => {
     log('GET', `/files/${params.id}/versions`)
     return HttpResponse.json(mockState.versions[params.id] || [])
   }),
 
-  http.post('/api/files/:id/versions/:vid/restore', ({ params }) => {
+  http.post<{ id: string; vid: string }>('/api/files/:id/versions/:vid/restore', ({ params }) => {
     log('POST', `/files/${params.id}/versions/${params.vid}/restore`)
     // ── WAVE-14 security: only owner/editor may restore ──────────────────
     if (!CAN_RESTORE.has(mockState.role)) {
@@ -126,10 +238,10 @@ export const handlers = [
     return HttpResponse.json({ ...f, _restoredFrom: params.vid })
   }),
 
-  http.post('/api/files/:id/versions', async ({ params, request }) => {
+  http.post<{ id: string }>('/api/files/:id/versions', async ({ params, request }) => {
     log('POST', `/files/${params.id}/versions`)
-    const body = await request.json().catch(() => ({}))
-    const v = { id: uid('v'), name: mockState.files[params.id]?.name, created_at: new Date().toISOString(), label: body.label || '' }
+    const body = await request.json().catch(() => ({})) as { label?: string }
+    const v: MockVersion = { id: uid('v'), name: mockState.files[params.id]?.name, created_at: new Date().toISOString(), label: body.label || '' }
     ;(mockState.versions[params.id] ||= []).unshift(v)
     return HttpResponse.json(v)
   }),
@@ -143,7 +255,7 @@ export const handlers = [
 
   // Owner-only grant/revoke of an account's role on a file. Mirrors the server:
   // a non-owner caller → 403; an unknown role → 400.
-  http.post('/api/files/:id/share', async ({ params, request }) => {
+  http.post<{ id: string }>('/api/files/:id/share', async ({ params, request }) => {
     log('POST', `/files/${params.id}/share`)
     if (mockState.role !== 'owner') {
       return HttpResponse.json(
@@ -151,7 +263,7 @@ export const handlers = [
         { status: 403 },
       )
     }
-    const body = await request.json()
+    const body = await request.json() as { account_id: string; revoke?: boolean; role?: string }
     const list = (mockState.collaborators[params.id] ||= [])
     const idx = list.findIndex((c) => c.account_id === body.account_id)
     if (body.revoke) {
@@ -179,22 +291,22 @@ export const handlers = [
   // validAssignee mirrors the server: only owner/collaborators are assignable.
   // (defined here so both POST and PUT comment handlers can call it)
 
-  http.get('/api/files/:id/collaborators', ({ params }) => {
+  http.get<{ id: string }>('/api/files/:id/collaborators', ({ params }) => {
     log('GET', `/files/${params.id}/collaborators`)
     const collabs = mockState.collaborators?.[params.id] || []
     const owner = mockState.owner || 'you@vulos.test'
     return HttpResponse.json({ collaborators: [{ account_id: owner, role: 'owner' }, ...collabs] })
   }),
 
-  http.get('/api/files/:id/comments', ({ params }) => {
+  http.get<{ id: string }>('/api/files/:id/comments', ({ params }) => {
     log('GET', `/files/${params.id}/comments`)
     return HttpResponse.json(mockState.comments[params.id] || [])
   }),
 
-  http.post('/api/files/:id/comments', async ({ params, request }) => {
+  http.post<{ id: string }>('/api/files/:id/comments', async ({ params, request }) => {
     log('POST', `/files/${params.id}/comments`)
-    const body = await request.json()
-    const c = {
+    const body = await request.json() as { anchor?: unknown; author_id?: string; body?: string; mentions?: string[]; assignee?: string }
+    const c: MockComment = {
       id: uid('c'),
       anchor: body.anchor,
       author_id: body.author_id,
@@ -211,9 +323,9 @@ export const handlers = [
     return HttpResponse.json(c)
   }),
 
-  http.put('/api/files/:id/comments/:cid', async ({ params, request }) => {
+  http.put<{ id: string; cid: string }>('/api/files/:id/comments/:cid', async ({ params, request }) => {
     log('PUT', `/files/${params.id}/comments/${params.cid}`)
-    const patch = await request.json()
+    const patch = await request.json() as { assignee?: string; body?: string; state?: string }
     const c = (mockState.comments[params.id] || []).find((x) => x.id === params.cid)
     if (c) {
       // Validate an assignee change against the roster, mirroring the server.
@@ -228,31 +340,31 @@ export const handlers = [
     return HttpResponse.json({ id: params.cid, ...patch })
   }),
 
-  http.delete('/api/files/:id/comments/:cid', ({ params }) => {
+  http.delete<{ id: string; cid: string }>('/api/files/:id/comments/:cid', ({ params }) => {
     log('DELETE', `/files/${params.id}/comments/${params.cid}`)
     mockState.comments[params.id] = (mockState.comments[params.id] || []).filter((x) => x.id !== params.cid)
     return HttpResponse.json({ ok: true })
   }),
 
-  http.post('/api/files/:id/comments/:cid/replies', async ({ params, request }) => {
+  http.post<{ id: string; cid: string }>('/api/files/:id/comments/:cid/replies', async ({ params, request }) => {
     log('POST', `/files/${params.id}/comments/${params.cid}/replies`)
-    const body = await request.json()
-    const r = { id: uid('r'), author_id: body.author_id, body: body.body, mentions: body.mentions || [], created_at: new Date().toISOString() }
+    const body = await request.json() as { author_id?: string; body?: string; mentions?: string[] }
+    const r: MockReply = { id: uid('r'), author_id: body.author_id, body: body.body, mentions: body.mentions || [], created_at: new Date().toISOString() }
     const c = (mockState.comments[params.id] || []).find((x) => x.id === params.cid)
     if (c) (c.replies ||= []).push(r)
     return HttpResponse.json(r)
   }),
 
   // ── Suggestions ──────────────────────────────────────────────────────────
-  http.get('/api/files/:id/suggestions', ({ params }) => {
+  http.get<{ id: string }>('/api/files/:id/suggestions', ({ params }) => {
     log('GET', `/files/${params.id}/suggestions`)
     return HttpResponse.json(mockState.suggestions[params.id] || [])
   }),
 
-  http.post('/api/files/:id/suggestions', async ({ params, request }) => {
+  http.post<{ id: string }>('/api/files/:id/suggestions', async ({ params, request }) => {
     log('POST', `/files/${params.id}/suggestions`)
-    const b = await request.json()
-    const s = {
+    const b = await request.json() as { kind?: string; author_id?: string; from?: unknown; to?: unknown; text?: string }
+    const s: MockSuggestion = {
       id: uid('s'), kind: b.kind, author_id: b.author_id,
       from: b.from, to: b.to, text: b.text,
       state: 'pending', created_at: new Date().toISOString(),
@@ -261,16 +373,16 @@ export const handlers = [
     return HttpResponse.json(s)
   }),
 
-  http.put('/api/files/:id/suggestions/:sid', async ({ params, request }) => {
+  http.put<{ id: string; sid: string }>('/api/files/:id/suggestions/:sid', async ({ params, request }) => {
     log('PUT', `/files/${params.id}/suggestions/${params.sid}`)
-    const b = await request.json()
+    const b = await request.json() as { state?: string; reviewer_id?: string }
     const s = (mockState.suggestions[params.id] || []).find((x) => x.id === params.sid)
     if (s) Object.assign(s, { state: b.state, reviewer_id: b.reviewer_id })
     return HttpResponse.json(s || { id: params.sid, ...b })
   }),
 
   // ── Version diff ───────────────────────────────────────────────────────────
-  http.get('/api/files/:id/versions/:vid/diff', ({ params, request }) => {
+  http.get<{ id: string; vid: string }>('/api/files/:id/versions/:vid/diff', ({ params, request }) => {
     log('GET', `/files/${params.id}/versions/${params.vid}/diff`)
     const url = new URL(request.url)
     return HttpResponse.json({
@@ -317,26 +429,26 @@ export const handlers = [
   // resolvable by the anonymous view route below; stripping at the boundary is
   // what the real handler does (models.ShareLink.Token is `omitempty` and the
   // store has nothing to put in it).
-  http.get('/api/files/:id/share-links', ({ params }) => {
+  http.get<{ id: string }>('/api/files/:id/share-links', ({ params }) => {
     log('GET', `/files/${params.id}/share-links`)
     const links = (mockState.shareLinks[params.id] || []).map(({ token: _token, ...rest }) => rest)
     return HttpResponse.json({ links })
   }),
 
-  http.post('/api/files/:id/share-links', async ({ params, request }) => {
+  http.post<{ id: string }>('/api/files/:id/share-links', async ({ params, request }) => {
     log('POST', `/files/${params.id}/share-links`)
     if (mockState.role !== 'owner') {
       return HttpResponse.json({ error: 'only the document owner may perform this action' }, { status: 403 })
     }
-    const body = await request.json().catch(() => ({}))
+    const body = await request.json().catch(() => ({})) as { password?: string; expires_in_seconds?: number }
     const token = uid('tok')
-    const link = {
+    const link: MockShareLink = {
       id: uid('link'),
       file_id: params.id,
       token,
       created_by: mockState.me,
       has_password: !!body.password,
-      expires_at: body.expires_in_seconds > 0
+      expires_at: body.expires_in_seconds && body.expires_in_seconds > 0
         ? new Date(Date.now() + body.expires_in_seconds * 1000).toISOString()
         : null,
       revoked: false,
@@ -353,7 +465,7 @@ export const handlers = [
     return HttpResponse.json(link, { status: 201 })
   }),
 
-  http.delete('/api/files/:id/share-links/:lid', ({ params }) => {
+  http.delete<{ id: string; lid: string }>('/api/files/:id/share-links/:lid', ({ params }) => {
     log('DELETE', `/files/${params.id}/share-links/${params.lid}`)
     const list = mockState.shareLinks[params.id] || []
     const link = list.find((l) => l.id === params.lid)
@@ -365,18 +477,18 @@ export const handlers = [
   }),
 
   // ── Transfer ownership ─────────────────────────────────────────────────────
-  http.post('/api/files/:id/transfer-owner', async ({ params, request }) => {
+  http.post<{ id: string }>('/api/files/:id/transfer-owner', async ({ params, request }) => {
     log('POST', `/files/${params.id}/transfer-owner`)
     if (mockState.role !== 'owner') {
       return HttpResponse.json({ error: 'only the document owner may perform this action' }, { status: 403 })
     }
-    const body = await request.json()
+    const body = await request.json() as { new_owner: string }
     mockState.owner = body.new_owner
     return HttpResponse.json({ ok: true, owner: body.new_owner })
   }),
 
   // ── Anonymous read-only view (token-gated) ─────────────────────────────────
-  http.get('/api/share/:token', ({ params }) => {
+  http.get<{ token: string }>('/api/share/:token', ({ params }) => {
     log('GET', `/share/${params.token}`)
     const entry = mockState.linksByToken[params.token]
     if (!entry || entry.link.revoked) return HttpResponse.json({ error: 'link not found' }, { status: 404 })
@@ -387,11 +499,11 @@ export const handlers = [
     })
   }),
 
-  http.post('/api/share/:token', async ({ params, request }) => {
+  http.post<{ token: string }>('/api/share/:token', async ({ params, request }) => {
     log('POST', `/share/${params.token}`)
     const entry = mockState.linksByToken[params.token]
     if (!entry || entry.link.revoked) return HttpResponse.json({ error: 'link not found' }, { status: 404 })
-    const body = await request.json().catch(() => ({}))
+    const body = await request.json().catch(() => ({})) as { password?: string }
     if (entry.requires_password && body.password !== entry.password) {
       return HttpResponse.json({ error: 'incorrect password', requires_password: true }, { status: 401 })
     }
