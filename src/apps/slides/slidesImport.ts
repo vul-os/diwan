@@ -25,34 +25,80 @@
 import {
   safeLoadZip, entryText, entryDataUri, parseXmlSafe, MAX_SLIDES, ImportError,
 } from '../../lib/importBounds.js'
-import { newObjectId } from './slideObjects'
-import { makeSlideImportNotes } from './importNotes'
+import { newObjectId, type SlideObject } from './slideObjects'
+import { makeSlideImportNotes, type SlideImportNotes } from './importNotes'
+import type { SlideAnimation } from './slideAnimations'
+
+/** The zip handle safeLoadZip() resolves to (its own internal type isn't exported). */
+type Zip = Awaited<ReturnType<typeof safeLoadZip>>
+
+/** Aggregate import losses across all slides (see importNotes.ts). */
+interface LossCounts {
+  tables: number
+  charts: number
+  diagrams: number
+  groups: number
+  vectorImages: number
+  animations: number
+  transitions: number
+}
+
+/** A deck slide as produced by this importer. */
+interface ImportedSlide {
+  id: string
+  title: string
+  content: string
+  notes: string
+  background: string
+  master: string
+  transition: string
+  animations: SlideAnimation[]
+  objects: SlideObject[]
+}
+
+/** The deck payload pptxToSlides()/odpToSlides() return. */
+interface ImportedDeck {
+  themeId: string
+  theme: string
+  transition: string
+  slides: ImportedSlide[]
+  masters: null
+  customTheme: null
+  importNotes?: SlideImportNotes | null
+}
 
 const EMU_PER_SLIDE_DEFAULT_W = 12192000   // 16:9 wide default (EMU)
 const EMU_PER_SLIDE_DEFAULT_H = 6858000
 
-const RASTER_MIME = {
+const RASTER_MIME: Record<string, string | null> = {
   png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
   webp: 'image/webp', bmp: 'image/bmp', emf: null, wmf: null, tiff: null,
 }
 
-function esc(s) {
+function esc(s: unknown): string {
   return String(s ?? '')
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
 }
 
-function clamp01ish(n, dflt) {
+function clamp01ish(n: number, dflt: number): number {
   return Number.isFinite(n) ? n : dflt
 }
 
 // ── PPTX ──────────────────────────────────────────────────────────────────────
 
+interface Geom {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
 // Parse ppt/slides/_rels/slideN.xml.rels → { rId: targetPathRelativeToSlides }.
-function parseRels(relsXml) {
-  const map = {}
+function parseRels(relsXml: string): Record<string, string> {
+  const map: Record<string, string> = {}
   if (!relsXml) return map
-  let doc
+  let doc: Document
   try { doc = parseXmlSafe(relsXml, 'rels') } catch { return map }
   for (const rel of Array.from(doc.getElementsByTagName('Relationship'))) {
     const id = rel.getAttribute('Id')
@@ -63,11 +109,11 @@ function parseRels(relsXml) {
 }
 
 // Resolve a slide-relative rels target ("../media/image1.png") to an archive path.
-function resolveMediaPath(target) {
+function resolveMediaPath(target: string | null | undefined): string | null {
   if (typeof target !== 'string') return null
   if (/^[a-z]+:/i.test(target)) return null           // external URL target → never fetch
   const path = ('ppt/slides/' + target).split('/')
-  const stack = []
+  const stack: string[] = []
   for (const seg of path) {
     if (seg === '..') stack.pop()
     else if (seg === '.' || seg === '') continue
@@ -79,8 +125,8 @@ function resolveMediaPath(target) {
 }
 
 // Read text runs from a <p:txBody>, returning HTML paragraphs with bold/italic.
-function txBodyToHtml(txBody, asTitle) {
-  const paras = []
+function txBodyToHtml(txBody: Element, asTitle: boolean): string {
+  const paras: string[] = []
   for (const p of Array.from(txBody.getElementsByTagName('a:p'))) {
     let line = ''
     for (const r of Array.from(p.getElementsByTagName('a:r'))) {
@@ -103,7 +149,7 @@ function txBodyToHtml(txBody, asTitle) {
 }
 
 // Extract a:off/a:ext geometry from an element's descendant a:xfrm, normalized.
-function geomFromXfrm(el, slideW, slideH) {
+function geomFromXfrm(el: Element, slideW: number, slideH: number): Geom | null {
   const xfrm = el.getElementsByTagName('a:xfrm')[0]
   if (!xfrm) return null
   const off = xfrm.getElementsByTagName('a:off')[0]
@@ -122,10 +168,17 @@ function geomFromXfrm(el, slideW, slideH) {
   }
 }
 
-async function pptxSlideToObjects(xmlText, relsXml, zip, slideW, slideH, loss) {
+async function pptxSlideToObjects(
+  xmlText: string,
+  relsXml: string,
+  zip: Zip,
+  slideW: number,
+  slideH: number,
+  loss: LossCounts | null,
+): Promise<SlideObject[]> {
   const doc = parseXmlSafe(xmlText, 'slide')
   const rels = parseRels(relsXml)
-  const objects = []
+  const objects: SlideObject[] = []
   let z = 1
   const spTree = doc.getElementsByTagName('p:spTree')[0] || doc
 
@@ -188,7 +241,7 @@ async function pptxSlideToObjects(xmlText, relsXml, zip, slideW, slideH, loss) {
   return objects
 }
 
-async function readSlideSize(zip) {
+async function readSlideSize(zip: Zip): Promise<{ w: number; h: number }> {
   try {
     const presXml = await entryText(zip, 'ppt/presentation.xml')
     if (presXml) {
@@ -202,7 +255,7 @@ async function readSlideSize(zip) {
   return { w: EMU_PER_SLIDE_DEFAULT_W, h: EMU_PER_SLIDE_DEFAULT_H }
 }
 
-async function readNotes(zip, slideNum) {
+async function readNotes(zip: Zip, slideNum: number): Promise<string> {
   const notePath = `ppt/notesSlides/notesSlide${slideNum}.xml`
   if (!zip.files[notePath]) return ''
   try {
@@ -213,21 +266,21 @@ async function readNotes(zip, slideNum) {
   } catch { return '' }
 }
 
-export async function pptxToSlides(arrayBuffer, filename = 'file.pptx') {
+export async function pptxToSlides(arrayBuffer: ArrayBuffer, filename = 'file.pptx'): Promise<ImportedDeck> {
   const zip = await safeLoadZip(arrayBuffer, filename)
   const { w: slideW, h: slideH } = await readSlideSize(zip)
 
   const slideEntries = Object.keys(zip.files)
     .filter((n) => /^ppt\/slides\/slide\d+\.xml$/.test(n))
-    .sort((a, b) => parseInt(a.match(/slide(\d+)/)[1], 10) - parseInt(b.match(/slide(\d+)/)[1], 10))
+    .sort((a, b) => parseInt(a.match(/slide(\d+)/)![1], 10) - parseInt(b.match(/slide(\d+)/)![1], 10))
     .slice(0, MAX_SLIDES)
 
   // Aggregate import losses across all slides (see importNotes.js).
-  const loss = { tables: 0, charts: 0, diagrams: 0, groups: 0, vectorImages: 0, animations: 0, transitions: 0 }
+  const loss: LossCounts = { tables: 0, charts: 0, diagrams: 0, groups: 0, vectorImages: 0, animations: 0, transitions: 0 }
 
-  const slides = []
+  const slides: ImportedSlide[] = []
   for (const entry of slideEntries) {
-    const num = parseInt(entry.match(/slide(\d+)/)[1], 10)
+    const num = parseInt(entry.match(/slide(\d+)/)![1], 10)
     const xmlText = await entryText(zip, entry)
     const relsXml = await entryText(zip, `ppt/slides/_rels/slide${num}.xml.rels`)
     const objects = await pptxSlideToObjects(xmlText, relsXml, zip, slideW, slideH, loss)
@@ -244,7 +297,7 @@ export async function pptxToSlides(arrayBuffer, filename = 'file.pptx') {
       background: '', master: 'content', transition: 'none', animations: [], objects: [],
     })
   }
-  const deck = { themeId: 'obsidian', theme: 'black', transition: 'slide', slides, masters: null, customTheme: null }
+  const deck: ImportedDeck = { themeId: 'obsidian', theme: 'black', transition: 'slide', slides, masters: null, customTheme: null }
   const importNotes = makeSlideImportNotes({ ...loss, filename })
   if (importNotes) deck.importNotes = importNotes
   return deck
@@ -255,7 +308,7 @@ export async function pptxToSlides(arrayBuffer, filename = 'file.pptx') {
 // fraction of the page using the page geometry from the master-page/page-layout,
 // defaulting to the common 25.4cm × 19.05cm (10in × 7.5in) 4:3 page.
 
-function odfLenToInches(v) {
+function odfLenToInches(v: unknown): number {
   if (typeof v !== 'string') return NaN
   const m = /^(-?[\d.]+)\s*(cm|mm|in|pt|pc|px)?$/i.exec(v.trim())
   if (!m) return NaN
@@ -272,12 +325,18 @@ function odfLenToInches(v) {
   }
 }
 
-async function odpFrameToObject(frame, pageWIn, pageHIn, zip, z) {
+async function odpFrameToObject(
+  frame: Element,
+  pageWIn: number,
+  pageHIn: number,
+  zip: Zip,
+  z: number,
+): Promise<SlideObject | null> {
   const xIn = odfLenToInches(frame.getAttribute('svg:x'))
   const yIn = odfLenToInches(frame.getAttribute('svg:y'))
   const wIn = odfLenToInches(frame.getAttribute('svg:width'))
   const hIn = odfLenToInches(frame.getAttribute('svg:height'))
-  const g = {
+  const g: Geom = {
     x: clamp01ish(xIn / pageWIn, 0.1),
     y: clamp01ish(yIn / pageHIn, 0.1),
     w: clamp01ish(wIn / pageWIn, 0.3),
@@ -303,16 +362,17 @@ async function odpFrameToObject(frame, pageWIn, pageHIn, zip, z) {
 
   const textBox = frame.getElementsByTagName('draw:text-box')[0]
   if (textBox) {
-    const paras = []
+    const paras: Array<{ tag: string; text: string }> = []
     for (const node of Array.from(textBox.childNodes)) {
       if (node.nodeType !== 1) continue
-      if (node.localName === 'h' || node.localName === 'p') {
-        const text = esc((node.textContent || '').trim())
-        if (text) paras.push({ tag: node.localName, text })
+      const el = node as Element
+      if (el.localName === 'h' || el.localName === 'p') {
+        const text = esc((el.textContent || '').trim())
+        if (text) paras.push({ tag: el.localName, text })
       }
     }
     if (paras.length === 0) return null
-    let html
+    let html: string
     if (paras.length === 1) {
       const p = paras[0]
       html = p.tag === 'h' ? `<h2>${p.text}</h2>` : `<p>${p.text}</p>`
@@ -324,7 +384,7 @@ async function odpFrameToObject(frame, pageWIn, pageHIn, zip, z) {
   return null
 }
 
-export async function odpToSlides(arrayBuffer, filename = 'file.odp') {
+export async function odpToSlides(arrayBuffer: ArrayBuffer, filename = 'file.odp'): Promise<ImportedDeck> {
   const zip = await safeLoadZip(arrayBuffer, filename)
   const contentXml = await entryText(zip, 'content.xml')
   if (!contentXml) throw new ImportError(`${filename} is not a valid ODP (no content.xml).`)
@@ -341,9 +401,9 @@ export async function odpToSlides(arrayBuffer, filename = 'file.odp') {
   }
 
   const pages = Array.from(doc.getElementsByTagName('draw:page')).slice(0, MAX_SLIDES)
-  const slides = []
+  const slides: ImportedSlide[] = []
   for (const page of pages) {
-    const objects = []
+    const objects: SlideObject[] = []
     let z = 1
     for (const frame of Array.from(page.getElementsByTagName('draw:frame'))) {
       const obj = await odpFrameToObject(frame, pageWIn, pageHIn, zip, z)
