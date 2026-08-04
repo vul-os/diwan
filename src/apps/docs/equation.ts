@@ -35,8 +35,22 @@
  * hostile LaTeX *string* — which renders inertly under trust:false.
  */
 
-import { Node, mergeAttributes } from '@tiptap/react'
+import { Node, mergeAttributes, type NodeViewRendererProps } from '@tiptap/react'
+import type { Node as PMNode } from '@tiptap/pm/model'
 import katex from 'katex'
+
+declare module '@tiptap/core' {
+  interface Commands<ReturnType> {
+    mathInline: {
+      insertMathInline: (latex?: string) => ReturnType
+      updateMath: (latex: string) => ReturnType
+    }
+    mathBlock: {
+      insertMathBlock: (latex?: string) => ReturnType
+      updateMathBlock: (latex: string) => ReturnType
+    }
+  }
+}
 
 // Locked-down KaTeX options. `trust:false` is the default but we set it
 // explicitly so a future refactor can't silently enable dangerous commands.
@@ -60,16 +74,18 @@ export const KATEX_SAFE_OPTIONS = Object.freeze({
  * @param {boolean} displayMode  true → block/display, false → inline
  * @returns {string} KaTeX HTML
  */
-export function renderEquationHtml(latex, displayMode) {
+const XML_ESCAPE_MAP: Record<string, string> = {
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+}
+
+export function renderEquationHtml(latex: unknown, displayMode: unknown): string {
   const src = typeof latex === 'string' ? latex : ''
   try {
     return katex.renderToString(src, { ...KATEX_SAFE_OPTIONS, displayMode: !!displayMode })
   } catch {
     // throwOnError:false already prevents most throws; belt-and-braces so a
     // renderer bug can never break the editor. Show the raw source as text.
-    const esc = src.replace(/[&<>"']/g, (c) => (
-      { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
-    ))
+    const esc = src.replace(/[&<>"']/g, (c) => XML_ESCAPE_MAP[c] ?? c)
     return `<span class="katex-error" title="Invalid equation">${esc}</span>`
   }
 }
@@ -79,7 +95,7 @@ export function renderEquationHtml(latex, displayMode) {
 // trust:false (no script/href/fetch can be produced). We do NOT sanitise here on
 // the hot path (KaTeX output is bounded by construction); the EXPORT path, which
 // is the real trust boundary, sanitises via renderEquationHtmlSafe.
-function paintMath(dom, latex, displayMode, placeholder) {
+function paintMath(dom: HTMLElement, latex: unknown, displayMode: unknown, placeholder?: string) {
   const src = typeof latex === 'string' ? latex.trim() : ''
   if (!src) {
     dom.textContent = placeholder || '𝑓(𝑥)'
@@ -96,8 +112,8 @@ function latexAttribute() {
   return {
     latex: {
       default: '',
-      parseHTML: (el) => el.getAttribute('data-latex') || '',
-      renderHTML: (attrs) => (attrs.latex ? { 'data-latex': attrs.latex } : {}),
+      parseHTML: (el: HTMLElement) => el.getAttribute('data-latex') || '',
+      renderHTML: (attrs: { latex?: string }) => (attrs.latex ? { 'data-latex': attrs.latex } : {}),
     },
   }
 }
@@ -108,8 +124,8 @@ function latexAttribute() {
  * the equation editor dialog (see EquationEditor.jsx) which updates the `latex`
  * attribute through the TipTap chain.
  */
-function makeMathNodeView(displayMode, tag) {
-  return ({ node, HTMLAttributes }) => {
+function makeMathNodeView(displayMode: boolean, tag: string) {
+  return ({ node, HTMLAttributes }: NodeViewRendererProps) => {
     const dom = document.createElement(tag)
     dom.className = displayMode ? 'math-block' : 'math-inline'
     dom.setAttribute('data-latex', node.attrs.latex || '')
@@ -117,12 +133,12 @@ function makeMathNodeView(displayMode, tag) {
     // Copy through merged (safe) HTML attributes so classes/data survive.
     for (const [k, v] of Object.entries(mergeAttributes(HTMLAttributes))) {
       if (k === 'class') dom.className += ` ${v}`
-      else if (v != null) dom.setAttribute(k, v)
+      else if (v != null) dom.setAttribute(k, String(v))
     }
     paintMath(dom, node.attrs.latex, displayMode)
     return {
       dom,
-      update(updatedNode) {
+      update(updatedNode: PMNode) {
         if (updatedNode.type.name !== node.type.name) return false
         dom.setAttribute('data-latex', updatedNode.attrs.latex || '')
         paintMath(dom, updatedNode.attrs.latex, displayMode)
@@ -163,7 +179,7 @@ export const MathInline = Node.create({
     return {
       insertMathInline: (latex = '') => ({ chain }) =>
         chain().insertContent({ type: this.name, attrs: { latex } }).run(),
-      updateMath: (latex) => ({ commands }) =>
+      updateMath: (latex: string) => ({ commands }) =>
         commands.updateAttributes(this.name, { latex }),
     }
   },
@@ -195,7 +211,7 @@ export const MathBlock = Node.create({
     return {
       insertMathBlock: (latex = '') => ({ chain }) =>
         chain().insertContent({ type: this.name, attrs: { latex } }).run(),
-      updateMathBlock: (latex) => ({ commands }) =>
+      updateMathBlock: (latex: string) => ({ commands }) =>
         commands.updateAttributes(this.name, { latex }),
     }
   },
