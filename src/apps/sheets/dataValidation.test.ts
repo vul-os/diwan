@@ -11,7 +11,14 @@ import {
   cellKeysForRange,
   applyValidation,
   listValidationRules,
+  type DVSheet,
 } from './dataValidation.js'
+
+// parseRange (ConditionalFormatPanel.jsx, not yet converted) infers a `number[]`
+// row/column shape rather than the `[number, number]` tuple applyValidation's
+// signature declares — a local, typed adapter over the same runtime contract.
+const parseRangeTyped = (text: string): { row: [number, number]; column: [number, number] }[] | undefined =>
+  parseRange(text) as { row: [number, number]; column: [number, number] }[] | undefined
 
 describe('dropdownItems', () => {
   it('splits, trims, and drops empties', () => {
@@ -46,7 +53,7 @@ describe('buildRegulation', () => {
   })
   it('dropdown with multi sets type2="true"', () => {
     const reg = buildRegulation({ kind: 'dropdown', items: 'x,y', allowMulti: true })
-    expect(reg.type2).toBe('true')
+    expect(reg!.type2).toBe('true')
   })
   it('dropdown with no items → null', () => {
     expect(buildRegulation({ kind: 'dropdown', items: '  ' })).toBeNull()
@@ -57,8 +64,8 @@ describe('buildRegulation', () => {
   })
   it('number single-value drops value2', () => {
     const reg = buildRegulation({ kind: 'number', condition: 'moreThanThe', value1: '5', value2: '99' })
-    expect(reg.value1).toBe('5')
-    expect(reg.value2).toBe('')
+    expect(reg!.value1).toBe('5')
+    expect(reg!.value2).toBe('')
   })
   it('number with non-numeric value → null', () => {
     expect(buildRegulation({ kind: 'number', condition: 'equal', value1: 'abc' })).toBeNull()
@@ -95,33 +102,33 @@ describe('cellKeysForRange', () => {
 })
 
 describe('applyValidation / listValidationRules', () => {
-  const base = [{ name: 'Sheet1', celldata: [], config: {} }]
+  const base: DVSheet[] = [{ name: 'Sheet1', celldata: [], config: {} }]
 
   it('writes a rule across every cell in the range', () => {
     const reg = buildRegulation({ kind: 'dropdown', items: 'a,b' })
-    const next = applyValidation(base, 'A1:A3', reg, parseRange)
-    const dv = next[0].dataVerification
+    const next = applyValidation(base, 'A1:A3', reg, parseRangeTyped)
+    const dv = next[0].dataVerification!
     expect(Object.keys(dv).sort()).toEqual(['0_0', '1_0', '2_0'])
-    expect(dv['0_0'].type).toBe('dropdown')
+    expect((dv['0_0'] as { type: string }).type).toBe('dropdown')
   })
 
   it('is immutable — original sheet untouched', () => {
     const reg = buildRegulation({ kind: 'number', condition: 'equal', value1: '1' })
-    applyValidation(base, 'A1', reg, parseRange)
+    applyValidation(base, 'A1', reg, parseRangeTyped)
     expect(base[0].dataVerification).toBeUndefined()
   })
 
   it('null regulation clears keys', () => {
     const reg = buildRegulation({ kind: 'dropdown', items: 'a,b' })
-    const withRule = applyValidation(base, 'A1:A2', reg, parseRange)
-    const cleared  = applyValidation(withRule, 'A1', null, parseRange)
-    expect(cleared[0].dataVerification['0_0']).toBeUndefined()
-    expect(cleared[0].dataVerification['1_0']).toBeDefined()
+    const withRule = applyValidation(base, 'A1:A2', reg, parseRangeTyped)
+    const cleared  = applyValidation(withRule, 'A1', null, parseRangeTyped)
+    expect(cleared[0].dataVerification!['0_0']).toBeUndefined()
+    expect(cleared[0].dataVerification!['1_0']).toBeDefined()
   })
 
   it('listValidationRules groups identical rules into one entry', () => {
     const reg = buildRegulation({ kind: 'dropdown', items: 'a,b' })
-    const next = applyValidation(base, 'A1:A5', reg, parseRange)
+    const next = applyValidation(base, 'A1:A5', reg, parseRangeTyped)
     const rules = listValidationRules(next[0])
     expect(rules.length).toBe(1)
     expect(rules[0].count).toBe(5)
@@ -129,8 +136,8 @@ describe('applyValidation / listValidationRules', () => {
   })
 
   it('listValidationRules separates distinct rules', () => {
-    let d = applyValidation(base, 'A1', buildRegulation({ kind: 'dropdown', items: 'a' }), parseRange)
-    d = applyValidation(d, 'B1', buildRegulation({ kind: 'number', condition: 'equal', value1: '3' }), parseRange)
+    let d = applyValidation(base, 'A1', buildRegulation({ kind: 'dropdown', items: 'a' }), parseRangeTyped)
+    d = applyValidation(d, 'B1', buildRegulation({ kind: 'number', condition: 'equal', value1: '3' }), parseRangeTyped)
     expect(listValidationRules(d[0]).length).toBe(2)
   })
 })
