@@ -16,7 +16,17 @@
  *
  * Keeps no state — it's purely compositional, so the caller stays in control.
  */
-export default function Topbar({ leading, title, meta, actions, className = '' }) {
+import type { ReactNode } from 'react'
+
+interface TopbarProps {
+  leading?: ReactNode
+  title?: ReactNode
+  meta?: ReactNode
+  actions?: ReactNode
+  className?: string
+}
+
+export default function Topbar({ leading, title, meta, actions, className = '' }: TopbarProps) {
   return (
     <header
       className={[
