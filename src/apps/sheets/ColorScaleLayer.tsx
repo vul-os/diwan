@@ -1,5 +1,5 @@
 /**
- * src/apps/sheets/ColorScaleLayer.jsx  (WAVE-63, WAVE-64)
+ * src/apps/sheets/ColorScaleLayer.tsx  (WAVE-63, WAVE-64)
  *
  * Reactive overlay that paints conditional formatting into the grid: COLOR
  * SCALES, DATA BARS and the WAVE-64 SINGLE-COLOUR rules (greater-than / text /
@@ -21,10 +21,18 @@
  * innerHTML. So this path cannot inject a `url()`/`expression()`/script value
  * and never renders untrusted cell text at all.
  */
-import { memo, useMemo, useState, useEffect, useCallback, useRef } from 'react'
-import { getColorScales, computeAllColorScales, colorScaleSignature } from './colorScales.js'
+import { memo, useMemo, useState, useEffect, useCallback, type CSSProperties } from 'react'
+import { getColorScales, computeAllColorScales, colorScaleSignature, type CSSheet } from './colorScales.js'
 
-function ColorScaleLayerInner({ data, getCellRect, scrollTick }) {
+interface CellRect { top: number; left: number; width: number; height: number }
+
+interface ColorScaleLayerProps {
+  data: CSSheet[]
+  getCellRect?: ((r: number, c: number) => CellRect | null | undefined) | null
+  scrollTick?: unknown
+}
+
+function ColorScaleLayerInner({ data, getCellRect, scrollTick }: ColorScaleLayerProps) {
   const sheet = data?.[0]
   const rules = useMemo(() => getColorScales(data), [data])
 
@@ -40,10 +48,10 @@ function ColorScaleLayerInner({ data, getCellRect, scrollTick }) {
   )
 
   // Positions are DOM-measured, so recompute on paint change AND scroll/resize.
-  const [rects, setRects] = useState([])
+  const [rects, setRects] = useState<{ key: string; rect: CellRect; paint: (typeof paint)[string] }[]>([])
   const measure = useCallback(() => {
     if (!getCellRect) { setRects([]); return }
-    const out = []
+    const out: { key: string; rect: CellRect; paint: (typeof paint)[string] }[] = []
     for (const key in paint) {
       const [r, c] = key.split('_').map(Number)
       const rect = getCellRect(r, c)
@@ -59,7 +67,7 @@ function ColorScaleLayerInner({ data, getCellRect, scrollTick }) {
   return (
     <div className="absolute inset-0" style={{ pointerEvents: 'none', overflow: 'hidden', zIndex: 5 }}>
       {rects.map(({ key, rect, paint: p }) => {
-        if (p.bg) {
+        if ('bg' in p) {
           return (
             <div
               key={key}
@@ -72,15 +80,15 @@ function ColorScaleLayerInner({ data, getCellRect, scrollTick }) {
             />
           )
         }
-        if (p.bar) {
+        if ('bar' in p) {
           const w = Math.max(0, Math.min(1, p.bar.pct)) * (rect.width - 2)
           // Positive bars grow from the left; negative bars grow from the right.
-          const style = {
+          const style: CSSProperties = {
             position: 'absolute',
             top: rect.top + 1, height: rect.height - 2, width: w,
             background: p.bar.color, opacity: 0.45, borderRadius: 1,
           }
-          if (p.bar.negative) style.right = 'auto', style.left = rect.left + (rect.width - 2) - w
+          if (p.bar.negative) { style.right = 'auto'; style.left = rect.left + (rect.width - 2) - w }
           else style.left = rect.left + 1
           return <div key={key} style={style} />
         }
