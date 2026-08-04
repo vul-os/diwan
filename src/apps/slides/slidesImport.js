@@ -25,7 +25,7 @@
 import {
   safeLoadZip, entryText, entryDataUri, parseXmlSafe, MAX_SLIDES, ImportError,
 } from '../../lib/importBounds.js'
-import { newObjectId } from './slideObjects.js'
+import { newObjectId } from './slideObjects'
 import { makeSlideImportNotes } from './importNotes.js'
 
 const EMU_PER_SLIDE_DEFAULT_W = 12192000   // 16:9 wide default (EMU)

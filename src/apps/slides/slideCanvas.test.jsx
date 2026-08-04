@@ -15,7 +15,7 @@ import { render, screen, fireEvent, act } from '@testing-library/react'
 import {
   ensureObjects, sanitizeObject, sanitizeObjects, clampFinite,
   MAX_OBJECTS_PER_SLIDE, flowContentFromObjects, sortByZ, normalizeZ, sanitizeColor,
-} from './slideObjects.js'
+} from './slideObjects'
 import {
   bringToFront, sendToBack, bringForward, sendBackward,
   groupObjects, ungroupObjects, expandSelectionToGroups, align, distribute,

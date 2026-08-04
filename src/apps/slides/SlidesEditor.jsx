@@ -32,7 +32,7 @@ import ObjectTextEditor from './ObjectTextEditor.jsx'
 import ArrangeToolbar from './ArrangeToolbar.jsx'
 import {
   ensureObjects, sanitizeObjects, newObjectId, flowContentFromObjects, sortByZ,
-} from './slideObjects.js'
+} from './slideObjects'
 import {
   bringToFront, sendToBack, bringForward, sendBackward,
   groupObjects, ungroupObjects, expandSelectionToGroups, align, distribute,
