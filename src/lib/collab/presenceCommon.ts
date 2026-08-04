@@ -16,16 +16,17 @@
 
 import { peerColor } from './webrtc/useLiveCursors.js'
 
+export type CollabIdentity = { accountId: string; displayName: string; isGuest?: boolean }
+
 /**
  * Derive a stable local collaborator identity, mirroring the approach used in
  * DocsEditor: prefer a signed-in Vulos account (persisted under
  * `presence_identity`), otherwise fall back to a per-tab guest identity keyed
  * off the CRDT peer/replica id so a peer keeps a consistent colour + label.
  *
- * @param {string} [fallbackPeerId] stable per-tab id (e.g. the CRDT replicaId)
- * @returns {{ accountId: string, displayName: string, isGuest?: boolean }}
+ * @param fallbackPeerId stable per-tab id (e.g. the CRDT replicaId)
  */
-export function getCollabIdentity(fallbackPeerId) {
+export function getCollabIdentity(fallbackPeerId?: string): CollabIdentity {
   // Guard for non-DOM (test / SSR) environments.
   const ls = typeof localStorage !== 'undefined' ? localStorage : null
   const ss = typeof sessionStorage !== 'undefined' ? sessionStorage : null
@@ -61,10 +62,10 @@ export function getCollabIdentity(fallbackPeerId) {
  * Uses the relay-client `peerColor` so the local user's colour matches the one
  * remote peers compute for them (identical hash → identical hue).
  *
- * @param {{ accountId?: string } | null} identity
- * @returns {string} CSS colour
+ * @param identity
+ * @returns CSS colour
  */
-export function identityColor(identity) {
+export function identityColor(identity: { accountId?: string } | null | undefined): string {
   return peerColor(identity?.accountId)
 }
 
@@ -80,10 +81,9 @@ const PENDING_PEER_STATES = new Set(['new', 'connecting', 'reconnecting', 'check
  * Count peers that are actually reachable (direct WebRTC or via relay).
  * Mirrors the peerCount derivation in DocsEditor.
  *
- * @param {Record<string, string>} peers  peerId → state
- * @returns {number}
+ * @param peers  peerId → state
  */
-export function countLivePeers(peers) {
+export function countLivePeers(peers: Record<string, string> | null | undefined): number {
   if (!peers) return 0
   return Object.values(peers).filter((s) => LIVE_PEER_STATES.has(s)).length
 }
@@ -117,17 +117,21 @@ export function countLivePeers(peers) {
  *                      "Live" forever. It therefore outranks every connection
  *                      state below it and is the only one with a danger tone.
  *
- * @param {object} opts
- * @param {boolean} opts.configured
- * @param {boolean} opts.joined
- * @param {Record<string, string>} [opts.peers]
- * @param {boolean} [opts.readOnly]
- * @param {boolean} [opts.engineMismatch]
- * @returns {{ status: string, label: string, tone: string }}
  */
+export type StatusPillStatus = 'offline' | 'connecting' | 'reconnecting' | 'live' | 'solo' | 'readonly' | 'mismatch'
+export type StatusPillTone = 'muted' | 'success' | 'warning' | 'danger'
+export type StatusPill = { status: StatusPillStatus; label: string; tone: StatusPillTone }
+export type DeriveStatusPillOptions = {
+  configured?: boolean
+  joined?: boolean
+  peers?: Record<string, string>
+  readOnly?: boolean
+  engineMismatch?: boolean
+}
+
 export function deriveStatusPill({
   configured, joined, peers = {}, readOnly = false, engineMismatch = false,
-} = {}) {
+}: DeriveStatusPillOptions = {}): StatusPill {
   if (engineMismatch) {
     // Ranked ABOVE readOnly and above every connection state: a view-only peer
     // in a mismatched room is still in a room that cannot converge, and the

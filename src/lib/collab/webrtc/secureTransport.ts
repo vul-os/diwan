@@ -31,10 +31,9 @@
  * True when `hostname` is a loopback address where plaintext is acceptable for
  * local development (the token never leaves the machine).
  *
- * @param {string} hostname  URL.hostname (IPv6 keeps its surrounding brackets)
- * @returns {boolean}
+ * @param hostname  URL.hostname (IPv6 keeps its surrounding brackets)
  */
-export function isLoopbackHost(hostname) {
+export function isLoopbackHost(hostname: string): boolean {
   const h = (hostname || '').toLowerCase()
   if (h === 'localhost' || h.endsWith('.localhost')) return true
   if (h === '::1' || h === '[::1]') return true
@@ -48,10 +47,9 @@ export function isLoopbackHost(hostname) {
  * request bound for `rawUrl`. Fail-closed: unknown / unparseable / plaintext-
  * remote URLs return false so the caller refuses to leak the token.
  *
- * @param {string} rawUrl  absolute URL, or '' / a relative path for same-origin
- * @returns {boolean}
+ * @param rawUrl  absolute URL, or '' / a relative path for same-origin
  */
-export function tokenTransportSecure(rawUrl) {
+export function tokenTransportSecure(rawUrl: string | null | undefined): boolean {
   // Same-origin: '' (fabric relay base default) or a relative path inherit the
   // page's own origin, which is as secure as the page the SDK loaded from.
   if (rawUrl == null || rawUrl === '') return true

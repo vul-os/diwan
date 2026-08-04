@@ -14,16 +14,12 @@
  * unavailable (e.g. budget exhausted and no recovery path).
  */
 export class SignalingError extends Error {
-  /**
-   * @param {string} message
-   * @param {{ code?: string, attempts?: number }} [detail]
-   */
-  constructor(message, detail = {}) {
+  code: string
+  attempts: number | undefined
+  constructor(message: string, detail: { code?: string; attempts?: number } = {}) {
     super(message)
     this.name = 'SignalingError'
-    /** @type {string} */
     this.code = detail.code || 'SIGNALING_ERROR'
-    /** @type {number|undefined} */
     this.attempts = detail.attempts
   }
 }
@@ -33,16 +29,13 @@ export class SignalingError extends Error {
  * rejection, or a signing failure).
  */
 export class RelayDepositError extends Error {
-  /**
-   * @param {string} message
-   * @param {{ code?: string, status?: number }} [detail]
-   */
-  constructor(message, detail = {}) {
+  code: string
+  /** HTTP status when available */
+  status: number | undefined
+  constructor(message: string, detail: { code?: string; status?: number } = {}) {
     super(message)
     this.name = 'RelayDepositError'
-    /** @type {string} */
     this.code = detail.code || 'RELAY_DEPOSIT_ERROR'
-    /** @type {number|undefined} — HTTP status when available */
     this.status = detail.status
   }
 }
@@ -51,16 +44,12 @@ export class RelayDepositError extends Error {
  * Thrown when no reachable endpoint can be found after probing all candidates.
  */
 export class EndpointError extends Error {
-  /**
-   * @param {string} message
-   * @param {{ code?: string, candidates?: string[] }} [detail]
-   */
-  constructor(message, detail = {}) {
+  code: string
+  candidates: string[] | undefined
+  constructor(message: string, detail: { code?: string; candidates?: string[] } = {}) {
     super(message)
     this.name = 'EndpointError'
-    /** @type {string} */
     this.code = detail.code || 'ENDPOINT_ERROR'
-    /** @type {string[]|undefined} */
     this.candidates = detail.candidates
   }
 }
@@ -70,16 +59,12 @@ export class EndpointError extends Error {
  * error, or the P2P and relay paths both fail).
  */
 export class FabricError extends Error {
-  /**
-   * @param {string} message
-   * @param {{ code?: string, peerId?: string }} [detail]
-   */
-  constructor(message, detail = {}) {
+  code: string
+  peerId: string | undefined
+  constructor(message: string, detail: { code?: string; peerId?: string } = {}) {
     super(message)
     this.name = 'FabricError'
-    /** @type {string} */
     this.code = detail.code || 'FABRIC_ERROR'
-    /** @type {string|undefined} */
     this.peerId = detail.peerId
   }
 }

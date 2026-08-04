@@ -62,9 +62,9 @@
 import { probePeeringAvailable } from './peeringAvailability.js'
 import { resolveRendezvousUrl, resolveBuiltinRendezvousPrefix } from './reachableBase.js'
 
-export const TRANSPORT_HOST_PEERING = 'host-peering'
-export const TRANSPORT_RENDEZVOUS = 'rendezvous'
-export const TRANSPORT_LOCAL_ONLY = 'local-only'
+export const TRANSPORT_HOST_PEERING = 'host-peering' as const
+export const TRANSPORT_RENDEZVOUS = 'rendezvous' as const
+export const TRANSPORT_LOCAL_ONLY = 'local-only' as const
 
 /**
  * A relayd's own mount prefix for the rendezvous protocol — its
@@ -74,38 +74,41 @@ export const TRANSPORT_LOCAL_ONLY = 'local-only'
  */
 export const RENDEZVOUS_PREFIX = '/rendezvous'
 
-/**
- * @typedef {object} TransportChoice
- * @property {'host-peering'|'rendezvous'|'local-only'} transport
- * @property {string} rendezvousBaseUrl  origin the browser calls — an
- *   operator-configured relay, or this page's own origin for the built-in
- *   surface; '' unless transport is 'rendezvous'
- * @property {string} rendezvousPrefix  path prefix under that origin ('' unless
- *   transport is 'rendezvous')
- * @property {boolean} builtin  true when the chosen rendezvous surface is this
- *   Diwan server's own. Callers use it for honest UI copy ("discovery runs on
- *   this server" vs "on <relay>"); it is never a security decision.
- */
+export type TransportChoice = {
+  transport: typeof TRANSPORT_HOST_PEERING | typeof TRANSPORT_RENDEZVOUS | typeof TRANSPORT_LOCAL_ONLY
+  /** origin the browser calls — an operator-configured relay, or this page's
+   *  own origin for the built-in surface; '' unless transport is 'rendezvous' */
+  rendezvousBaseUrl: string
+  /** path prefix under that origin ('' unless transport is 'rendezvous') */
+  rendezvousPrefix: string
+  /** true when the chosen rendezvous surface is this Diwan server's own.
+   *  Callers use it for honest UI copy ("discovery runs on this server" vs "on
+   *  <relay>"); it is never a security decision. */
+  builtin: boolean
+}
+
+export type SelectCollabTransportOptions = {
+  /** override for tests */
+  probeHostPeering?: () => Promise<boolean>
+  /** override for tests */
+  resolveRendezvous?: () => Promise<string>
+  /** override for tests */
+  resolveBuiltinPrefix?: () => Promise<string>
+  /** this page's origin (tests inject; defaults to window.location.origin) */
+  origin?: string
+}
 
 /**
  * Decide which collaboration transport this session should use. Never throws:
  * every probe it depends on already fails safe to "unavailable" and this
  * function itself always resolves to one of the three transports.
- *
- * @param {object} [opts]
- * @param {() => Promise<boolean>} [opts.probeHostPeering] override for tests
- * @param {() => Promise<string>} [opts.resolveRendezvous] override for tests
- * @param {() => Promise<string>} [opts.resolveBuiltinPrefix] override for tests
- * @param {string} [opts.origin] this page's origin (tests inject; defaults to
- *   window.location.origin)
- * @returns {Promise<TransportChoice>}
  */
 export async function selectCollabTransport({
   probeHostPeering = probePeeringAvailable,
   resolveRendezvous = resolveRendezvousUrl,
   resolveBuiltinPrefix = resolveBuiltinRendezvousPrefix,
   origin = typeof window !== 'undefined' && window.location ? window.location.origin : '',
-} = {}) {
+}: SelectCollabTransportOptions = {}): Promise<TransportChoice> {
   const none = {
     transport: TRANSPORT_LOCAL_ONLY, rendezvousBaseUrl: '', rendezvousPrefix: '', builtin: false,
   }

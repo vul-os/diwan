@@ -59,16 +59,17 @@
 const REACHABILITY_URL = '/api/reachability'
 const PROBE_TIMEOUT_MS = 2500
 
-/** @type {Promise<{ base: string, rendezvousUrl: string, builtinPrefix: string }> | null} */
-let cached = null
-/** @type {string} last synchronously-available resolved base ('' until first resolve) */
+type ReachabilityFacts = { base: string; rendezvousUrl: string; builtinPrefix: string }
+
+let cached: Promise<ReachabilityFacts> | null = null
+/** last synchronously-available resolved base ('' until first resolve) */
 let resolvedSync = ''
-/** @type {string} last synchronously-available resolved rendezvous URL */
+/** last synchronously-available resolved rendezvous URL */
 let resolvedRendezvousSync = ''
-/** @type {string} last synchronously-available built-in rendezvous prefix */
+/** last synchronously-available built-in rendezvous prefix */
 let resolvedBuiltinSync = ''
 
-function windowOrigin() {
+function windowOrigin(): string {
   return typeof window !== 'undefined' && window.location ? window.location.origin : ''
 }
 
@@ -77,9 +78,8 @@ function windowOrigin() {
  * returns the last resolved public base if `resolveReachableBase()` has already
  * completed, otherwise `window.location.origin`. Warm it by calling
  * `resolveReachableBase()` (e.g. in an effect) before relying on this.
- * @returns {string}
  */
-export function reachableBaseSync() {
+export function reachableBaseSync(): string {
   return resolvedSync || windowOrigin()
 }
 
@@ -88,9 +88,8 @@ export function reachableBaseSync() {
  * returns the last resolved value if `resolveRendezvousUrl()` (or
  * `resolveReachableBase()`) has already completed, otherwise `''` (not yet
  * known / not configured). Warm it the same way as `reachableBaseSync()`.
- * @returns {string}
  */
-export function rendezvousUrlSync() {
+export function rendezvousUrlSync(): string {
   return resolvedRendezvousSync
 }
 
@@ -100,11 +99,9 @@ export function rendezvousUrlSync() {
  * resolve to their safe defaults (base falls back to `window.location.origin`,
  * rendezvousUrl falls back to `''`). Cached for the page lifetime.
  *
- * @param {object} [opts]
- * @param {boolean} [opts.force=false] bypass the cache and re-resolve
- * @returns {Promise<{ base: string, rendezvousUrl: string }>}
+ * @param opts.force  bypass the cache and re-resolve
  */
-function resolveReachability({ force = false } = {}) {
+function resolveReachability({ force = false }: { force?: boolean } = {}): Promise<ReachabilityFacts> {
   if (!force && cached) return cached
   const fallback = { base: windowOrigin(), rendezvousUrl: '', builtinPrefix: '' }
   const applyFallback = () => {
@@ -125,7 +122,7 @@ function resolveReachability({ force = false } = {}) {
       try {
         const res = await fetch(REACHABILITY_URL, { method: 'GET', signal: ctrl?.signal })
         if (!res?.ok) return applyFallback()
-        const body = await res.json()
+        const body: { public_base_url?: unknown; rendezvous_url?: unknown; builtin_rendezvous_prefix?: unknown } = await res.json()
         const pub = body && typeof body.public_base_url === 'string' ? body.public_base_url.trim() : ''
         const base = pub ? pub.replace(/\/+$/, '') : fallback.base
         const rv = body && typeof body.rendezvous_url === 'string' ? body.rendezvous_url.trim() : ''
@@ -161,7 +158,7 @@ function resolveReachability({ force = false } = {}) {
  * @param {boolean} [opts.force=false] bypass the cache and re-resolve
  * @returns {Promise<string>}
  */
-export async function resolveReachableBase(opts) {
+export async function resolveReachableBase(opts?: { force?: boolean }): Promise<string> {
   const { base } = await resolveReachability(opts)
   return base
 }
@@ -176,7 +173,7 @@ export async function resolveReachableBase(opts) {
  * @param {boolean} [opts.force=false] bypass the cache and re-resolve
  * @returns {Promise<string>}
  */
-export async function resolveRendezvousUrl(opts) {
+export async function resolveRendezvousUrl(opts?: { force?: boolean }): Promise<string> {
   const { rendezvousUrl } = await resolveReachability(opts)
   return rendezvousUrl
 }
@@ -200,7 +197,7 @@ export async function resolveRendezvousUrl(opts) {
  * @param {boolean} [opts.force=false] bypass the cache and re-resolve
  * @returns {Promise<string>}
  */
-export async function resolveBuiltinRendezvousPrefix(opts) {
+export async function resolveBuiltinRendezvousPrefix(opts?: { force?: boolean }): Promise<string> {
   const { builtinPrefix } = await resolveReachability(opts)
   return builtinPrefix
 }
@@ -211,14 +208,14 @@ export async function resolveBuiltinRendezvousPrefix(opts) {
  * `reachableBaseSync()`.
  * @returns {string}
  */
-export function builtinRendezvousPrefixSync() {
+export function builtinRendezvousPrefixSync(): string {
   return resolvedBuiltinSync
 }
 
 /**
  * Test-only: clear the cached resolution so a fresh fetch runs.
  */
-export function _resetReachableBaseCache() {
+export function _resetReachableBaseCache(): void {
   cached = null
   resolvedSync = ''
   resolvedRendezvousSync = ''

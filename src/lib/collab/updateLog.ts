@@ -38,28 +38,61 @@ import * as Y from 'yjs'
 import { REMOTE_ORIGIN, SEED_ORIGIN, bytesToB64, b64ToBytes } from '../crdt/ydoc.js'
 import { api } from '../api.js'
 
+export type UpdateLogFrame = { seq: number; kind: string; data: string; floor?: number }
+export type UpdateLogAppendInput = { kind?: string; data: string; floor?: number }
+export type UpdateLogAppendResult = { seq?: number; compact?: boolean; floor?: number }
+export type UpdateLogLoadResult = {
+  snapshot: UpdateLogFrame | null
+  frames: UpdateLogFrame[]
+  head: number
+}
+export type UpdateLogTransportError = Error & { status?: number }
+
 /**
  * A transport is `{ load(since) -> {snapshot, frames, head}, append({kind,data,floor}) -> {seq} }`.
  * The default talks to the REST API; tests inject an in-memory one
  * (createMemoryUpdateLog) that mirrors the server's seq/snapshot semantics.
  */
-export function apiTransport(fileId) {
+export type UpdateLogTransport = {
+  load(since?: number): Promise<UpdateLogLoadResult>
+  append(frame: UpdateLogAppendInput): Promise<UpdateLogAppendResult>
+}
+
+export function apiTransport(fileId?: string): UpdateLogTransport {
   return {
-    load: (since = 0) => api.getUpdates(fileId, since),
-    append: (frame) => api.appendUpdate(fileId, frame),
+    load: (since = 0) => api.getUpdates(fileId as string, since) as Promise<UpdateLogLoadResult>,
+    append: (frame) => api.appendUpdate(fileId as string, frame) as Promise<UpdateLogAppendResult>,
   }
 }
 
 export class UpdateLogSync {
+  private _ydoc: Y.Doc
+  private _t: UpdateLogTransport
+  private _debounceMs: number
+  private _snapshotEvery: number
+  private _enabled: boolean
+  private _started: boolean
+  private _dirty: boolean
+  private _flushing: boolean
+  private _timer: ReturnType<typeof setTimeout> | null
+  private _appendsSinceSnapshot: number
+  coveredSeq: number
+  private _flushedSV: Uint8Array
+  private _onLocalUpdate: (update: Uint8Array, origin: unknown) => void
+
   /**
-   * @param {object} opts
-   * @param {Y.Doc} opts.ydoc
-   * @param {string} [opts.fileId]      required when no transport is supplied
-   * @param {object} [opts.transport]   inject a transport (tests)
-   * @param {number} [opts.debounceMs]  coalesce local edits before appending
-   * @param {number} [opts.snapshotEvery] append this many frames, then compact
+   * @param opts.fileId      required when no transport is supplied
+   * @param opts.transport   inject a transport (tests)
+   * @param opts.debounceMs  coalesce local edits before appending
+   * @param opts.snapshotEvery append this many frames, then compact
    */
-  constructor({ ydoc, fileId, transport, debounceMs = 800, snapshotEvery = 150 }) {
+  constructor({ ydoc, fileId, transport, debounceMs = 800, snapshotEvery = 150 }: {
+    ydoc: Y.Doc
+    fileId?: string
+    transport?: UpdateLogTransport
+    debounceMs?: number
+    snapshotEvery?: number
+  }) {
     if (!ydoc) throw new Error('UpdateLogSync: missing ydoc')
     this._ydoc = ydoc
     this._t = transport || apiTransport(fileId)
@@ -77,7 +110,7 @@ export class UpdateLogSync {
     // has beyond this point.
     this._flushedSV = Y.encodeStateVector(ydoc)
 
-    this._onLocalUpdate = (update, origin) => {
+    this._onLocalUpdate = (_update: Uint8Array, origin: unknown) => {
       // Skip our own applied frames (REMOTE_ORIGIN) and the deterministic
       // content seed (SEED_ORIGIN) — the seed is re-derived from the document's
       // authoritative content on every open, so logging it would just duplicate
@@ -92,11 +125,11 @@ export class UpdateLogSync {
 
   /** Fetch the snapshot + missing frames and apply them. Returns true if the
    * server has an update log (false → disabled, caller relies on whole-doc PUT). */
-  async hydrate() {
-    let log
+  async hydrate(): Promise<boolean> {
+    let log: UpdateLogLoadResult
     try {
       log = await this._t.load(0)
-    } catch (err) {
+    } catch {
       // 404 (flag off) or any transport failure: disable and fall back cleanly.
       this._enabled = false
       return false
@@ -120,14 +153,14 @@ export class UpdateLogSync {
   }
 
   /** Begin appending local edits. Safe to call once; no-op if disabled. */
-  start() {
+  start(): void {
     if (this._started || !this._enabled) return
     this._started = true
     this._ydoc.on('update', this._onLocalUpdate)
   }
 
   /** Detach and flush any pending edit. */
-  async stop() {
+  async stop(): Promise<void> {
     if (!this._started) return
     this._started = false
     try { this._ydoc.off('update', this._onLocalUpdate) } catch { /* already gone */ }
@@ -135,7 +168,7 @@ export class UpdateLogSync {
     await this.flush()
   }
 
-  _schedule() {
+  private _schedule(): void {
     if (!this._enabled || this._timer) return
     this._timer = setTimeout(() => {
       this._timer = null
@@ -144,7 +177,7 @@ export class UpdateLogSync {
   }
 
   /** Append the delta since the last flush (exactly the new content). */
-  async flush() {
+  async flush(): Promise<void> {
     if (!this._enabled || this._flushing || !this._dirty) return
     this._flushing = true
     // Snapshot the dirty flag: edits arriving during the append are captured by
@@ -167,7 +200,7 @@ export class UpdateLogSync {
     } catch (err) {
       // A 404 mid-life (flag turned off) disables the layer; otherwise keep the
       // dirty flag set so the edit is retried on the next flush.
-      if (err && err.status === 404) this._enabled = false
+      if ((err as UpdateLogTransportError)?.status === 404) this._enabled = false
     } finally {
       this._flushing = false
     }
@@ -175,7 +208,7 @@ export class UpdateLogSync {
 
   /** Compact: post the whole state as a snapshot with floor = coveredSeq, so the
    * server can prune the frames it subsumes. */
-  async snapshot() {
+  async snapshot(): Promise<void> {
     if (!this._enabled) return
     const state = Y.encodeStateAsUpdate(this._ydoc)
     try {
@@ -187,7 +220,7 @@ export class UpdateLogSync {
       if (resp && typeof resp.seq === 'number') this.coveredSeq = resp.seq
       this._appendsSinceSnapshot = 0
     } catch (err) {
-      if (err && err.status === 404) this._enabled = false
+      if ((err as UpdateLogTransportError)?.status === 404) this._enabled = false
       // A 409 (stale snapshot) is benign: another client already compacted.
     }
   }
@@ -200,13 +233,13 @@ export class UpdateLogSync {
  * convergence tests drive it so they exercise the exact durability model
  * without a network.
  */
-export function createMemoryUpdateLog() {
+export function createMemoryUpdateLog(): UpdateLogTransport & { _debug: () => { head: number; frames: UpdateLogFrame[]; snapshot: UpdateLogFrame | null } } {
   let head = 0
-  let frames = []          // { seq, kind, data }
-  let snapshot = null      // { seq, kind:'snapshot', data, floor }
+  let frames: UpdateLogFrame[] = []
+  let snapshot: UpdateLogFrame | null = null
   return {
     async load(since = 0) {
-      const floor = snapshot ? snapshot.floor : 0
+      const floor = snapshot ? (snapshot.floor ?? 0) : 0
       if (snapshot && since < floor) {
         return {
           snapshot,
@@ -216,13 +249,13 @@ export function createMemoryUpdateLog() {
       }
       return { snapshot: null, frames: frames.filter((f) => f.seq > since), head }
     },
-    async append({ kind = 'update', data, floor = 0 }) {
+    async append({ kind = 'update', data, floor = 0 }: UpdateLogAppendInput) {
       head += 1
       const seq = head
       if (kind === 'snapshot') {
-        let fl = Math.max(0, Math.min(floor, head - 1))
-        if (snapshot && fl < snapshot.floor) {
-          const err = new Error('stale snapshot')
+        const fl = Math.max(0, Math.min(floor, head - 1))
+        if (snapshot && fl < (snapshot.floor ?? 0)) {
+          const err: UpdateLogTransportError = new Error('stale snapshot')
           err.status = 409
           throw err
         }

@@ -20,13 +20,36 @@
  *
  * remoteCursors: Map<accountId, { accountId, displayName, color, from, to, slideId? }>
  *
- * JSX only — no .tsx.
+ * No JSX markup in this file, so plain .ts (not .tsx) is enough.
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 
 const CURSOR_CHANNEL = 'cursors'
 const THROTTLE_MS = 80   // max one broadcast per 80 ms
+
+// Structural subset of FabricClient (webrtc/fabric.js, not yet typed) this
+// hook actually calls — a DOM-EventTarget-shaped P2P data channel whose
+// 'message' event is a CustomEvent carrying { data } in `.detail` (NOT a
+// native MessageEvent, which would carry `.data` directly).
+export type FabricMessageEvent = CustomEvent<{ data: string | ArrayBuffer | Uint8Array }>
+export interface FabricLike {
+  addEventListener(type: 'message', listener: (ev: FabricMessageEvent) => void): void
+  removeEventListener(type: 'message', listener: (ev: FabricMessageEvent) => void): void
+  send(data: string): void
+}
+
+export type LocalIdentity = { accountId: string; displayName?: string }
+export type CursorType = 'doc' | 'sheet' | 'slide'
+export type CursorPayload = {
+  accountId: string
+  displayName?: string
+  color?: string
+  from: string | number
+  to: string | number
+  type: CursorType
+  slideId?: string
+}
 
 /**
  * Derive a warm-leaning HSL colour for a peer from their accountId string.
@@ -39,7 +62,7 @@ const THROTTLE_MS = 80   // max one broadcast per 80 ms
  *
  * This replaces the old `hsl(h, 65%, 50%)` which produced oversaturated colours.
  */
-export function peerColor(accountId) {
+export function peerColor(accountId: string | null | undefined): string {
   if (!accountId) return 'var(--accent)'   // fallback to system accent
   let h = 0
   for (const c of accountId) {
@@ -55,11 +78,12 @@ export function peerColor(accountId) {
   return `hsl(${adjustedHue},${sat}%,${lig}%)`
 }
 
-export function useLiveCursors({ fabric, localIdentity, color }) {
-  /** @type {[Map<string, object>, Function]} */
-  const [remoteCursors, setRemoteCursors] = useState(new Map())
+export function useLiveCursors(
+  { fabric, localIdentity, color }: { fabric: FabricLike | null | undefined; localIdentity: LocalIdentity | null | undefined; color?: string }
+) {
+  const [remoteCursors, setRemoteCursors] = useState<Map<string, CursorPayload>>(new Map())
   const lastSentRef = useRef(0)
-  const pendingRef  = useRef(null)
+  const pendingRef  = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Listen for remote cursor frames on the fabric.
   useEffect(() => {
@@ -68,10 +92,11 @@ export function useLiveCursors({ fabric, localIdentity, color }) {
       return
     }
 
-    const onMessage = ({ detail: { data } }) => {
-      let text
+    const onMessage = (ev: FabricMessageEvent) => {
+      const data = ev.detail.data
+      let text: string
       try { text = typeof data === 'string' ? data : new TextDecoder().decode(data) } catch { return }
-      let frame
+      let frame: { channel?: string; payload?: CursorPayload }
       try { frame = JSON.parse(text) } catch { return }
       if (frame.channel !== CURSOR_CHANNEL) return
       const p = frame.payload
@@ -91,7 +116,7 @@ export function useLiveCursors({ fabric, localIdentity, color }) {
   }, [fabric]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Internal: send a cursor frame immediately or schedule one.
-  const _sendCursor = useCallback((payload) => {
+  const _sendCursor = useCallback((payload: CursorPayload) => {
     if (!fabric || !localIdentity) return
     const now = Date.now()
     const send = () => {
@@ -104,13 +129,13 @@ export function useLiveCursors({ fabric, localIdentity, color }) {
     if (elapsed >= THROTTLE_MS) {
       send()
     } else {
-      clearTimeout(pendingRef.current)
+      if (pendingRef.current) clearTimeout(pendingRef.current)
       pendingRef.current = setTimeout(send, THROTTLE_MS - elapsed)
     }
   }, [fabric, localIdentity])
 
   /** Broadcast a Docs (TipTap) caret / selection. */
-  const broadcastDocCursor = useCallback((from, to) => {
+  const broadcastDocCursor = useCallback((from: number, to: number) => {
     if (!localIdentity) return
     _sendCursor({
       accountId:   localIdentity.accountId,
@@ -123,7 +148,7 @@ export function useLiveCursors({ fabric, localIdentity, color }) {
   }, [_sendCursor, localIdentity, color])
 
   /** Broadcast a Sheets cell selection. */
-  const broadcastSheetCursor = useCallback((row, col) => {
+  const broadcastSheetCursor = useCallback((row: number, col: number) => {
     if (!localIdentity) return
     _sendCursor({
       accountId:   localIdentity.accountId,
@@ -136,7 +161,7 @@ export function useLiveCursors({ fabric, localIdentity, color }) {
   }, [_sendCursor, localIdentity, color])
 
   /** Broadcast the active slide id in SlidesEditor. */
-  const broadcastSlideCursor = useCallback((slideId) => {
+  const broadcastSlideCursor = useCallback((slideId: string) => {
     if (!localIdentity) return
     _sendCursor({
       accountId:   localIdentity.accountId,

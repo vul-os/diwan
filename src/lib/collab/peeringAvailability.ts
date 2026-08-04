@@ -26,8 +26,7 @@
 
 const PROBE_TIMEOUT_MS = 2500
 
-/** @type {Map<string, Promise<boolean>>} */
-const cache = new Map()
+const cache = new Map<string, Promise<boolean>>()
 
 /**
  * Resolve whether the peering fabric is reachable on this origin by probing
@@ -35,14 +34,14 @@ const cache = new Map()
  * network error, non-2xx response, or timeout — exactly the standalone-Office
  * case (no `/api/peering/*` routes mounted at all → 404).
  *
- * @param {object} [opts]
- * @param {string} [opts.iceUrl='/api/peering/ice']
- * @param {boolean} [opts.force=false] bypass the cache and re-probe
- * @returns {Promise<boolean>}
+ * @param opts.iceUrl default '/api/peering/ice'
+ * @param opts.force  bypass the cache and re-probe
  */
-export function probePeeringAvailable({ iceUrl = '/api/peering/ice', force = false } = {}) {
+export function probePeeringAvailable(
+  { iceUrl = '/api/peering/ice', force = false }: { iceUrl?: string; force?: boolean } = {}
+): Promise<boolean> {
   if (typeof fetch !== 'function') return Promise.resolve(false)
-  if (!force && cache.has(iceUrl)) return cache.get(iceUrl)
+  if (!force && cache.has(iceUrl)) return cache.get(iceUrl) as Promise<boolean>
 
   const probe = (async () => {
     try {
@@ -71,9 +70,9 @@ export function probePeeringAvailable({ iceUrl = '/api/peering/ice', force = fal
 /**
  * Test-only: clear the cached probe result(s) so a fresh probe runs. Not used
  * in production code — each real session lives for the whole page lifetime.
- * @param {string} [iceUrl] clear only this key; omit to clear everything.
+ * @param iceUrl clear only this key; omit to clear everything.
  */
-export function _resetPeeringProbeCache(iceUrl) {
+export function _resetPeeringProbeCache(iceUrl?: string): void {
   if (iceUrl) cache.delete(iceUrl)
   else cache.clear()
 }
