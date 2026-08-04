@@ -1,13 +1,56 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, type MouseEvent as ReactMouseEvent } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import * as pdfjsLib from 'pdfjs-dist'
+import type { PDFDocumentProxy } from 'pdfjs-dist'
 import {
   ArrowLeft, Plus, Trash2, X, Save, ChevronLeft, ChevronRight,
   User, FileSignature, Type as TypeIcon, Calendar, Pen, AlignLeft,
   CheckSquare, Square, Upload,
+  type LucideIcon,
 } from 'lucide-react'
-import { api } from '../../lib/api.js'
+import { api, type JsonRecord } from '../../lib/api'
 import { Button, IconButton, Input, Card, Tabs, Topbar, Tooltip } from '../../components/ui'
+
+type FieldKind = 'signature' | 'initial' | 'date' | 'name' | 'text'
+
+interface Signer {
+  id: string
+  name: string
+  email: string
+  order: number
+  color: string
+}
+
+interface SigningField {
+  id: string
+  page: number
+  x: number
+  y: number
+  w: number
+  h: number
+  type: FieldKind
+  signerId: string | null
+  required: boolean
+}
+
+interface FieldTypeDescriptor {
+  type: FieldKind
+  label: string
+  icon: LucideIcon
+  w: number
+  h: number
+}
+
+interface EnvelopeResponse extends JsonRecord {
+  id: string
+  title?: string
+  order_mode?: 'sequential' | 'parallel'
+  signers?: Array<{ id: string; name: string; email?: string; order: number }>
+  fields?: Array<{
+    id: string; page: number; x: number; y: number; w: number; h: number
+    type: FieldKind; signer_id?: string | null; required: boolean
+  }>
+}
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -31,6 +74,10 @@ function genId() {
   return Math.random().toString(36).slice(2, 11)
 }
 
+function errMsg(e: unknown): string {
+  return e instanceof Error ? e.message : String(e)
+}
+
 // Signer colour palette — warm, used only for per-signer stripes and chips
 // (the field overlays remain in the single accent palette).
 const SIGNER_COLORS = [
@@ -46,7 +93,7 @@ const SIGNER_COLORS = [
   '#6b6457', // oat-600
 ]
 
-const FIELD_TYPES = [
+const FIELD_TYPES: FieldTypeDescriptor[] = [
   { type: 'signature', label: 'Signature', icon: FileSignature, w: 200, h: 60 },
   { type: 'initial',   label: 'Initial',   icon: Pen,           w: 100, h: 50 },
   { type: 'date',      label: 'Date',      icon: Calendar,      w: 130, h: 36 },
@@ -59,45 +106,45 @@ export default function SigningSetup() {
   const location = useLocation()
 
   // PDF rendering
-  const [pdfJsDoc, setPdfJsDoc]       = useState(null)
+  const [pdfJsDoc, setPdfJsDoc]       = useState<PDFDocumentProxy | null>(null)
   const [totalPages, setTotalPages]    = useState(0)
   const [currentPage, setCurrentPage] = useState(1)
   const [zoom, setZoom]               = useState(1.0)
   const [filename, setFilename]       = useState('')
-  const [fileId, setFileId]           = useState(null)
-  const [envelopeId, setEnvelopeId]   = useState(null) // null = new, string = editing
+  const [fileId, setFileId]           = useState<string | null>(null)
+  const [envelopeId, setEnvelopeId]   = useState<string | null>(null) // null = new, string = editing
   const [loadingPdf, setLoadingPdf]   = useState(false)
-  const pageCanvasRef    = useRef(null)
-  const canvasAreaRef    = useRef(null)
-  const thumbnailRefs    = useRef({})
-  const fileInputRef     = useRef(null)
+  const pageCanvasRef    = useRef<HTMLCanvasElement | null>(null)
+  const canvasAreaRef    = useRef<HTMLDivElement | null>(null)
+  const thumbnailRefs    = useRef<Record<number, HTMLCanvasElement>>({})
+  const fileInputRef     = useRef<HTMLInputElement | null>(null)
 
   // Signers: [{ id, name, email, order, color }]
-  const [signers, setSigners] = useState([])
-  const [orderMode, setOrderMode] = useState('sequential') // sequential | parallel
+  const [signers, setSigners] = useState<Signer[]>([])
+  const [orderMode, setOrderMode] = useState<'sequential' | 'parallel'>('sequential')
   const [envelopeTitle, setEnvelopeTitle] = useState('')
 
   // Fields: [{ id, page, x, y, w, h, type, signerId, required }]
-  const [fields, setFields] = useState([])
-  const [selectedFieldId, setSelectedFieldId] = useState(null)
-  const [activePlaceType, setActivePlaceType] = useState(null) // placing a field of this type
+  const [fields, setFields] = useState<SigningField[]>([])
+  const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null)
+  const [activePlaceType, setActivePlaceType] = useState<FieldKind | null>(null) // placing a field of this type
 
   // Drag state for field repositioning
-  const dragRef = useRef({ active: false })
+  const dragRef = useRef<{ active: boolean; moved?: boolean }>({ active: false })
 
   // UI
-  const [toast, setToast]           = useState(null)
+  const [toast, setToast]           = useState<string | null>(null)
   const [saving, setSaving]         = useState(false)
   const [dragOver, setDragOver]     = useState(false)
-  const [pdfArrayBuffer, setPdfArrayBuffer] = useState(null)
+  const [pdfArrayBuffer, setPdfArrayBuffer] = useState<ArrayBuffer | null>(null)
 
-  const showToast = useCallback((msg) => {
+  const showToast = useCallback((msg: string) => {
     setToast(msg)
     setTimeout(() => setToast(null), 3000)
   }, [])
 
   // ── Load PDF ────────────────────────────────────────────────
-  const loadPDF = useCallback(async (file) => {
+  const loadPDF = useCallback(async (file: File | null | undefined) => {
     if (!file || file.type !== 'application/pdf') {
       showToast('Please provide a valid PDF file')
       return
@@ -114,13 +161,13 @@ export default function SigningSetup() {
       if (!envelopeTitle) setEnvelopeTitle(file.name.replace(/\.pdf$/i, ''))
       showToast('PDF loaded')
     } catch (e) {
-      showToast('Error loading PDF: ' + e.message)
+      showToast('Error loading PDF: ' + errMsg(e))
     } finally {
       setLoadingPdf(false)
     }
   }, [showToast, envelopeTitle])
 
-  const loadPDFFromUrl = useCallback(async (url, name) => {
+  const loadPDFFromUrl = useCallback(async (url: string, name: string | undefined) => {
     setLoadingPdf(true)
     try {
       const res = await fetch(url)
@@ -134,7 +181,7 @@ export default function SigningSetup() {
       if (!envelopeTitle) setEnvelopeTitle((name || 'document.pdf').replace(/\.pdf$/i, ''))
       showToast('PDF loaded')
     } catch (e) {
-      showToast('Error loading PDF: ' + e.message)
+      showToast('Error loading PDF: ' + errMsg(e))
     } finally {
       setLoadingPdf(false)
     }
@@ -142,15 +189,21 @@ export default function SigningSetup() {
 
   // Auto-load from router state or session (same as PDFEditor)
   useEffect(() => {
-    const state = location.state || {}
+    const state = (location.state || {}) as {
+      envelopeId?: string
+      fileId?: string
+      localFileUrl?: string
+      localFileName?: string
+    }
 
     // Load existing envelope if provided.
     if (state.envelopeId) {
       setEnvelopeId(state.envelopeId)
-      api.getEnvelope(state.envelopeId).then(env => {
+      api.getEnvelope(state.envelopeId).then((envRaw) => {
+        const env = envRaw as EnvelopeResponse
         setEnvelopeTitle(env.title || '')
         setOrderMode(env.order_mode || 'sequential')
-        const loadedSigners = (env.signers || []).map((s, i) => ({
+        const loadedSigners: Signer[] = (env.signers || []).map((s, i) => ({
           id: s.id,
           name: s.name,
           email: s.email || '',
@@ -158,12 +211,12 @@ export default function SigningSetup() {
           color: SIGNER_COLORS[i % SIGNER_COLORS.length],
         }))
         setSigners(loadedSigners)
-        const loadedFields = (env.fields || []).map(f => ({
+        const loadedFields: SigningField[] = (env.fields || []).map(f => ({
           id: f.id,
           page: f.page,
           x: f.x, y: f.y, w: f.w, h: f.h,
           type: f.type,
-          signerId: f.signer_id,
+          signerId: f.signer_id ?? null,
           required: f.required,
         }))
         setFields(loadedFields)
@@ -176,12 +229,14 @@ export default function SigningSetup() {
     if (pending) {
       sessionStorage.removeItem('pendingPDF')
       try {
-        const { name, url, data, fileId: fid } = JSON.parse(pending)
+        const { name, url, data, fileId: fid } = JSON.parse(pending) as {
+          name?: string; url?: string; data?: string; fileId?: string
+        }
         if (fid) setFileId(fid)
         if (url) loadPDFFromUrl(url, name)
         else if (data) {
           const bytes = Uint8Array.from(atob(data), c => c.charCodeAt(0))
-          loadPDF(new File([bytes], name, { type: 'application/pdf' }))
+          loadPDF(new File([bytes], name || 'document.pdf', { type: 'application/pdf' }))
         }
       } catch {}
       return
@@ -191,7 +246,7 @@ export default function SigningSetup() {
   }, [])
 
   // ── Render page ─────────────────────────────────────────────
-  const renderPage = useCallback(async (pageNum, scale) => {
+  const renderPage = useCallback(async (pageNum: number, scale: number) => {
     if (!pdfJsDoc || !pageCanvasRef.current) return
     try {
       const page = await pdfJsDoc.getPage(pageNum)
@@ -199,7 +254,9 @@ export default function SigningSetup() {
       const canvas = pageCanvasRef.current
       canvas.width = viewport.width
       canvas.height = viewport.height
-      await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+      await page.render({ canvasContext: ctx, viewport }).promise
     } catch {}
   }, [pdfJsDoc])
 
@@ -213,20 +270,22 @@ export default function SigningSetup() {
     for (let i = 1; i <= totalPages; i++) renderThumbnail(i)
   }, [pdfJsDoc, totalPages])
 
-  const renderThumbnail = async (pageNum) => {
+  const renderThumbnail = async (pageNum: number) => {
     const canvas = thumbnailRefs.current[pageNum]
     if (!canvas || !pdfJsDoc) return
     try {
       const page = await pdfJsDoc.getPage(pageNum)
       const vp = page.getViewport({ scale: 0.22 })
       canvas.width = vp.width; canvas.height = vp.height
-      await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return
+      await page.render({ canvasContext: ctx, viewport: vp }).promise
     } catch {}
   }
 
   // ── Esc cancels active place type ───────────────────────────
   useEffect(() => {
-    const onKey = (e) => {
+    const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && activePlaceType) setActivePlaceType(null)
     }
     window.addEventListener('keydown', onKey)
@@ -235,7 +294,7 @@ export default function SigningSetup() {
 
   // ── Signer management ────────────────────────────────────────
   const addSigner = () => {
-    const newSigner = {
+    const newSigner: Signer = {
       id: genId(),
       name: `Signer ${signers.length + 1}`,
       email: '',
@@ -245,26 +304,26 @@ export default function SigningSetup() {
     setSigners(prev => [...prev, newSigner])
   }
 
-  const updateSigner = (id, changes) => {
+  const updateSigner = (id: string, changes: Partial<Signer>) => {
     setSigners(prev => prev.map(s => s.id === id ? { ...s, ...changes } : s))
   }
 
-  const removeSigner = (id) => {
+  const removeSigner = (id: string) => {
     setSigners(prev => prev.filter(s => s.id !== id))
     // Unassign fields from this signer
     setFields(prev => prev.map(f => f.signerId === id ? { ...f, signerId: null } : f))
   }
 
   // ── Field placement ──────────────────────────────────────────
-  const handleCanvasClick = (e) => {
+  const handleCanvasClick = (e: ReactMouseEvent<HTMLDivElement>) => {
     if (!pdfJsDoc || !activePlaceType) return
     const canvas = pageCanvasRef.current
     if (!canvas) return
     const rect = canvas.getBoundingClientRect()
     const x = e.clientX - rect.left
     const y = e.clientY - rect.top
-    const ft = FIELD_TYPES.find(f => f.type === activePlaceType)
-    const newField = {
+    const ft = FIELD_TYPES.find(f => f.type === activePlaceType)!
+    const newField: SigningField = {
       id: genId(),
       page: currentPage,
       x: x - ft.w / 2,
@@ -280,17 +339,17 @@ export default function SigningSetup() {
     setActivePlaceType(null)
   }
 
-  const removeField = (id) => {
+  const removeField = (id: string) => {
     setFields(prev => prev.filter(f => f.id !== id))
     if (selectedFieldId === id) setSelectedFieldId(null)
   }
 
-  const updateField = (id, changes) => {
+  const updateField = (id: string, changes: Partial<SigningField>) => {
     setFields(prev => prev.map(f => f.id === id ? { ...f, ...changes } : f))
   }
 
   // Drag to reposition a field
-  const onFieldMouseDown = (e, field) => {
+  const onFieldMouseDown = (e: ReactMouseEvent<HTMLDivElement>, field: SigningField) => {
     e.stopPropagation()
     if (activePlaceType) return
     setSelectedFieldId(field.id)
@@ -299,7 +358,7 @@ export default function SigningSetup() {
     let moved = false
     dragRef.current = { active: true }
 
-    const onMove = (me) => {
+    const onMove = (me: globalThis.MouseEvent) => {
       moved = true
       dragRef.current.moved = true
       updateField(field.id, {
@@ -344,16 +403,15 @@ export default function SigningSetup() {
           status: 'pending',
         })),
       }
-      let saved
       if (envelopeId) {
-        saved = await api.updateEnvelope(envelopeId, payload)
+        await api.updateEnvelope(envelopeId, payload)
       } else {
-        saved = await api.createEnvelope(payload)
+        const saved = await api.createEnvelope(payload) as { id: string }
         setEnvelopeId(saved.id)
       }
       showToast('Envelope saved!')
     } catch (e) {
-      showToast('Save error: ' + (e.message || 'Unknown error'))
+      showToast('Save error: ' + (errMsg(e) || 'Unknown error'))
     } finally {
       setSaving(false)
     }
@@ -362,7 +420,7 @@ export default function SigningSetup() {
   // ── Helpers ──────────────────────────────────────────────────
   const currentPageFields = fields.filter(f => f.page === currentPage)
   const selectedField = selectedFieldId ? fields.find(f => f.id === selectedFieldId) : null
-  const signerForField = (f) => signers.find(s => s.id === f?.signerId)
+  const signerForField = (f: SigningField | null | undefined) => signers.find(s => s.id === f?.signerId)
 
   // ── Render ───────────────────────────────────────────────────
   return (
@@ -463,7 +521,7 @@ export default function SigningSetup() {
         {/* Signing order Tabs — sequential / parallel */}
         <Tabs
           value={orderMode}
-          onChange={setOrderMode}
+          onChange={(v) => setOrderMode(v as 'sequential' | 'parallel')}
           items={[
             { value: 'sequential', label: 'Sequential' },
             { value: 'parallel',   label: 'Parallel' },
@@ -817,7 +875,11 @@ export default function SigningSetup() {
 
                 {/* Position / size */}
                 <div className="grid grid-cols-2 gap-2">
-                  {[['x', 'X'], ['y', 'Y'], ['w', 'W'], ['h', 'H']].map(([key, label]) => (
+                  {(
+                    [['x', 'X'], ['y', 'Y'], ['w', 'W'], ['h', 'H']] as Array<
+                      ['x' | 'y' | 'w' | 'h', string]
+                    >
+                  ).map(([key, label]) => (
                     <div key={key}>
                       <label className="block text-2xs text-ink-faint mb-1 tracking-tightish">
                         {label} (px)
@@ -825,7 +887,7 @@ export default function SigningSetup() {
                       <input
                         type="number"
                         value={Math.round(selectedField[key])}
-                        onChange={e => updateField(selectedField.id, { [key]: parseFloat(e.target.value) || 0 })}
+                        onChange={e => updateField(selectedField.id, { [key]: parseFloat(e.target.value) || 0 } as Partial<SigningField>)}
                         className="w-full bg-paper border border-line rounded-sm px-2 py-1 text-2xs text-ink outline-none focus:border-accent focus:shadow-focus"
                       />
                     </div>
@@ -932,7 +994,7 @@ export default function SigningSetup() {
         type="file"
         accept=".pdf"
         className="hidden"
-        onChange={e => { if (e.target.files[0]) loadPDF(e.target.files[0]); e.target.value = '' }}
+        onChange={e => { if (e.target.files?.[0]) loadPDF(e.target.files[0]); e.target.value = '' }}
       />
     </div>
   )
