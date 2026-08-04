@@ -17,6 +17,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import { PRESET_THEMES, getTheme, DECK_TEMPLATES, MASTER_LAYOUTS } from './themes'
+import type { PresenterSlidesData } from './PresenterView.jsx'
 
 // ── 1. Theme gallery: PRESET_THEMES has 15 entries ─────────────────────────
 
@@ -81,8 +82,8 @@ describe('master slide layouts', () => {
     })
     const content = merged.find((m) => m.id === 'content')
     const title = merged.find((m) => m.id === 'title')
-    expect(content.footerText).toBe('Company Inc.')
-    expect(title.footerText).toBe('')
+    expect(content!.footerText).toBe('Company Inc.')
+    expect(title!.footerText).toBe('')
   })
 })
 
@@ -93,13 +94,13 @@ describe('presenter view', () => {
     const openSpy = vi.spyOn(window, 'open').mockReturnValue({
       closed: false,
       focus: vi.fn(),
-    })
+    } as unknown as Window)
     const createObjectURLSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:test-url')
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
 
     const { usePresenterView } = await import('./PresenterView.jsx')
 
-    const slidesData = {
+    const slidesData: PresenterSlidesData = {
       slides: [
         { id: '1', title: 'Slide 1', content: '<p>Hello</p>', notes: 'Note', background: '' },
       ],
@@ -107,7 +108,7 @@ describe('presenter view', () => {
     }
 
     // Simulate the hook
-    let openPresenter
+    let openPresenter: (activeIdx?: number) => void
     function TestHook() {
       const result = usePresenterView(slidesData)
       openPresenter = result.openPresenter
@@ -174,7 +175,7 @@ describe('image insert', () => {
   it('video URL parser detects YouTube embed', async () => {
     // Test parseVideoUrl indirectly by clicking Insert video + entering a YouTube URL.
     const { default: InsertPanel } = await import('./InsertPanel.jsx')
-    const insertedHtml = []
+    const insertedHtml: string[] = []
     const mockApi = { uploadImage: vi.fn() }
 
     render(
@@ -207,7 +208,7 @@ describe('slide reorder', () => {
     ]
 
     // Simulate the drag-reorder logic (same as TransitionPanel.handleDragEnd).
-    function reorder(arr, fromIdx, toIdx) {
+    function reorder<T>(arr: T[], fromIdx: number, toIdx: number): T[] {
       const next = [...arr]
       const [item] = next.splice(fromIdx, 1)
       next.splice(toIdx, 0, item)
@@ -277,8 +278,8 @@ describe('template gallery', () => {
   it('pitch deck template references the correct theme', () => {
     const pitchTpl = DECK_TEMPLATES.find((t) => t.id === 'pitch')
     expect(pitchTpl).toBeDefined()
-    const theme = getTheme(pitchTpl.themeId)
-    expect(theme.id).toBe(pitchTpl.themeId)
+    const theme = getTheme(pitchTpl!.themeId)
+    expect(theme.id).toBe(pitchTpl!.themeId)
   })
 
   it('all templates have at least 3 slides', () => {
@@ -306,23 +307,36 @@ describe('custom theme override', () => {
 
 // ── 10. Slides toolbar undo/redo chain routing ─────────────────────────────
 
+interface ChainCall {
+  cmd: string | symbol
+  args: unknown[]
+}
+
+// A chain proxy where every property access returns a further-chainable
+// function (matching Tiptap's real `.chain().focus()....run()` shape). None
+// of these tests read run()'s actual return value, so a single recursive
+// shape covers every method including run() without a separate boolean case.
+interface SlideChainMock {
+  [key: string]: (...args: unknown[]) => SlideChainMock
+}
+
 describe('slides toolbar undo/redo and formatting', () => {
   // Minimal chain mock matching the docs mock pattern.
   function makeSlideChain() {
-    const store = { _calls: [] }
+    const store: { _calls: ChainCall[] } = { _calls: [] }
     const chain = new Proxy(store, {
       get(target, prop) {
         if (prop === 'run') return () => true
-        return (...args) => {
+        return (...args: unknown[]) => {
           target._calls.push({ cmd: prop, args })
           return chain
         }
       },
-    })
+    }) as unknown as SlideChainMock
     return { store, chain }
   }
 
-  function makeSlideEditor(overrides = {}) {
+  function makeSlideEditor(overrides: Record<string, unknown> = {}) {
     const { store, chain } = makeSlideChain()
     return {
       _store: store,
@@ -358,7 +372,7 @@ describe('slides toolbar undo/redo and formatting', () => {
     editor.chain().focus().setLink({ href: 'https://vulos.org', target: '_blank' }).run()
     const call = editor._store._calls.find((c) => c.cmd === 'setLink')
     expect(call).toBeDefined()
-    expect(call.args[0].href).toBe('https://vulos.org')
+    expect((call!.args[0] as { href: string }).href).toBe('https://vulos.org')
   })
 
   it('toggleHeading routes through chain for slides', () => {
@@ -366,7 +380,7 @@ describe('slides toolbar undo/redo and formatting', () => {
     editor.chain().focus().toggleHeading({ level: 1 }).run()
     const call = editor._store._calls.find((c) => c.cmd === 'toggleHeading')
     expect(call).toBeDefined()
-    expect(call.args[0]).toEqual({ level: 1 })
+    expect(call!.args[0]).toEqual({ level: 1 })
   })
 
   it('setParagraph routes through chain for slides Normal style', () => {
@@ -380,7 +394,7 @@ describe('slides toolbar undo/redo and formatting', () => {
     editor.chain().focus().setMark('textStyle', { fontSize: '32pt' }).run()
     const call = editor._store._calls.find((c) => c.cmd === 'setMark')
     expect(call).toBeDefined()
-    expect(call.args[1].fontSize).toBe('32pt')
+    expect((call!.args[1] as { fontSize: string }).fontSize).toBe('32pt')
   })
 
   // ── wave-48: newly surfaced text-formatting commands ──────────────────────
@@ -389,7 +403,7 @@ describe('slides toolbar undo/redo and formatting', () => {
     editor.chain().focus().setMark('textStyle', { fontFamily: 'Georgia, serif' }).run()
     const call = editor._store._calls.find((c) => c.cmd === 'setMark')
     expect(call).toBeDefined()
-    expect(call.args[1].fontFamily).toBe('Georgia, serif')
+    expect((call!.args[1] as { fontFamily: string | null }).fontFamily).toBe('Georgia, serif')
   })
 
   it('font family "Default" clears the fontFamily attribute', () => {
@@ -398,7 +412,7 @@ describe('slides toolbar undo/redo and formatting', () => {
     editor.chain().focus().setMark('textStyle', { fontFamily: null }).run()
     const call = editor._store._calls.find((c) => c.cmd === 'setMark')
     expect(call).toBeDefined()
-    expect(call.args[1].fontFamily).toBeNull()
+    expect((call!.args[1] as { fontFamily: string | null }).fontFamily).toBeNull()
   })
 
   it('toggleHighlight routes through chain with a colour', () => {
@@ -406,7 +420,7 @@ describe('slides toolbar undo/redo and formatting', () => {
     editor.chain().focus().toggleHighlight({ color: '#fef08a' }).run()
     const call = editor._store._calls.find((c) => c.cmd === 'toggleHighlight')
     expect(call).toBeDefined()
-    expect(call.args[0].color).toBe('#fef08a')
+    expect((call!.args[0] as { color: string }).color).toBe('#fef08a')
   })
 
   it('toggleOrderedList routes through chain in slides toolbar', () => {
