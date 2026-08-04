@@ -14,7 +14,7 @@ const navigate = vi.fn()
 vi.mock('../../../store/filesStore', () => ({
   useFilesStore: () => ({ createFile }),
 }))
-vi.mock('react-router-dom', async (importOriginal) => {
+vi.mock('react-router-dom', async (importOriginal: () => Promise<Record<string, unknown>>) => {
   const actual = await importOriginal()
   return { ...actual, useNavigate: () => navigate }
 })
