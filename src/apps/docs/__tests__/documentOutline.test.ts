@@ -5,12 +5,32 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { extractOutline, computeActiveHeadingIndex } from '../components/DocumentOutline.jsx'
+import type { Editor } from '@tiptap/react'
+import { extractOutline, computeActiveHeadingIndex } from '../components/DocumentOutline.js'
+
+interface FakeOutlineNode {
+  type: string
+  attrs?: Record<string, unknown>
+  text?: string
+}
+
+// Shape extractOutline actually reads off `editor.state.doc.descendants(fn)` —
+// not a real ProseMirror node/doc, so this is a local stand-in cast through a
+// narrow type rather than a real Editor instance.
+interface FakePMNode {
+  type: { name: string }
+  attrs: Record<string, unknown>
+  textContent: string
+}
+type DescendantsFn = (node: FakePMNode, pos: number) => void
+interface FakeEditor {
+  state: { doc: { descendants: (fn: DescendantsFn) => void } }
+}
 
 // Build a fake ProseMirror doc whose `descendants(fn)` walks a flat node list,
 // invoking fn(node, pos) — matching the shape extractOutline relies on.
-function makeEditor(nodes) {
-  return {
+function makeEditor(nodes: FakeOutlineNode[]): Editor {
+  const fake: FakeEditor = {
     state: {
       doc: {
         descendants(fn) {
@@ -26,6 +46,7 @@ function makeEditor(nodes) {
       },
     },
   }
+  return fake as unknown as Editor
 }
 
 describe('extractOutline', () => {
@@ -52,7 +73,7 @@ describe('extractOutline', () => {
 
   it('is null-safe', () => {
     expect(extractOutline(null)).toEqual([])
-    expect(extractOutline({})).toEqual([])
+    expect(extractOutline({} as unknown as Editor)).toEqual([])
   })
 
   it('defaults missing heading level to 1', () => {
@@ -83,6 +104,6 @@ describe('computeActiveHeadingIndex', () => {
 
   it('returns -1 for an empty outline', () => {
     expect(computeActiveHeadingIndex([], 0)).toBe(-1)
-    expect(computeActiveHeadingIndex(null, 0)).toBe(-1)
+    expect(computeActiveHeadingIndex(null as unknown as number[], 0)).toBe(-1)
   })
 })
