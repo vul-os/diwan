@@ -17,6 +17,7 @@
 
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { Editor } from '@tiptap/core'
+import type { Node as PMNode } from '@tiptap/pm/model'
 import Document from '@tiptap/extension-document'
 import Paragraph from '@tiptap/extension-paragraph'
 import Text from '@tiptap/extension-text'
@@ -33,29 +34,50 @@ vi.mock('file-saver', () => ({ saveAs: vi.fn() }))
 const PNG_1x1 =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
 
-function makeEditor(content = '<p>Hello</p>') {
+function makeEditor(content = '<p>Hello</p>'): Editor {
   return new Editor({
     extensions: [Document, Paragraph, Text, DocImage],
     content,
   })
 }
 
-// Minimal File polyfill sufficient for isEmbeddableImage + a stubbed FileReader.
-function fakeFile(type, size) {
-  return { type, size, name: 'x' }
+// Minimal File stand-in sufficient for isEmbeddableImage (structural: only
+// reads .type/.size) and fileToDataUri (needs a real File shape — cast
+// through unknown, same as the other DOM-object stand-ins in this suite).
+function fakeFile(type: string, size: number): File {
+  return { type, size, name: 'x' } as unknown as File
 }
 
 // Select the (first) image node — the real UI does this (NodeSelection) before
 // the image sub-toolbar fires updateAttributes('image', …).
-function selectImage(ed) {
-  let pos = null
+function selectImage(ed: Editor): boolean {
+  let pos: number | null = null
   ed.state.doc.descendants((n, p) => { if (n.type.name === 'image') pos = p })
-  if (pos == null) return false
-  ed.view.dispatch(ed.state.tr.setSelection(NodeSelection.create(ed.state.doc, pos)))
+  const at = pos as number | null
+  if (at == null) return false
+  ed.view.dispatch(ed.state.tr.setSelection(NodeSelection.create(ed.state.doc, at)))
   return true
 }
 
-let editor
+// A returning lookup (rather than mutating an outer `let` from inside the
+// descendants callback) — TS can't flow-narrow a variable mutated inside a
+// nested function at the read site (same issue worked around in
+// equations.test.ts's findNodeByType).
+function firstAttrsByType(doc: PMNode, typeName: string): PMNode['attrs'] | null {
+  let result: PMNode['attrs'] | null = null
+  doc.descendants((n) => { if (n.type.name === typeName) result = n.attrs })
+  return result
+}
+
+// A saveAs Blob argument narrowed away from the `Blob | string` union the real
+// file-saver signature allows — this suite only ever hands it a Blob.
+function lastSavedBlob(): Blob {
+  const data = vi.mocked(saveAs).mock.calls.at(-1)?.[0]
+  if (!(data instanceof Blob)) throw new Error('expected saveAs to be called with a Blob')
+  return data
+}
+
+let editor: Editor | null = null
 afterEach(() => { editor?.destroy(); editor = null; vi.clearAllMocks() })
 
 // ── 1. Insert / resize / align / alt (live editor) ───────────────────────────
@@ -99,8 +121,7 @@ describe('image insert + attribute ops (live editor)', () => {
     const html = editor.getHTML()
     // Re-open the emitted HTML in a fresh editor; attrs should survive.
     const e2 = makeEditor(html)
-    let attrs = null
-    e2.state.doc.descendants((n) => { if (n.type.name === 'image') attrs = n.attrs })
+    const attrs = firstAttrsByType(e2.state.doc, 'image')
     expect(attrs?.width).toBe('75%')
     expect(attrs?.align).toBe('center')
     e2.destroy()
@@ -134,9 +155,11 @@ describe('embed policy: only bounded raster files embed', () => {
   it('fileToDataUri returns a raster data: URI for a valid raster file', async () => {
     // Stub FileReader to yield a raster data: URI (jsdom has no real file bytes).
     const orig = global.FileReader
-    global.FileReader = class {
+    class FakeFileReader {
+      onload: ((ev: { target: { result: string } }) => void) | null = null
       readAsDataURL() { setTimeout(() => this.onload?.({ target: { result: PNG_1x1 } }), 0) }
     }
+    global.FileReader = FakeFileReader as unknown as typeof FileReader
     try {
       const uri = await fileToDataUri(fakeFile('image/png', 100))
       expect(uri).toMatch(/^data:image\/png;base64,/)
@@ -147,9 +170,11 @@ describe('embed policy: only bounded raster files embed', () => {
 
   it('fileToDataUri rejects if the reader yields a non-raster URI (defence-in-depth)', async () => {
     const orig = global.FileReader
-    global.FileReader = class {
+    class FakeFileReader {
+      onload: ((ev: { target: { result: string } }) => void) | null = null
       readAsDataURL() { setTimeout(() => this.onload?.({ target: { result: 'data:image/svg+xml,<svg/>' } }), 0) }
     }
+    global.FileReader = FakeFileReader as unknown as typeof FileReader
     try {
       await expect(fileToDataUri(fakeFile('image/png', 100))).rejects.toThrow()
     } finally {
@@ -246,7 +271,7 @@ describe('sanitizer: allows safe <img>, blocks every XSS vector', () => {
       '<p>hi</p><img src="data:image/svg+xml,<svg onload=alert(1)>"><img src="x" onerror="alert(1)">'
     )
     exportToHtml(editor, 'evil')
-    const blob = saveAs.mock.calls.at(-1)[0]
+    const blob = lastSavedBlob()
     const html = await blob.text()
     expect(html).not.toMatch(/svg\+xml/i)
     expect(html).not.toMatch(/onerror/i)
@@ -363,8 +388,7 @@ describe('CRDT round-trip: image node survives full-state reconcile', () => {
     const peer = makeEditor()
     peer.commands.setContent(json)
 
-    let attrs = null
-    peer.state.doc.descendants((n) => { if (n.type.name === 'image') attrs = n.attrs })
+    const attrs = firstAttrsByType(peer.state.doc, 'image')
     expect(attrs?.src).toBe(PNG_1x1)
     expect(attrs?.alt).toBe('sync me')
     expect(attrs?.width).toBe('40%')
@@ -387,13 +411,13 @@ describe('CRDT round-trip: image node survives full-state reconcile', () => {
   })
 })
 
-// ── 5. Export: HTML contains the sanitised image; DOCX embeds raster ─────────
+// ── 5. Export: HTML export contains the sanitised image; DOCX embeds raster ─────────
 describe('export: HTML export contains the sanitised image', () => {
   it('exportToHtml emits the <img> with a raster src', async () => {
     editor = makeEditor(`<p>with image</p><img src="${PNG_1x1}" alt="pic">`)
     exportToHtml(editor, 'doc-with-image')
     expect(saveAs).toHaveBeenCalled()
-    const blob = saveAs.mock.calls.at(-1)[0]
+    const blob = lastSavedBlob()
     const html = await blob.text()
     expect(html).toContain('<img')
     expect(html).toContain('src="data:image/png')
@@ -406,7 +430,7 @@ describe('export: HTML export contains the sanitised image', () => {
     editor = makeEditor(`<p>doc</p><img src="${PNG_1x1}">`)
     await exportToDocx(editor, 'doc-with-image')
     expect(saveAs).toHaveBeenCalled()
-    const blob = saveAs.mock.calls.at(-1)[0]
+    const blob = lastSavedBlob()
     // A .docx is a non-empty zip; embedding produced real bytes.
     expect(blob.size).toBeGreaterThan(0)
   })
@@ -422,7 +446,7 @@ describe('export: HTML export contains the sanitised image', () => {
     ] }
     editor.commands.setContent(json)
     await exportToDocx(editor, 'svg-doc')
-    const blob = saveAs.mock.calls.at(-1)[0]
+    const blob = lastSavedBlob()
     expect(blob.size).toBeGreaterThan(0) // produced a valid docx, svg simply omitted
   })
 })
