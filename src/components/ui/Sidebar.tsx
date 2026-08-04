@@ -19,10 +19,14 @@
  */
 
 import { createContext, useContext } from 'react'
+import type { MouseEvent, ReactNode } from 'react'
 import { NavLink } from 'react-router-dom'
 import { PanelLeftClose, PanelLeftOpen, ChevronsLeft } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 
-const SidebarCtx = createContext({ collapsed: false })
+export type SidebarMode = 'expanded' | 'mini' | 'hidden'
+
+const SidebarCtx = createContext<{ collapsed: boolean }>({ collapsed: false })
 
 /**
  * DiwanMark — the brand glyph: an **iwan**, the vaulted portal at the heart of
@@ -36,7 +40,12 @@ const SidebarCtx = createContext({ collapsed: false })
  * Self-contained inline SVG (no asset request), so it's crisp at any size.
  * Reused by the rail brand + the mobile header + the login screen.
  */
-export function DiwanMark({ size = 32, className = '' }) {
+interface DiwanMarkProps {
+  size?: number
+  className?: string
+}
+
+export function DiwanMark({ size = 32, className = '' }: DiwanMarkProps) {
   return (
     <svg
       width={size}
@@ -62,8 +71,15 @@ export function DiwanMark({ size = 32, className = '' }) {
  *   'hidden'   (0px, collapsed off; content goes full-width)
  * `collapsed` is still accepted as a legacy alias for the mini state.
  */
-function Sidebar({ mode, collapsed: collapsedProp, children, className = '' }) {
-  const resolved = mode || (collapsedProp ? 'mini' : 'expanded')
+interface SidebarProps {
+  mode?: SidebarMode
+  collapsed?: boolean
+  children?: ReactNode
+  className?: string
+}
+
+function Sidebar({ mode, collapsed: collapsedProp, children, className = '' }: SidebarProps) {
+  const resolved: SidebarMode = mode || (collapsedProp ? 'mini' : 'expanded')
   const collapsed = resolved === 'mini'
   const hidden = resolved === 'hidden'
   return (
@@ -92,7 +108,12 @@ function Sidebar({ mode, collapsed: collapsedProp, children, className = '' }) {
  *   mini     → stacked "expand" + "hide" buttons
  * The mobile drawer omits `onSetMode` (it closes via its own backdrop/Esc).
  */
-Sidebar.Brand = function SidebarBrand({ name = 'Diwan', onSetMode }) {
+interface SidebarBrandProps {
+  name?: string
+  onSetMode?: (mode: SidebarMode) => void
+}
+
+function SidebarBrand({ name = 'Diwan', onSetMode }: SidebarBrandProps) {
   const { collapsed } = useContext(SidebarCtx)
 
   const ctrlBtn =
@@ -142,7 +163,13 @@ Sidebar.Brand = function SidebarBrand({ name = 'Diwan', onSetMode }) {
   )
 }
 
-Sidebar.Section = function SidebarSection({ label, children, className = '' }) {
+interface SidebarSectionProps {
+  label?: ReactNode
+  children?: ReactNode
+  className?: string
+}
+
+function SidebarSection({ label, children, className = '' }: SidebarSectionProps) {
   const { collapsed } = useContext(SidebarCtx)
   return (
     <div className={`px-2 ${className}`}>
@@ -161,7 +188,19 @@ Sidebar.Section = function SidebarSection({ label, children, className = '' }) {
  * Sidebar.Item — accepts either `to` (renders NavLink) or `onClick` (button).
  * Active = teal left-rail + selected tint + hairline teal border + teal icon.
  */
-Sidebar.Item = function SidebarItem({
+interface SidebarItemProps {
+  to?: string
+  end?: boolean
+  onClick?: (e: MouseEvent) => void
+  icon?: LucideIcon
+  iconAccent?: string    // optional category tint for the icon when not active
+  dense?: boolean         // tighter row height + smaller glyph (Recent files)
+  title?: string
+  children?: ReactNode
+  variant?: 'nav' | 'danger'
+}
+
+function SidebarItem({
   to,
   end,
   onClick,
@@ -171,11 +210,11 @@ Sidebar.Item = function SidebarItem({
   title,
   children,
   variant = 'nav',
-}) {
+}: SidebarItemProps) {
   const { collapsed } = useContext(SidebarCtx)
   const glyph = dense ? 14 : 16
 
-  const renderInner = (isActive) => (
+  const renderInner = (isActive: boolean) => (
     <>
       {/* Accent left-rail — the active marker. A calm bar that "gets out of the
           way" instead of boxing the whole row. */}
@@ -205,7 +244,7 @@ Sidebar.Item = function SidebarItem({
     </>
   )
 
-  const cn = (isActive) =>
+  const cn = (isActive: boolean) =>
     [
       'group relative flex items-center gap-2.5 px-2.5 rounded-md',
       dense ? 'h-7' : 'h-8',
@@ -233,7 +272,7 @@ Sidebar.Item = function SidebarItem({
   )
 }
 
-Sidebar.Footer = function SidebarFooter({ children }) {
+function SidebarFooter({ children }: { children?: ReactNode }) {
   return (
     <div className="mt-auto border-t border-line pt-2 pb-1 px-2 flex flex-col gap-px">
       {children}
@@ -241,5 +280,12 @@ Sidebar.Footer = function SidebarFooter({ children }) {
   )
 }
 
-export { Sidebar }
-export default Sidebar
+const SidebarWithSlots = Object.assign(Sidebar, {
+  Brand: SidebarBrand,
+  Section: SidebarSection,
+  Item: SidebarItem,
+  Footer: SidebarFooter,
+})
+
+export { SidebarWithSlots as Sidebar }
+export default SidebarWithSlots
