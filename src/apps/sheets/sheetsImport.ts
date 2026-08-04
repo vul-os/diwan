@@ -1,5 +1,5 @@
 /**
- * sheetsImport.js — .xlsx / .xls / .ods → Fortune-Sheet workbook model.
+ * sheetsImport.ts — .xlsx / .xls / .ods → Fortune-Sheet workbook model.
  * ----------------------------------------------------------------------------
  * SheetJS (`xlsx`, already a dependency) reads xlsx / xls / ods natively with a
  * hardened, external-entity-free XML parser, so it is the right lightweight
@@ -25,11 +25,37 @@ import * as XLSX from 'xlsx'
 import {
   assertFileSize, MAX_SHEETS, MAX_CELLS_PER_SHEET, MAX_ROWS, MAX_COLS, ImportError,
 } from '../../lib/importBounds.js'
-import { makeChart } from './charts.js'
+import { makeChart, type Chart, type ChartInput } from './charts.js'
 import { CHART_META_SHEET } from './sheetsExport.js'
 import { readXlsxCharts } from './xlsxChartsRead.js'
 import { readOdsObjects } from './odsChartsRead.js'
-import { makeImportNotes, setImportNotes } from './importNotes.js'
+import { makeImportNotes, setImportNotes, type ImportNotes, type INSheet } from './importNotes.js'
+
+export interface ImportCellValue {
+  v: string | number | boolean
+  m: string
+  ct: { t: string; fa?: string }
+  f?: string
+}
+export interface ImportCellEntry { r: number; c: number; v: ImportCellValue }
+export interface ImportSheetConfig {
+  merge?: Record<string, { r: number; c: number; rs: number; cs: number }>
+  columnlen?: Record<number, number>
+  rowlen?: Record<number, number>
+}
+export interface ImportSheet {
+  name: string
+  celldata: ImportCellEntry[]
+  config: ImportSheetConfig
+  row: number
+  column: number
+  charts?: Chart[]
+}
+
+export interface ImportWorkbookResult {
+  sheets: ImportSheet[]
+  notes: ImportNotes | null
+}
 
 // A chart-definition sheet holds at most this many rows; a file claiming more is
 // truncated rather than trusted (import trust boundary — the sheet is untrusted
@@ -51,12 +77,12 @@ const MAX_META_CHARTS = 200
  * geometry clamped to sane finite bounds, strings coerced + length-capped. A
  * sheet whose header is not ours is ignored entirely (returns []).
  */
-export function chartsFromMetaSheet(ws) {
+export function chartsFromMetaSheet(ws: XLSX.WorkSheet | undefined): Chart[] {
   if (!ws || !ws['!ref']) return []
-  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false })
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false }) as unknown[][]
   const header = (rows[0] || []).map((h) => String(h ?? ''))
   if (header[0] !== 'type' || header[1] !== 'range') return []   // not our schema
-  const col = (name) => header.indexOf(name)
+  const col = (name: string) => header.indexOf(name)
   const idx = {
     type: col('type'), range: col('range'), title: col('title'),
     x1: col('xAxisLabel'), y1: col('yAxisLabel'), y2: col('y2AxisLabel'),
@@ -64,34 +90,35 @@ export function chartsFromMetaSheet(ws) {
     secondary: col('secondaryAxis'), bins: col('bins'),
     x: col('x'), y: col('y'), w: col('w'), h: col('h'), id: col('id'),
   }
-  const get = (row, i) => (i >= 0 ? row[i] : undefined)
-  const yes = (v, dflt) => {
+  const get = (row: unknown[], i: number): unknown => (i >= 0 ? row[i] : undefined)
+  const yes = (v: unknown, dflt: boolean): boolean => {
     if (v === undefined || v === null || v === '') return dflt
     const s = String(v).trim().toLowerCase()
     return s === 'yes' || s === 'true' || s === '1'
   }
-  const out = []
+  const out: Chart[] = []
   for (const row of rows.slice(1, MAX_META_CHARTS + 1)) {
     if (!Array.isArray(row) || row.every((c) => c === '' || c == null)) continue
     const type = String(get(row, idx.type) ?? '')
     if (!type) continue
-    const geom = {}
+    const geom: Partial<Record<'x' | 'y' | 'w' | 'h', number>> = {}
     // x/y may legitimately be 0 (a chart dragged flush to the grid origin), so
     // only w/h — where 0 means "absent", never "zero-sized" — require > 0. A
     // `v > 0` test on x/y would silently relocate every origin-anchored chart to
     // makeChart's default offset on re-import.
-    for (const k of ['x', 'y']) {
+    for (const k of ['x', 'y'] as const) {
       const v = Number(get(row, idx[k]))
       if (isFinite(v) && v >= 0) geom[k] = v
     }
-    for (const k of ['w', 'h']) {
+    for (const k of ['w', 'h'] as const) {
       const v = Number(get(row, idx[k]))
       if (isFinite(v) && v > 0) geom[k] = v
     }
+    const idVal = get(row, idx.id)
     out.push(makeChart({
       // makeChart mints a fresh id when this is absent/invalid — an id is only a
       // local LWW key, so a file that omits it still round-trips fine.
-      id: typeof get(row, idx.id) === 'string' ? get(row, idx.id) : undefined,
+      id: typeof idVal === 'string' ? idVal : undefined,
       type,
       range: String(get(row, idx.range) ?? ''),
       title: String(get(row, idx.title) ?? ''),
@@ -106,41 +133,41 @@ export function chartsFromMetaSheet(ws) {
         bins:        Number(get(row, idx.bins)),
       },
       ...geom,
-    }))
+    } as ChartInput))
   }
   return out
 }
 
 // Map a SheetJS cell type to a Fortune-Sheet ct.t code.
-function ctType(t) {
+function ctType(t: unknown): string {
   if (t === 'n') return 'n'
   if (t === 'b') return 'b'
   if (t === 'd') return 'd'
   return 's'
 }
 
-function worksheetToSheet(ws, name) {
+function worksheetToSheet(ws: XLSX.WorkSheet | undefined, name: string): ImportSheet {
   if (!ws || !ws['!ref']) return { name, celldata: [], config: {}, row: 84, column: 60 }
-  const range = XLSX.utils.decode_range(ws['!ref'])
+  const range = XLSX.utils.decode_range(ws['!ref'] as string)
   // Clamp the declared range so a lying header can't force a huge iteration.
   const endR = Math.min(range.e.r, MAX_ROWS - 1)
   const endC = Math.min(range.e.c, MAX_COLS - 1)
 
-  const celldata = []
+  const celldata: ImportCellEntry[] = []
   for (let r = range.s.r; r <= endR; r++) {
     for (let c = range.s.c; c <= endC; c++) {
-      const cell = ws[XLSX.utils.encode_cell({ r, c })]
+      const cell = ws[XLSX.utils.encode_cell({ r, c })] as XLSX.CellObject | undefined
       if (!cell) continue
       if (celldata.length >= MAX_CELLS_PER_SHEET) {
         throw new ImportError(`Sheet "${name}" has more than ${MAX_CELLS_PER_SHEET} cells (import limit).`)
       }
       const v = cell.v ?? ''
       const m = cell.w != null ? String(cell.w) : String(v)
-      const ct = { t: ctType(cell.t) }
+      const ct: { t: string; fa?: string } = { t: ctType(cell.t) }
       // Carry the number-format code (currency / percent / date) into ct.fa so
       // it round-trips back out on export. 'General' is the implicit default.
-      if (cell.z && cell.z !== 'General') ct.fa = cell.z
-      const cellVal = { v, m, ct }
+      if (cell.z && cell.z !== 'General') ct.fa = String(cell.z)
+      const cellVal: ImportCellValue = { v: v as string | number | boolean, m, ct }
       // Import the formula as DATA (leading '='). We never evaluate it ourselves;
       // Fortune-Sheet's pure parser recomputes it on load. See the SECURITY note.
       if (cell.f) cellVal.f = `=${cell.f}`
@@ -148,12 +175,12 @@ function worksheetToSheet(ws, name) {
     }
   }
 
-  const config = {}
+  const config: ImportSheetConfig = {}
 
   // Merged cells → Fortune-Sheet config.merge.
   const merges = ws['!merges'] || []
   if (merges.length) {
-    const mc = {}
+    const mc: NonNullable<ImportSheetConfig['merge']> = {}
     for (const mg of merges) {
       mc[`${mg.s.r}_${mg.s.c}`] = { r: mg.s.r, c: mg.s.c, rs: mg.e.r - mg.s.r + 1, cs: mg.e.c - mg.s.c + 1 }
     }
@@ -163,12 +190,12 @@ function worksheetToSheet(ws, name) {
   // Column widths → config.columnlen (px). SheetJS gives wpx or wch (chars).
   const cols = ws['!cols'] || []
   if (cols.length) {
-    const columnlen = {}
+    const columnlen: NonNullable<ImportSheetConfig['columnlen']> = {}
     cols.forEach((col, i) => {
       if (!col) return
       const px = Number.isFinite(col.wpx) ? col.wpx
-        : Number.isFinite(col.width) ? Math.round(col.width * 7)
-        : Number.isFinite(col.wch) ? Math.round(col.wch * 7)
+        : Number.isFinite(col.width) ? Math.round((col.width as number) * 7)
+        : Number.isFinite(col.wch) ? Math.round((col.wch as number) * 7)
         : null
       if (px != null && px > 0) columnlen[i] = Math.min(px, 2000)
     })
@@ -178,11 +205,11 @@ function worksheetToSheet(ws, name) {
   // Row heights → config.rowlen (px). SheetJS gives hpx or hpt (points).
   const rows = ws['!rows'] || []
   if (rows.length) {
-    const rowlen = {}
+    const rowlen: NonNullable<ImportSheetConfig['rowlen']> = {}
     rows.forEach((row, i) => {
       if (!row) return
       const px = Number.isFinite(row.hpx) ? row.hpx
-        : Number.isFinite(row.hpt) ? Math.round(row.hpt * 96 / 72)
+        : Number.isFinite(row.hpt) ? Math.round((row.hpt as number) * 96 / 72)
         : null
       if (px != null && px > 0) rowlen[i] = Math.min(px, 1000)
     })
@@ -198,13 +225,13 @@ function worksheetToSheet(ws, name) {
  * pulls in column/row metadata; we deliberately do NOT enable `bookVBA` or any
  * macro extraction — a macro-laden workbook is imported as inert data only.
  */
-export function workbookToSheets(arrayBuffer, filename = 'file') {
+export function workbookToSheets(arrayBuffer: ArrayBuffer, filename = 'file'): ImportSheet[] {
   assertFileSize(arrayBuffer.byteLength, filename)
-  let wb
+  let wb: XLSX.WorkBook
   try {
     wb = XLSX.read(arrayBuffer, { type: 'array', cellStyles: true, cellNF: true, dense: false })
   } catch (e) {
-    throw new ImportError(`Could not read ${filename}: ${e.message}`)
+    throw new ImportError(`Could not read ${filename}: ${e instanceof Error ? e.message : String(e)}`)
   }
   const names = wb.SheetNames.slice(0, MAX_SHEETS)
   if (wb.SheetNames.length > MAX_SHEETS) {
@@ -223,10 +250,10 @@ export function workbookToSheets(arrayBuffer, filename = 'file') {
 }
 
 /** Display text of a cell in an already-parsed sheet (for resolving a chart title held in a cell). */
-function cellReader(sheet) {
-  const idx = new Map()
+function cellReader(sheet: ImportSheet | undefined): (r: number, c: number) => string {
+  const idx = new Map<string, ImportCellValue>()
   for (const cd of sheet?.celldata || []) idx.set(`${cd.r},${cd.c}`, cd.v)
-  return (r, c) => {
+  return (r: number, c: number) => {
     const v = idx.get(`${r},${c}`)
     if (!v) return ''
     return String(v.m ?? v.v ?? '')
@@ -255,7 +282,7 @@ function cellReader(sheet) {
  *
  * Async because reading the package means re-opening the ZIP (JSZip).
  */
-export async function importWorkbook(arrayBuffer, filename = 'file') {
+export async function importWorkbook(arrayBuffer: ArrayBuffer, filename = 'file'): Promise<ImportWorkbookResult> {
   const sheets = workbookToSheets(arrayBuffer, filename)
 
   // Charts live on the first sheet and read its cells (charts.js getCharts), so
@@ -285,14 +312,14 @@ export async function importWorkbook(arrayBuffer, filename = 'file') {
       pivots: found.pivots,
       filename,
     })
-    let out = sheets
-    if (notes) out = setImportNotes(out, notes)
+    let out: ImportSheet[] = sheets
+    if (notes) out = setImportNotes(out as unknown as INSheet[], notes) as unknown as ImportSheet[]
     return { sheets: out, notes }
   }
 
   if (!isXlsx) return { sheets, notes: null }
 
-  let found = { charts: [], unreadable: [], pivots: 0 }
+  let found: Awaited<ReturnType<typeof readXlsxCharts>> = { charts: [], unreadable: [], pivots: 0 }
   try {
     found = await readXlsxCharts(arrayBuffer, first?.name, cellReader(first))
   } catch {
@@ -301,7 +328,7 @@ export async function importWorkbook(arrayBuffer, filename = 'file') {
     return { sheets, notes: null }
   }
 
-  let out = sheets
+  let out: ImportSheet[] = sheets
   // Our own export (case 1): the definition sheet already restored the charts
   // exactly. Do not double-import them from the XML we wrote alongside it.
   if (!alreadyHasCharts && found.charts.length) {
@@ -316,6 +343,6 @@ export async function importWorkbook(arrayBuffer, filename = 'file') {
     pivots: found.pivots,
     filename,
   })
-  if (notes) out = setImportNotes(out, notes)
+  if (notes) out = setImportNotes(out as unknown as INSheet[], notes) as unknown as ImportSheet[]
   return { sheets: out, notes }
 }
