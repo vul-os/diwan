@@ -11,15 +11,21 @@ import { render, screen, fireEvent, within } from '@testing-library/react'
 import ChartWizard from './ChartWizard.jsx'
 import PivotPanel from './PivotPanel.jsx'
 import ExportDialog from './ExportDialog.jsx'
-import { getCharts, CHART_TYPES } from './charts.js'
-import { getPivots } from './pivot.js'
-import { insertChart } from './charts.js'
+import { getCharts, CHART_TYPES, insertChart, type ChartSheet } from './charts.js'
+import { getPivots, type PivotSheet } from './pivot.js'
 import { setImportNotes } from './importNotes.js'
+import type { ExportSheet } from './sheetsExport.js'
 
 vi.mock('file-saver', () => ({ saveAs: vi.fn() }))
 
-function wbFrom(grid) {
-  const celldata = []
+// charts.ts / sheetsExport.ts / importNotes.ts each declare their own narrow
+// view of the same plain-data FortuneSheet shape (ChartSheet / ExportSheet /
+// INSheet) — no shared base type. Production crosses these boundaries with
+// the same cast-through-unknown helper (SheetsEditor.tsx's `cast<T>`).
+function cast<T>(v: unknown): T { return v as T }
+
+function wbFrom(grid: (string | number)[][]) {
+  const celldata: { r: number; c: number; v: { v: string | number; m: string; ct: { fa: string; t: string } } }[] = []
   grid.forEach((row, r) => row.forEach((v, c) => {
     if (v === '' || v == null) return
     const isNum = typeof v === 'number'
@@ -28,7 +34,7 @@ function wbFrom(grid) {
   return [{ name: 'Sheet1', celldata, config: {} }]
 }
 
-const GRID = [
+const GRID: (string | number)[][] = [
   ['Region', 'Date', 'Sales', 'Units'],
   ['East', '2024-01-05', 10, 1],
   ['West', '2024-02-11', 20, 2],
@@ -52,7 +58,7 @@ describe('ChartWizard — every new type is reachable and configurable', () => {
   })
 
   it('picking Histogram reveals a bounded bucket control and emits a clamped descriptor', () => {
-    const onChange = vi.fn()
+    const onChange = vi.fn((_data: ChartSheet[]) => {})
     render(<ChartWizard data={wbFrom(GRID)} onClose={() => {}} onChange={onChange} />)
     fireEvent.click(screen.getByRole('radio', { name: /histogram/i }))
 
@@ -73,11 +79,11 @@ describe('ChartWizard — every new type is reachable and configurable', () => {
   })
 
   it('picking Combo turns the secondary axis on and exposes its label field', () => {
-    const onChange = vi.fn()
+    const onChange = vi.fn((_data: ChartSheet[]) => {})
     render(<ChartWizard data={wbFrom(GRID)} onClose={() => {}} onChange={onChange} />)
     fireEvent.click(screen.getByRole('radio', { name: /^combo$/i }))
 
-    const secondary = screen.getByLabelText(/secondary \(right\) axis/i)
+    const secondary = screen.getByLabelText(/secondary \(right\) axis/i) as HTMLInputElement
     expect(secondary.checked).toBe(true)                 // the reason to pick combo at all
     fireEvent.change(screen.getByLabelText(/secondary axis label/i), { target: { value: 'Margin %' } })
     fireEvent.click(screen.getByRole('button', { name: /insert chart/i }))
@@ -98,7 +104,7 @@ describe('ChartWizard — every new type is reachable and configurable', () => {
   })
 
   it('secondaryAxis is never set for a non-combo type', () => {
-    const onChange = vi.fn()
+    const onChange = vi.fn((_data: ChartSheet[]) => {})
     render(<ChartWizard data={wbFrom(GRID)} onClose={() => {}} onChange={onChange} />)
     fireEvent.click(screen.getByRole('radio', { name: /^combo$/i }))     // turns it on
     fireEvent.click(screen.getByRole('radio', { name: /^column$/i }))    // switch away
@@ -109,7 +115,7 @@ describe('ChartWizard — every new type is reachable and configurable', () => {
 
 describe('PivotPanel — multi-value editor', () => {
   const setup = () => {
-    const onInsert = vi.fn()
+    const onInsert = vi.fn((_data: PivotSheet[]) => {})
     render(<PivotPanel data={wbFrom(GRID)} selectionRect={{ r0: 0, r1: 3, c0: 0, c1: 3 }}
                        onClose={() => {}} onInsert={onInsert} />)
     return onInsert
@@ -174,8 +180,8 @@ describe('ExportDialog — the honest warning', () => {
   }
 
   it('names every chart that cannot survive the format, and offers a real Cancel', () => {
-    const onCancel = vi.fn(); const onConfirm = vi.fn()
-    render(<ExportDialog data={dataWithCharts()} format="ods" onCancel={onCancel} onConfirm={onConfirm} />)
+    const onCancel = vi.fn(); const onConfirm = vi.fn((_format: string) => {})
+    render(<ExportDialog data={cast<ExportSheet[]>(dataWithCharts())} format="ods" onCancel={onCancel} onConfirm={onConfirm} />)
 
     expect(screen.getByRole('dialog', { name: /export as/i })).toBeTruthy()
     const alert = screen.getByRole('alert')
@@ -189,8 +195,8 @@ describe('ExportDialog — the honest warning', () => {
   })
 
   it('xlsx: says the charts embed for real, and surfaces the histogram caveat', () => {
-    const onConfirm = vi.fn()
-    render(<ExportDialog data={dataWithCharts()} format="xlsx" onCancel={() => {}} onConfirm={onConfirm} />)
+    const onConfirm = vi.fn((_format: string) => {})
+    render(<ExportDialog data={cast<ExportSheet[]>(dataWithCharts())} format="xlsx" onCancel={() => {}} onConfirm={onConfirm} />)
     expect(screen.queryByRole('alert')).toBeNull()            // nothing is LOST in xlsx
     expect(screen.getByText(/Embedded with a caveat/i)).toBeTruthy()
     expect(screen.getByText(/histogram bins are embedded as fixed values/i)).toBeTruthy()
@@ -201,7 +207,7 @@ describe('ExportDialog — the honest warning', () => {
   })
 
   it('labels the confirm button as “Export anyway” when something WILL be lost', () => {
-    render(<ExportDialog data={dataWithCharts()} format="csv" onCancel={() => {}} onConfirm={() => {}} />)
+    render(<ExportDialog data={cast<ExportSheet[]>(dataWithCharts())} format="csv" onCancel={() => {}} onConfirm={() => {}} />)
     expect(screen.getByRole('button', { name: /export anyway/i })).toBeTruthy()
     // Stated both per-chart (why each one is lost) and as a summary note.
     expect(screen.getAllByText(/CSV holds values only/i).length).toBeGreaterThanOrEqual(2)
@@ -209,7 +215,7 @@ describe('ExportDialog — the honest warning', () => {
 
   it('Escape closes the dialog (focus-trapped modal a11y)', () => {
     const onCancel = vi.fn()
-    render(<ExportDialog data={dataWithCharts()} format="ods" onCancel={onCancel} onConfirm={() => {}} />)
+    render(<ExportDialog data={cast<ExportSheet[]>(dataWithCharts())} format="ods" onCancel={onCancel} onConfirm={() => {}} />)
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(onCancel).toHaveBeenCalled()
   })
