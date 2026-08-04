@@ -17,7 +17,7 @@ import SignView from './apps/pdf/SignView'
 import EnvelopeDashboard from './components/EnvelopeDashboard'
 import Verify from './components/Verify'
 import AnonDocView from './components/AnonDocView'
-import InstallPrompt from './lib/InstallPrompt.jsx'
+import InstallPrompt from './lib/InstallPrompt'
 
 // Office is documents-only. Chat/video and calendar/contacts are THIRD-PARTY
 // (not Vulos products) and are deliberately not launched or redirected to from
@@ -28,7 +28,7 @@ import InstallPrompt from './lib/InstallPrompt.jsx'
 // share-link viewers ("/view/:token") are gated only by the unguessable token.
 const PUBLIC_PREFIXES = ['/sign/', '/verify', '/view/']
 
-function isPublicRoute(pathname) {
+function isPublicRoute(pathname: string): boolean {
   return PUBLIC_PREFIXES.some((p) => pathname.startsWith(p))
 }
 
@@ -46,9 +46,15 @@ export default function App() {
 
   // ── Protocol handler + deep-link ?goto= param ─────────────────────────────
   useEffect(() => {
-    // Register diwan:// protocol handler (web+ prefix required by browsers)
+    // Register diwan:// protocol handler (web+ prefix required by browsers).
+    // TS's lib.dom types only the current 2-arg spec signature; the trailing
+    // title arg is a harmless legacy 3rd param some older engines still read
+    // (extra JS call args are simply ignored where unsupported), so widen the
+    // call's type locally rather than drop the argument.
     try {
-      navigator.registerProtocolHandler('web+diwan', window.location.origin + '/?goto=%s', 'Diwan')
+      type RegisterProtocolHandlerLegacy = (scheme: string, url: string, title?: string) => void
+      const registerProtocolHandlerLegacy = navigator.registerProtocolHandler as unknown as RegisterProtocolHandlerLegacy
+      registerProtocolHandlerLegacy('web+diwan', window.location.origin + '/?goto=%s', 'Diwan')
     } catch { /* unsupported browser */ }
 
     // Handle incoming deep-link ?goto= param
