@@ -1,5 +1,5 @@
 /**
- * src/apps/sheets/PivotLayer.jsx  (WAVE-63 — reactive pivot tables)
+ * src/apps/sheets/PivotLayer.tsx  (WAVE-63 — reactive pivot tables)
  *
  * Floating live-pivot overlay for Sheets, mirroring ChartLayer. Renders every
  * pivot descriptor in `sheet.pivots` as an absolutely-positioned card over the
@@ -19,9 +19,20 @@ import { memo, useMemo, useCallback, useRef, useState, useEffect } from 'react'
 import { Trash2, Table2, Pencil, GripVertical } from 'lucide-react'
 import {
   getPivots, computePivotModel, pivotPercentColumns, pivotValuesSignature, deletePivot, updatePivot,
+  type Pivot, type PivotSheet,
 } from './pivot.js'
 
-const PivotCard = memo(function PivotCard({ pivot, sheet, onDelete, onEdit, onCommitPos }) {
+interface Pos { x: number; y: number }
+
+interface PivotCardProps {
+  pivot: Pivot
+  sheet: PivotSheet | null | undefined
+  onDelete: (id: string) => void
+  onEdit: (id: string) => void
+  onCommitPos: (id: string, pos: Pos) => void
+}
+
+const PivotCard = memo(function PivotCard({ pivot, sheet, onDelete, onEdit, onCommitPos }: PivotCardProps) {
   const signature = pivotValuesSignature(pivot, sheet)
   const model = useMemo(
     () => computePivotModel(pivot, sheet),
@@ -35,19 +46,19 @@ const PivotCard = memo(function PivotCard({ pivot, sheet, onDelete, onEdit, onCo
 
   // Draggable position (like charts) so multiple pivots don't pile up at origin
   // and can be moved off the source data. Commits on pointer-up only.
-  const [pos, setPos] = useState({ x: pivot.x, y: pivot.y })
-  const dragRef = useRef(null)
+  const [pos, setPos] = useState<Pos>({ x: pivot.x, y: pivot.y })
+  const dragRef = useRef<boolean | null>(null)
   const rafRef = useRef(0)
   useEffect(() => {
     if (!dragRef.current) setPos({ x: pivot.x, y: pivot.y })
   }, [pivot.x, pivot.y])
 
-  const startDrag = useCallback((e) => {
+  const startDrag = useCallback((e: React.PointerEvent) => {
     e.preventDefault(); e.stopPropagation()
     const startX = e.clientX, startY = e.clientY
     const base = { x: pivot.x, y: pivot.y }
     dragRef.current = true
-    const onMove = (ev) => {
+    const onMove = (ev: PointerEvent) => {
       const dx = ev.clientX - startX, dy = ev.clientY - startY
       cancelAnimationFrame(rafRef.current)
       rafRef.current = requestAnimationFrame(() => setPos({ x: Math.max(0, base.x + dx), y: Math.max(0, base.y + dy) }))
@@ -147,6 +158,12 @@ const PivotCard = memo(function PivotCard({ pivot, sheet, onDelete, onEdit, onCo
   )
 })
 
+export interface PivotLayerProps {
+  data: PivotSheet[]
+  onChange: (data: PivotSheet[]) => void
+  onEdit: (id: string) => void
+}
+
 /**
  * PivotLayer — the overlay. Positioned absolutely inside the workbook wrapper
  * (position: relative). pointer-events:none on the container so grid interaction
@@ -154,15 +171,15 @@ const PivotCard = memo(function PivotCard({ pivot, sheet, onDelete, onEdit, onCo
  * a fixed offset (kept simple — pivots are read surfaces, not draggable objects
  * like charts).
  */
-export default function PivotLayer({ data, onChange, onEdit }) {
+export default function PivotLayer({ data, onChange, onEdit }: PivotLayerProps) {
   const sheet = data?.[0]
   const pivots = useMemo(() => getPivots(data), [data])
 
-  const handleDelete = useCallback((id) => {
+  const handleDelete = useCallback((id: string) => {
     onChange(deletePivot(data, id))
   }, [data, onChange])
 
-  const handleCommitPos = useCallback((id, pos) => {
+  const handleCommitPos = useCallback((id: string, pos: Pos) => {
     onChange(updatePivot(data, id, { x: pos.x, y: pos.y }))
   }, [data, onChange])
 
