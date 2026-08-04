@@ -12,8 +12,17 @@
  */
 
 import { forwardRef } from 'react'
+import type { ButtonHTMLAttributes, Ref } from 'react'
 
-const sizeClasses = {
+type IconButtonSize = 'sm' | 'md' | 'lg'
+
+interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  size?: IconButtonSize
+  active?: boolean
+  title?: string
+}
+
+const sizeClasses: Record<IconButtonSize, string> = {
   sm: 'h-7 w-7',
   md: 'h-8 w-8',
   lg: 'h-10 w-10',
@@ -27,8 +36,8 @@ const IconButton = forwardRef(function IconButton(
     title,
     children,
     ...rest
-  },
-  ref,
+  }: IconButtonProps,
+  ref: Ref<HTMLButtonElement>,
 ) {
   const cn = [
     'ui-iconbtn inline-flex items-center justify-center shrink-0',
