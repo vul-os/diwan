@@ -16,17 +16,22 @@
  */
 
 import { Sun, Moon, Monitor } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import IconButton from './IconButton'
 import Tooltip from './Tooltip'
 import { useTheme } from './useTheme'
 
-const OPTIONS = [
+const OPTIONS: { value: string; Icon: LucideIcon; label: string }[] = [
   { value: 'light',  Icon: Sun,     label: 'Light'  },
   { value: 'system', Icon: Monitor, label: 'System' },
   { value: 'dark',   Icon: Moon,    label: 'Dark'   },
 ]
 
-export default function ThemeSwitch({ collapsed = false }) {
+interface ThemeSwitchProps {
+  collapsed?: boolean
+}
+
+export default function ThemeSwitch({ collapsed = false }: ThemeSwitchProps) {
   const { theme, setTheme, cycle } = useTheme()
 
   // ── Collapsed rail → single cycling icon button ──────────────────────────
