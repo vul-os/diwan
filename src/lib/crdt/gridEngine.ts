@@ -129,7 +129,13 @@ export const SHAPE_UNKNOWN = 'unknown'
 /** Carries no engine signal at all (an empty snapshot). Never a mismatch. */
 export const SHAPE_NONE = 'none'
 
-const SHAPE_FOR_ENGINE = {
+export type OpShape =
+  | typeof SHAPE_KOTVA_SYNC
+  | typeof SHAPE_LOCAL_LWW
+  | typeof SHAPE_UNKNOWN
+  | typeof SHAPE_NONE
+
+const SHAPE_FOR_ENGINE: Record<string, OpShape> = {
   [ENGINE_LOCAL_LWW]: SHAPE_LOCAL_LWW,
   [ENGINE_KOTVA_SYNC]: SHAPE_KOTVA_SYNC,
 }
@@ -140,15 +146,13 @@ const SHAPE_FOR_ENGINE = {
  * Deliberately structural rather than tag-based: a peer that predates this
  * module stamps no engine tag on its ops, and that peer is the whole reason
  * layer 2 exists.
- *
- * @param {any} op
- * @returns {'kotva-sync'|'local-lww'|'unknown'|'none'}
  */
-export function classifyOp(op) {
+export function classifyOp(op: unknown): OpShape {
   if (op === null || op === undefined) return SHAPE_NONE
   if (typeof op !== 'object') return SHAPE_UNKNOWN
-  if (op.dsync === 1 && typeof op.b === 'string') return SHAPE_KOTVA_SYNC
-  if ((op.kind === 1 || op.kind === 2) && op.key && typeof op.key === 'object') {
+  const o = op as Record<string, unknown>
+  if (o.dsync === 1 && typeof o.b === 'string') return SHAPE_KOTVA_SYNC
+  if ((o.kind === 1 || o.kind === 2) && o.key && typeof o.key === 'object') {
     return SHAPE_LOCAL_LWW
   }
   return SHAPE_UNKNOWN
@@ -161,17 +165,15 @@ export function classifyOp(op) {
  * `substrateGrid.js` posts a compacted list of canonical-op envelopes. An EMPTY
  * list is genuinely engine-neutral — a peer that has typed nothing yet must not
  * be accused of running a foreign engine — so it classifies as SHAPE_NONE.
- *
- * @param {any} cells
- * @returns {'kotva-sync'|'local-lww'|'unknown'|'none'}
  */
-export function classifySnapshot(cells) {
+export function classifySnapshot(cells: unknown): OpShape {
   if (!Array.isArray(cells)) return SHAPE_UNKNOWN
   if (cells.length === 0) return SHAPE_NONE
   for (const entry of cells) {
     if (!entry || typeof entry !== 'object') return SHAPE_UNKNOWN
-    if (entry.dsync === 1 && typeof entry.b === 'string') return SHAPE_KOTVA_SYNC
-    if (typeof entry.opId === 'string' && Number.isInteger(entry.r) && Number.isInteger(entry.c)) {
+    const e = entry as Record<string, unknown>
+    if (e.dsync === 1 && typeof e.b === 'string') return SHAPE_KOTVA_SYNC
+    if (typeof e.opId === 'string' && Number.isInteger(e.r) && Number.isInteger(e.c)) {
       return SHAPE_LOCAL_LWW
     }
     return SHAPE_UNKNOWN
@@ -180,11 +182,13 @@ export function classifySnapshot(cells) {
 }
 
 /** The op shape a given engine emits. */
-export function shapeForEngine(engineId) {
+export function shapeForEngine(engineId: string): OpShape {
   return SHAPE_FOR_ENGINE[engineId] || SHAPE_UNKNOWN
 }
 
 // ── The guard ────────────────────────────────────────────────────────────────
+
+export type EngineMismatch = { local: string; remote: string; via: string }
 
 /**
  * Tracks whether this session may still replicate, and latches CLOSED the first
@@ -196,25 +200,28 @@ export function shapeForEngine(engineId) {
  * a new session and a new handshake, which is the honest way back.
  */
 export class GridEngineGuard {
+  localEngine: string
+  localShape: OpShape
+  mismatch: EngineMismatch | null
+  private _onMismatch: (info: EngineMismatch) => void
+
   /**
-   * @param {string} localEngine - one of the ENGINE_* ids
-   * @param {(info: {local: string, remote: string, via: string}) => void} onMismatch
-   *   Called EXACTLY once, the first time a mismatch is latched.
+   * @param localEngine - one of the ENGINE_* ids
+   * @param onMismatch - Called EXACTLY once, the first time a mismatch is latched.
    */
-  constructor(localEngine, onMismatch) {
+  constructor(localEngine: string, onMismatch?: (info: EngineMismatch) => void) {
     this.localEngine = localEngine
     this.localShape = shapeForEngine(localEngine)
     this._onMismatch = typeof onMismatch === 'function' ? onMismatch : () => {}
-    /** @type {{local: string, remote: string, via: string}|null} */
     this.mismatch = null
   }
 
   /** True while this session is still allowed to send and apply ops. */
-  get ok() {
+  get ok(): boolean {
     return this.mismatch === null
   }
 
-  _latch(remote, via) {
+  private _latch(remote: string, via: string): boolean {
     if (this.mismatch) return true
     this.mismatch = { local: this.localEngine, remote, via }
     this._onMismatch(this.mismatch)
@@ -223,10 +230,10 @@ export class GridEngineGuard {
 
   /**
    * Layer 1: a peer advertised its engine.
-   * @returns {boolean} true if this observation latched (or had already latched)
+   * @returns true if this observation latched (or had already latched)
    *   the guard closed — i.e. the caller must not proceed.
    */
-  observeAdvertisement(engineId) {
+  observeAdvertisement(engineId: unknown): boolean {
     if (this.mismatch) return true
     const id = typeof engineId === 'string' && engineId ? engineId : 'unadvertised'
     if (id === this.localEngine) return false
@@ -235,10 +242,9 @@ export class GridEngineGuard {
 
   /**
    * Layer 2: a frame arrived carrying an op/snapshot of some shape.
-   * @param {string} shape - a SHAPE_* value from classifyOp/classifySnapshot
-   * @returns {boolean} true if the frame must be REFUSED.
+   * @returns true if the frame must be REFUSED.
    */
-  observeShape(shape) {
+  observeShape(shape: OpShape): boolean {
     if (this.mismatch) return true
     if (shape === SHAPE_NONE) return false
     if (shape === this.localShape) return false
@@ -263,7 +269,7 @@ export const GRID_ENGINE_MISMATCH_NOTICE =
   'saved. Reload once everyone is on the same version of this deployment.'
 
 /** A one-line diagnostic for the console/log — engine ids are not user copy. */
-export function mismatchLogLine({ local, remote, via }) {
+export function mismatchLogLine({ local, remote, via }: EngineMismatch): string {
   return (
     `[sheets] engine mismatch (detected via ${via}): this replica runs "${local}", ` +
     `a peer runs "${remote}". These do not share a merge function, so replication ` +
