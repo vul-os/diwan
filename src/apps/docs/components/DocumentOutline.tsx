@@ -20,15 +20,24 @@
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react'
+import type { RefObject } from 'react'
 import { ListTree, X } from 'lucide-react'
+import type { Editor } from '@tiptap/react'
+
+export interface OutlineHeading {
+  level: number
+  text: string
+  pos: number
+  key: string
+}
 
 /**
  * extractOutline — walk the document and collect its headings with the
  * ProseMirror position of each (needed to scroll/select on click).
  * Returns `[{ level, text, pos, key }]` in document order.
  */
-export function extractOutline(editor) {
-  const out = []
+export function extractOutline(editor: Editor | null | undefined): OutlineHeading[] {
+  const out: OutlineHeading[] = []
   if (!editor?.state?.doc) return out
   let i = 0
   editor.state.doc.descendants((node, pos) => {
@@ -54,7 +63,7 @@ export function extractOutline(editor) {
  *
  * Pure + deterministic so it can be unit-tested.
  */
-export function computeActiveHeadingIndex(tops, scrollTop, threshold = 24) {
+export function computeActiveHeadingIndex(tops: number[], scrollTop: number, threshold = 24): number {
   if (!Array.isArray(tops) || tops.length === 0) return -1
   const line = scrollTop + threshold
   let active = 0
@@ -65,8 +74,14 @@ export function computeActiveHeadingIndex(tops, scrollTop, threshold = 24) {
   return active
 }
 
-export default function DocumentOutline({ editor, scrollContainerRef, onClose }) {
-  const [headings, setHeadings] = useState(() => extractOutline(editor))
+export interface DocumentOutlineProps {
+  editor: Editor | null | undefined
+  scrollContainerRef?: RefObject<HTMLElement | null>
+  onClose?: () => void
+}
+
+export default function DocumentOutline({ editor, scrollContainerRef, onClose }: DocumentOutlineProps) {
+  const [headings, setHeadings] = useState<OutlineHeading[]>(() => extractOutline(editor))
   const [activeIdx, setActiveIdx] = useState(-1)
   const headingsRef = useRef(headings)
   headingsRef.current = headings
@@ -94,7 +109,7 @@ export default function DocumentOutline({ editor, scrollContainerRef, onClose })
     const tops = list.map((h) => {
       try {
         const dom = editor.view.nodeDOM(h.pos)
-        const el = dom?.nodeType === 1 ? dom : dom?.parentElement
+        const el: Element | null = dom?.nodeType === 1 ? (dom as Element) : (dom?.parentElement ?? null)
         if (!el) return Number.POSITIVE_INFINITY
         return el.getBoundingClientRect().top - containerTop + container.scrollTop
       } catch {
@@ -112,11 +127,11 @@ export default function DocumentOutline({ editor, scrollContainerRef, onClose })
     return () => container.removeEventListener('scroll', recomputeActive)
   }, [recomputeActive, scrollContainerRef, headings])
 
-  const goToHeading = (h) => {
+  const goToHeading = (h: OutlineHeading) => {
     if (!editor?.view) return
     try {
       const dom = editor.view.nodeDOM(h.pos)
-      const el = dom?.nodeType === 1 ? dom : dom?.parentElement
+      const el: Element | null = dom?.nodeType === 1 ? (dom as Element) : (dom?.parentElement ?? null)
       if (el?.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
       // Place the caret just inside the heading so keyboard nav continues there.
       editor.chain().setTextSelection(h.pos + 1).focus().run()
