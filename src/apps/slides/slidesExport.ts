@@ -2,9 +2,34 @@ import { saveAs } from 'file-saver'
 import pptxgen from 'pptxgenjs'
 import { stripHtml } from '../../lib/sanitize'
 import { stripXmlInvalidChars } from '../../lib/xmlText.js'
-import { ensureObjects } from './slideObjects'
+import { ensureObjects, type SlideObject } from './slideObjects'
 
-export function exportSlidesToPdf(filename) {
+type PptxSlide = pptxgen.Slide
+type PptxShapeName = pptxgen.SHAPE_NAME
+type PptxImageProps = pptxgen.ImageProps
+type PptxShapeProps = pptxgen.ShapeProps
+type PptxTextPropsOptions = pptxgen.TextPropsOptions
+
+interface ThemeColors {
+  bg: string
+  fg: string
+}
+
+interface ExportSlide {
+  title?: string
+  content?: string
+  notes?: string
+  background?: string
+  objects?: unknown[]
+  [key: string]: unknown
+}
+
+interface ExportDeck {
+  theme?: string
+  slides: ExportSlide[]
+}
+
+export function exportSlidesToPdf(filename: string): void {
   const old = document.title
   document.title = filename
   window.print()
@@ -15,7 +40,7 @@ export function exportSlidesToPdf(filename) {
 const SLIDE_W = 13.333
 const SLIDE_H = 7.5
 
-const THEME_COLORS = {
+const THEME_COLORS: Record<string, ThemeColors> = {
   black: { bg: '1a1a2e', fg: 'ffffff' },
   night: { bg: '282c34', fg: 'eeeeee' },
   dracula: { bg: '282a36', fg: 'f8f8f2' },
@@ -29,12 +54,12 @@ const THEME_COLORS = {
 }
 
 // pptxgenjs shape name for each of our shape kinds.
-const PPTX_SHAPE = {
+const PPTX_SHAPE: Record<string, PptxShapeName> = {
   rect: 'rect', roundRect: 'roundRect', oval: 'ellipse', triangle: 'triangle',
   star: 'star5', line: 'line', arrow: 'rightArrow', callout: 'wedgeRectCallout',
 }
 
-const hex = (c, dflt) => {
+const hex = (c: unknown, dflt: string): string => {
   if (typeof c !== 'string') return dflt
   const m = c.replace('#', '')
   return /^[0-9a-fA-F]{6}$/.test(m) ? m : dflt
@@ -45,7 +70,7 @@ const hex = (c, dflt) => {
  * normalized geometry (this is the fidelity gain: PPTX is natively positioned,
  * so object x/y/w/h/rotation map directly to inches + degrees).
  */
-function addObjectToSlide(s, obj, theme) {
+function addObjectToSlide(s: PptxSlide, obj: SlideObject, theme: ThemeColors): void {
   const x = obj.x * SLIDE_W
   const y = obj.y * SLIDE_H
   const w = obj.w * SLIDE_W
@@ -59,7 +84,7 @@ function addObjectToSlide(s, obj, theme) {
     if (!text.trim()) return
     // Rough heading detection: an <h1/h2/h3> wrapper → larger + bold.
     const isHeading = /<h[1-3][\s>]/i.test(obj.html || '')
-    s.addText(text, {
+    const textOpts: PptxTextPropsOptions = {
       x, y, w, h, rotate,
       fontSize: isHeading ? 32 : 18,
       bold: isHeading,
@@ -68,27 +93,29 @@ function addObjectToSlide(s, obj, theme) {
       align: obj.align || 'left',
       valign: obj.valign === 'middle' ? 'middle' : obj.valign === 'bottom' ? 'bottom' : 'top',
       wrap: true,
-    })
+    }
+    s.addText(text, textOpts)
   } else if (obj.type === 'image') {
     // data: URIs and http(s) both work with pptxgenjs `data`/`path`.
-    const opt = { x, y, w, h, rotate }
+    const opt: PptxImageProps = { x, y, w, h, rotate }
     if (/^data:/i.test(obj.src)) opt.data = obj.src
     else opt.path = obj.src
     try { s.addImage(opt) } catch { /* skip an image pptxgenjs rejects */ }
   } else if (obj.type === 'shape') {
     const name = PPTX_SHAPE[obj.shape] || 'rect'
-    s.addShape(name, {
+    const shapeOpts: PptxShapeProps = {
       x, y, w, h, rotate,
       fill: obj.shape === 'line' ? undefined : { color: hex(obj.fill, '7c6af7'), transparency: Math.round((1 - (obj.opacity ?? 1)) * 100) },
       line: { color: hex(obj.stroke, '5b4dd0'), width: obj.strokeWidth ?? 2 },
-    })
+    }
+    s.addShape(name, shapeOpts)
   }
 }
 
-export async function exportSlidesToPptx(data, filename) {
+export async function exportSlidesToPptx(data: ExportDeck, filename: string): Promise<void> {
   const pres = new pptxgen()
   pres.layout = 'LAYOUT_WIDE'
-  const theme = THEME_COLORS[data.theme] || THEME_COLORS.black
+  const theme = THEME_COLORS[data.theme ?? ''] || THEME_COLORS.black
 
   for (const slide of data.slides) {
     const s = pres.addSlide()
@@ -109,6 +136,8 @@ export async function exportSlidesToPptx(data, filename) {
     if (slide.notes) s.addNotes(stripXmlInvalidChars(slide.notes))
   }
 
-  const blob = await pres.stream()
+  // pptxgenjs's stream() is typed for all its output targets; in a browser it
+  // resolves to a Blob (or string), which is what saveAs expects.
+  const blob = await pres.stream() as Blob | string
   saveAs(blob, `${filename}.pptx`)
 }
