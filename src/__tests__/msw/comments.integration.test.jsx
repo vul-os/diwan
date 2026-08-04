@@ -9,7 +9,7 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import CommentsPanel from '../../components/CommentsPanel.jsx'
+import CommentsPanel from '../../components/CommentsPanel'
 import { evictCommentStore } from '../../lib/crdt/comments.js'
 import { server, resetMock, mockState } from './server.js'
 
