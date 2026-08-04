@@ -39,6 +39,7 @@ import { FabricClient } from '../collab/webrtc/fabric.js'
 import {
   parseInvite, generateInvite, deriveRoomKeys,
   sealFrame, openFrame, CAP_RW, CAP_RO,
+  type RoomKeys, type RoomCap,
 } from './p2pRoom.js'
 import {
   REMOTE_ORIGIN,
@@ -48,27 +49,80 @@ import {
   encodeUpdateEnvelope,
   decodeUpdateEnvelope,
   applyRemoteUpdate,
+  type YContext,
 } from './ydoc.js'
+import type { BoardYContext } from './boardYdoc.js'
+
+/** Either document shape a session can carry: a ProseMirror doc (Docs) or a
+ *  whiteboard scene (boardYdoc.js) — see the constructor's ctx check below. */
+export type AnyYContext = YContext | BoardYContext
+
+/** Shared shape of applyRemoteUpdate's and applyRemoteBoardUpdate's result. */
+type ApplyResult = { applied: boolean, reason?: string }
+
+/** True iff `ctx` carries its own validator (the whiteboard path) rather than a
+ *  ProseMirror `schema` (the default document path). */
+function hasCustomApply(ctx: AnyYContext): ctx is BoardYContext {
+  return typeof (ctx as BoardYContext).applyUpdate === 'function'
+}
+
+/** Structural subset of FabricClient's surface this module depends on — kept
+ *  narrow (rather than importing FabricClient itself as the field type) so a
+ *  test's in-process fake transport (see yP2PSession.test.js's FakeFabric)
+ *  satisfies it without extending the real class. */
+export interface SessionFabric {
+  addEventListener(
+    type: 'state',
+    listener: (ev: CustomEvent<{ peerId: string, state: string }>) => void,
+  ): void
+  addEventListener(
+    type: 'message',
+    listener: (ev: CustomEvent<{ from: string, data: string | ArrayBuffer | Uint8Array }>) => void,
+  ): void
+  join(): void | Promise<void>
+  leave(): void
+  send(data: string): void
+  sendTo(peerId: string, data: string): void
+}
+
+export interface YP2PCollabSessionOptions {
+  /** { encKey, macKeyRw|null, roomId } */
+  room: RoomKeys
+  cap: RoomCap
+  peerId: string
+  fileId?: string
+  /** { ydoc, shadow, schema } from createYContext(), or a boardYdoc.js context */
+  ctx: AnyYContext
+  signalingUrl?: string
+  iceUrl?: string
+  relayBaseUrl?: string
+  authToken?: string | null
+  /** base URL of any vulos-relayd's OPEN rendezvous surface (see
+   *  transportSelection.js). When set, the underlying FabricClient runs its
+   *  whole signaling lifecycle against that relayd instead of the host box's
+   *  `/api/peering/*` — no Vulos OS / host box required for a REAL P2P
+   *  session. Ignored when `fabric` is injected. */
+  rendezvousBaseUrl?: string
+  rendezvousPrefix?: string
+  /** inject a transport (tests) */
+  fabric?: SessionFabric
+}
 
 export class YP2PCollabSession extends EventTarget {
-  /**
-   * @param {object} opts
-   * @param {object} opts.room    { encKey, macKeyRw|null, roomId }
-   * @param {'rw'|'ro'} opts.cap
-   * @param {string} opts.peerId
-   * @param {string} opts.fileId
-   * @param {object} opts.ctx     { ydoc, shadow, schema } from createYContext()
-   * @param {string} [opts.rendezvousBaseUrl]  base URL of any vulos-relayd's
-   *   OPEN rendezvous surface (see transportSelection.js). When set, the
-   *   underlying FabricClient runs its whole signaling lifecycle against that
-   *   relayd instead of the host box's `/api/peering/*` — no Vulos OS / host
-   *   box required for a REAL P2P session. Ignored when `fabric` is injected.
-   * @param {FabricClient} [opts.fabric]  inject a transport (tests)
-   */
+  private _room: RoomKeys
+  private _cap: RoomCap
+  private _peerId: string
+  private _fileId: string
+  private _ctx: AnyYContext
+  private _joined: boolean
+  rejectedUpdates: number
+  private _fabric: SessionFabric
+  private _onLocalUpdate: (update: Uint8Array, origin: unknown) => void
+
   constructor({
     room, cap, peerId, fileId, ctx,
     signalingUrl, iceUrl, relayBaseUrl, authToken, rendezvousBaseUrl, rendezvousPrefix, fabric,
-  }) {
+  }: YP2PCollabSessionOptions) {
     super()
     if (!room || !room.encKey) throw new Error('YP2PCollabSession: missing room keys')
     if (cap !== CAP_RW && cap !== CAP_RO) throw new Error(`YP2PCollabSession: bad cap "${cap}"`)
@@ -78,7 +132,7 @@ export class YP2PCollabSession extends EventTarget {
     // (e.g. the whiteboard's Excalidraw-scene validator — see boardYdoc.js).
     // This is what lets the SAME encrypted P2P transport carry either a text
     // document or a whiteboard without a second collab stack.
-    if (!ctx || !ctx.ydoc || (!ctx.schema && typeof ctx.applyUpdate !== 'function')) {
+    if (!ctx || !ctx.ydoc || (!('schema' in ctx) && typeof (ctx as BoardYContext).applyUpdate !== 'function')) {
       throw new Error('YP2PCollabSession: missing Y context')
     }
 
@@ -98,6 +152,10 @@ export class YP2PCollabSession extends EventTarget {
         (typeof window !== 'undefined'
           ? window.location.origin.replace(/^http/, 'ws') + '/api/peering/stream'
           : 'ws://localhost:8080/api/peering/stream')
+      // FabricClient really does emit exactly this 'state'/'message' event shape
+      // (see the class doc in webrtc/fabric.ts) — the cast is only needed
+      // because EventTarget's inherited addEventListener is typed generically
+      // (EventListenerOrEventListenerObject), not because the events differ.
       this._fabric = new FabricClient({
         sessionId: room.roomId,
         peerId,
@@ -112,7 +170,7 @@ export class YP2PCollabSession extends EventTarget {
         // Same-origin proxy mount (see transportSelection.js); the relay's own
         // default is used when a caller passes nothing.
         ...(rendezvousPrefix ? { rendezvousPrefix } : {}),
-      })
+      }) as unknown as SessionFabric
     }
 
     this._fabric.addEventListener('state', (ev) => {
@@ -160,22 +218,28 @@ export class YP2PCollabSession extends EventTarget {
 
   // ── factories ─────────────────────────────────────────────────────────────
 
-  static async fromInvite({ inviteLink, peerId, fileId, ctx, ...rest }) {
+  static async fromInvite({ inviteLink, peerId, fileId, ctx, ...rest }: {
+    inviteLink: string, peerId: string, fileId?: string, ctx: AnyYContext,
+  } & Omit<YP2PCollabSessionOptions, 'room' | 'cap' | 'peerId' | 'fileId' | 'ctx'>): Promise<YP2PCollabSession> {
     const { roomId, cap, roomKey } = await parseInvite(inviteLink)
     const keys = await deriveRoomKeys(roomKey)
     // A ro peer must NOT hold macKeyRw — that is what stops it forging an
     // authoritative document frame.
-    const room = cap === CAP_RO
+    const room: RoomKeys = cap === CAP_RO
       ? { encKey: keys.encKey, macKeyRw: null, roomId }
       : { encKey: keys.encKey, macKeyRw: keys.macKeyRw, roomId }
     return new YP2PCollabSession({ room, cap, peerId, fileId: fileId || roomId, ctx, ...rest })
   }
 
-  static async create({ peerId, fileId, baseUrl, ctx, ...rest }) {
+  static async create({ peerId, fileId, baseUrl, ctx, ...rest }: {
+    peerId: string, fileId?: string, baseUrl?: string, ctx: AnyYContext,
+  } & Omit<YP2PCollabSessionOptions, 'room' | 'cap' | 'peerId' | 'fileId' | 'ctx'>): Promise<{
+    session: YP2PCollabSession, rwLink: string, roLink: string, roomId: string,
+  }> {
     const rw = await generateInvite({ cap: CAP_RW, baseUrl })
     const ro = await generateInvite({ cap: CAP_RO, baseUrl, roomKey: rw.roomKey })
     const keys = await deriveRoomKeys(rw.roomKey)
-    const room = { encKey: keys.encKey, macKeyRw: keys.macKeyRw, roomId: keys.roomId }
+    const room: RoomKeys = { encKey: keys.encKey, macKeyRw: keys.macKeyRw, roomId: keys.roomId }
     const session = new YP2PCollabSession({
       room, cap: CAP_RW, peerId, fileId: fileId || keys.roomId, ctx, ...rest,
     })
@@ -184,12 +248,12 @@ export class YP2PCollabSession extends EventTarget {
 
   // ── public API ────────────────────────────────────────────────────────────
 
-  get cap() { return this._cap }
-  get roomId() { return this._room.roomId }
-  get readOnly() { return this._cap === CAP_RO }
-  get fabric() { return this._fabric }
+  get cap(): RoomCap { return this._cap }
+  get roomId(): string { return this._room.roomId }
+  get readOnly(): boolean { return this._cap === CAP_RO }
+  get fabric(): SessionFabric { return this._fabric }
 
-  async join() {
+  async join(): Promise<void> {
     if (this._joined) return
     this._joined = true
     await this._fabric.join()
@@ -202,7 +266,7 @@ export class YP2PCollabSession extends EventTarget {
    * state vector, and merging it can only ever add — a peer's offline edits are
    * never dropped, and our own are never overwritten.
    */
-  async resync() {
+  async resync(): Promise<void> {
     const sv = Y.encodeStateVector(this._ctx.ydoc)
     await this._broadcast({ type: 'ysync-req', sv: bytesToB64(sv) })
   }
@@ -211,14 +275,13 @@ export class YP2PCollabSession extends EventTarget {
    * Same as resync(), addressed to ONE peer. Used when that peer becomes
    * reachable (see the 'state' handler in the constructor) so the exchange
    * happens when there is actually a transport to carry it.
-   * @param {string} peerId
    */
-  async _resyncWith(peerId) {
+  private async _resyncWith(peerId: string): Promise<void> {
     const sv = Y.encodeStateVector(this._ctx.ydoc)
     await this._sendTo(peerId, { type: 'ysync-req', sv: bytesToB64(sv) })
   }
 
-  leave() {
+  leave(): void {
     this._joined = false
     try { this._ctx.ydoc.off('update', this._onLocalUpdate) } catch { /* already gone */ }
     this._fabric.leave()
@@ -226,32 +289,32 @@ export class YP2PCollabSession extends EventTarget {
 
   // ── inbound ───────────────────────────────────────────────────────────────
 
-  async _onPeerFrame({ from, data }) {
-    const frameB64 = typeof data === 'string' ? data : new TextDecoder().decode(data)
+  private async _onPeerFrame({ from, data }: { from: string, data: string | ArrayBuffer | Uint8Array }): Promise<void> {
+    const frameB64 = typeof data === 'string' ? data : new TextDecoder().decode(data as ArrayBuffer)
     // openFrame throws on wrong-key / tamper (AEAD): the relay and any uninvited
     // peer can never reach past this line. `authoritative` is true iff a valid
     // RW-MAC was present AND we hold macKeyRw to verify it (i.e. we are rw).
     const { msg, authoritative } = await openFrame(this._room, frameB64)
     if (!msg || typeof msg !== 'object') return
+    const m = msg as { type?: string, u?: unknown, sv?: unknown }
 
-    if (msg.type === 'yu' || msg.type === 'ysync') {
+    if (m.type === 'yu' || m.type === 'ysync') {
       // RO ENFORCEMENT (rw side): only merge document frames that carry a valid
       // RW-MAC. A ro peer that tries to write emits a non-authoritative frame and
       // it is refused here, so its edits never enter the shared document. (A ro
       // RECEIVER holds no macKeyRw and cannot verify anyone; it merges what it is
       // given, which is contained to its own read-only view.)
       if (this._room.macKeyRw && !authoritative) return
-      const max = msg.type === 'ysync' ? MAX_SNAPSHOT_BYTES : undefined
-      const update = decodeUpdateEnvelope({ y: 1, u: msg.u }, max)
+      const max = m.type === 'ysync' ? MAX_SNAPSHOT_BYTES : undefined
+      const update = decodeUpdateEnvelope({ y: 1, u: m.u }, max)
       if (!update) { this.rejectedUpdates++; return }
       // Validate + apply through the context's own fail-closed validator when it
       // supplies one (whiteboard), otherwise the default ProseMirror-document
       // guard. Either way an untrusted peer's bytes are tried on a SHADOW doc
       // first and dropped if they would produce something unrenderable/unsafe.
-      const apply = typeof this._ctx.applyUpdate === 'function'
-        ? this._ctx.applyUpdate
-        : applyRemoteUpdate
-      const res = apply(this._ctx, update)
+      const res: ApplyResult = hasCustomApply(this._ctx)
+        ? this._ctx.applyUpdate(this._ctx, update)
+        : applyRemoteUpdate(this._ctx, update)
       if (!res.applied) {
         this.rejectedUpdates++
         console.warn('[y-p2p] rejected a peer update (fail-closed):', res.reason)
@@ -261,13 +324,13 @@ export class YP2PCollabSession extends EventTarget {
       return
     }
 
-    if (msg.type === 'ysync-req') {
+    if (m.type === 'ysync-req') {
       // Answer with exactly what the asking peer lacks. Only an rw peer serves an
       // AUTHORITATIVE answer, so a ro peer cannot seed a poisoned document into
       // an rw peer.
-      const sv = b64ToBytes(msg.sv)
+      const sv = b64ToBytes(m.sv)
       if (!sv) return
-      let diff
+      let diff: Uint8Array
       try {
         diff = Y.encodeStateAsUpdate(this._ctx.ydoc, sv)
       } catch {
@@ -281,12 +344,12 @@ export class YP2PCollabSession extends EventTarget {
 
   // ── outbound (sealed) ─────────────────────────────────────────────────────
 
-  async _broadcast(msg, opts) {
+  private async _broadcast(msg: unknown, opts?: { authoritative?: boolean }): Promise<void> {
     const frame = await sealFrame(this._room, msg, opts)
     this._fabric.send(frame)
   }
 
-  async _sendTo(peerId, msg, opts) {
+  private async _sendTo(peerId: string, msg: unknown, opts?: { authoritative?: boolean }): Promise<void> {
     const frame = await sealFrame(this._room, msg, opts)
     if (peerId) this._fabric.sendTo(peerId, frame)
     else this._fabric.send(frame)
