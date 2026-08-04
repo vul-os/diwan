@@ -1,5 +1,5 @@
 /**
- * src/apps/sheets/KeyboardShortcuts.jsx
+ * src/apps/sheets/KeyboardShortcuts.tsx
  *
  * Google Sheets parity keyboard shortcuts:
  *   Cmd+B/I/U      — bold/italic/underline (Fortune Sheet handles natively)
@@ -16,25 +16,41 @@
  *
  * Also exports <KeyboardShortcutsHelp /> — the help overlay.
  */
-import { useEffect, useCallback, useState } from 'react'
+import { useEffect, useCallback, useState, type RefObject } from 'react'
 import { Modal } from '../../components/ui'
+
+export interface KSCellValue {
+  v?: string | number | boolean
+  m?: string | number
+  ct?: { fa?: string; t?: string }
+  [key: string]: unknown
+}
+export interface KSCellEntry {
+  r: number
+  c: number
+  v?: KSCellValue | null
+}
+export interface KSSheet {
+  celldata?: KSCellEntry[]
+  [key: string]: unknown
+}
 
 // ── Utility ───────────────────────────────────────────────────────────────────
 
-function pad(n) { return String(n).padStart(2, '0') }
+function pad(n: number): string { return String(n).padStart(2, '0') }
 
-function todayString() {
+function todayString(): string {
   const d = new Date()
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
-function nowString() {
+function nowString(): string {
   const d = new Date()
   return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
 }
 
 /** Get the focused cell from Fortune Sheet's DOM (best-effort). */
-function getFocusedCellAddress() {
+function getFocusedCellAddress(): string | null {
   // Fortune Sheet shows the selected cell in .luckysheet-input-box-index
   const el = document.querySelector('.luckysheet-input-box-index')
   if (!el) return null
@@ -45,7 +61,7 @@ function getFocusedCellAddress() {
  * Set a cell value in the Fortune Sheet data structure (immutable update).
  * Returns new data array or null if cell address could not be resolved.
  */
-function setCellValueInData(data, addr, value) {
+function setCellValueInData(data: KSSheet[], addr: string | null, value: string): KSSheet[] | null {
   // addr is e.g. "A1" — convert to row/col (0-indexed).
   if (!addr) return null
   const match = addr.match(/^([A-Z]+)(\d+)$/)
@@ -71,6 +87,13 @@ function setCellValueInData(data, addr, value) {
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
+export interface UseSheetKeyboardShortcutsOpts {
+  containerRef?: RefObject<HTMLElement | null> | null
+  data: KSSheet[]
+  onChange: (data: KSSheet[]) => void
+  onShowHelp?: () => void
+}
+
 /**
  * useSheetKeyboardShortcuts
  *
@@ -80,11 +103,11 @@ function setCellValueInData(data, addr, value) {
  * @param {fn}              opts.onChange       — called with new data on cell edit
  * @param {fn}              opts.onShowHelp     — called to open the help overlay
  */
-export function useSheetKeyboardShortcuts({ containerRef, data, onChange, onShowHelp }) {
+export function useSheetKeyboardShortcuts({ containerRef, data, onChange, onShowHelp }: UseSheetKeyboardShortcutsOpts): void {
   const isMac = navigator.platform?.startsWith('Mac') ?? true
-  const META  = isMac ? 'metaKey' : 'ctrlKey'
+  const META: 'metaKey' | 'ctrlKey' = isMac ? 'metaKey' : 'ctrlKey'
 
-  const handler = useCallback((e) => {
+  const handler = useCallback((e: KeyboardEvent) => {
     if (!e[META]) return
 
     // Cmd+/ → show shortcuts help
@@ -136,7 +159,7 @@ export function useSheetKeyboardShortcuts({ containerRef, data, onChange, onShow
         // Trim trailing empty row from trailing newline.
         if (rows.length > 1 && rows[rows.length - 1] === '') rows.pop()
         // Build column letter from 0-based index.
-        function colLetter(n) {
+        function colLetter(n: number): string {
           let s = ''
           n += 1
           while (n > 0) {
@@ -166,9 +189,9 @@ export function useSheetKeyboardShortcuts({ containerRef, data, onChange, onShow
   }, [data, onChange, onShowHelp, META])
 
   useEffect(() => {
-    const el = containerRef?.current ?? window
-    el.addEventListener('keydown', handler, true)
-    return () => el.removeEventListener('keydown', handler, true)
+    const el: HTMLElement | Window = containerRef?.current ?? window
+    el.addEventListener('keydown', handler as EventListener, true)
+    return () => el.removeEventListener('keydown', handler as EventListener, true)
   }, [containerRef, handler])
 }
 
@@ -192,7 +215,7 @@ const SHORTCUTS = [
   { keys: '↵',          desc: 'Confirm edit, move down' },
 ]
 
-export function KeyboardShortcutsHelp({ onClose }) {
+export function KeyboardShortcutsHelp({ onClose }: { onClose: () => void }) {
   return (
     <Modal open onClose={onClose} size="md" title="Keyboard shortcuts">
       <Modal.Body className="max-h-[70vh] overflow-y-auto">
