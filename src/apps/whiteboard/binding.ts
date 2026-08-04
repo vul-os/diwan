@@ -1,5 +1,5 @@
 /**
- * src/apps/whiteboard/binding.js — the Yjs <-> Excalidraw binding.
+ * src/apps/whiteboard/binding.ts — the Yjs <-> Excalidraw binding.
  *
  * PROVENANCE. This is @vulos/board-ui's `src/binding.ts` (MIT, Vulos
  * contributors), converted to JS and vendored into Diwan so the
@@ -23,14 +23,40 @@
  * second Y.Map keyed by fileId.
  */
 
+import type * as Y from 'yjs'
 import { ELEMENTS_KEY, FILES_KEY } from '../../lib/crdt/boardYdoc.js'
 
 /**
- * @typedef {{ id: string, version: number, versionNonce?: number,
- *   isDeleted?: boolean, index?: string, [k: string]: unknown }} BoardElement
- * @typedef {{ id: string, mimeType: string, dataURL: string, created: number,
- *   [k: string]: unknown }} BoardFile
+ * Excalidraw scene element, as stored one-per-id in the Y.Map. Only `id` is
+ * required — the rest is read defensively (real Excalidraw elements carry
+ * many more fields such as x/y/strokeColor that this binding never touches
+ * and passes through opaquely, so they are not enumerated here).
  */
+export interface BoardElement {
+  id: string
+  version?: number
+  versionNonce?: number
+  isDeleted?: boolean
+  index?: string | number | null
+  [key: string]: unknown
+}
+
+/** Excalidraw file blob, as mirrored one-per-fileId in the Y.Map. */
+export interface BoardFile {
+  id: string
+  mimeType?: string
+  dataURL?: string
+  created?: number
+  [key: string]: unknown
+}
+
+/** The subset of Excalidraw's imperative API this binding needs. */
+export interface BoardEditorAPI {
+  updateScene(scene: { elements?: readonly BoardElement[] | null }): void
+  getSceneElementsIncludingDeleted(): readonly BoardElement[]
+  addFiles(files: BoardFile[]): void
+  getFiles(): Record<string, BoardFile>
+}
 
 /**
  * Raster image mime types we accept from remote peers. SVG (image/svg+xml) and
@@ -54,22 +80,24 @@ const ALLOWED_IMAGE_MIME = new Set([
  * encoded in the dataURL itself are in the raster-image allow-list. Checking the
  * dataURL prefix too stops a `mimeType: image/png` / `dataURL: data:text/html…`
  * mismatch from slipping through.
- * @param {BoardFile} f
- * @returns {boolean}
  */
-export function isAllowedImage(f) {
-  if (!f || !ALLOWED_IMAGE_MIME.has(f.mimeType)) return false
+export function isAllowedImage(f: BoardFile | null | undefined): boolean {
+  if (!f || typeof f.mimeType !== 'string' || !ALLOWED_IMAGE_MIME.has(f.mimeType)) return false
   const m = /^data:([^;,]+)[;,]/.exec(typeof f.dataURL === 'string' ? f.dataURL : '')
   const declared = m?.[1]?.toLowerCase()
   return !!declared && ALLOWED_IMAGE_MIME.has(declared)
 }
 
 /** Order elements the way Excalidraw expects (fractional index when present). */
-function sortElements(elements) {
+function sortElements(elements: BoardElement[]): BoardElement[] {
   return elements.sort((a, b) => {
     const ai = a.index
     const bi = b.index
-    if (ai != null && bi != null) return ai < bi ? -1 : ai > bi ? 1 : 0
+    // index is string in practice (Excalidraw's fractional index); the type
+    // also allows number for generic CRDT callers, so compare loosely exactly
+    // as the original JS did (comparison operators coerce at runtime — this
+    // cast changes no runtime behaviour, only satisfies the type checker).
+    if (ai != null && bi != null) return (ai as string) < (bi as string) ? -1 : (ai as string) > (bi as string) ? 1 : 0
     if (ai != null) return -1
     if (bi != null) return 1
     return 0
@@ -77,17 +105,20 @@ function sortElements(elements) {
 }
 
 export class ExcalidrawYBinding {
-  /**
-   * @param {import('yjs').Doc} doc
-   * @param {object} api  the subset of Excalidraw's imperative API we need:
-   *   { updateScene, getSceneElementsIncludingDeleted, addFiles, getFiles }
-   */
-  constructor(doc, api) {
+  doc: Y.Doc
+  api: BoardEditorAPI
+  /** Transaction origin tag so we can ignore our own updates on the way back. */
+  origin: symbol
+  /** True while we are applying a *remote* change to Excalidraw. */
+  applyingRemote: boolean
+  disposed: boolean
+  yElements: Y.Map<BoardElement>
+  yFiles: Y.Map<BoardFile>
+
+  constructor(doc: Y.Doc, api: BoardEditorAPI) {
     this.doc = doc
     this.api = api
-    /** Transaction origin tag so we can ignore our own updates on the way back. */
     this.origin = Symbol('@vulos/office-whiteboard')
-    /** True while we are applying a *remote* change to Excalidraw. */
     this.applyingRemote = false
     this.disposed = false
     this.yElements = doc.getMap(ELEMENTS_KEY)
@@ -102,17 +133,17 @@ export class ExcalidrawYBinding {
   }
 
   /** Push whatever is already in the Y.Doc into a freshly-mounted editor. */
-  loadInitial() {
+  loadInitial(): void {
     if (this.yElements.size === 0 && this.yFiles.size === 0) return
     this.renderFromDoc()
   }
 
   /** Excalidraw `onChange` handler — local edits flow into the Y.Doc here. */
-  handleChange(elements, _appState, files) {
+  handleChange(elements: readonly BoardElement[], _appState: unknown, files?: Record<string, BoardFile>): void {
     if (this.applyingRemote || this.disposed) return
 
     this.doc.transact(() => {
-      const seen = new Set()
+      const seen = new Set<string>()
       for (const el of elements) {
         seen.add(el.id)
         const prev = this.yElements.get(el.id)
@@ -141,18 +172,18 @@ export class ExcalidrawYBinding {
     }, this.origin)
   }
 
-  onRemoteElements(_events, txn) {
+  onRemoteElements(_events: unknown, txn: Y.Transaction): void {
     if (txn.origin === this.origin) return // our own write — already in the editor
     this.renderFromDoc()
   }
 
-  onRemoteFiles(_event, txn) {
+  onRemoteFiles(_event: unknown, txn: Y.Transaction): void {
     if (txn.origin === this.origin) return
     this.pushFiles()
   }
 
   /** Rebuild the scene from the Y.Doc and apply it without echoing back. */
-  renderFromDoc() {
+  renderFromDoc(): void {
     const elements = sortElements([...this.yElements.values()])
     this.applyingRemote = true
     try {
@@ -163,7 +194,7 @@ export class ExcalidrawYBinding {
     }
   }
 
-  pushFiles() {
+  pushFiles(): void {
     if (this.yFiles.size === 0) return
     const existing = this.api.getFiles()
     const incoming = [...this.yFiles.values()].filter((f) => {
@@ -179,7 +210,7 @@ export class ExcalidrawYBinding {
     if (incoming.length > 0) this.api.addFiles(incoming)
   }
 
-  destroy() {
+  destroy(): void {
     this.disposed = true
     this.yElements.unobserveDeep(this.onRemoteElements)
     this.yFiles.unobserve(this.onRemoteFiles)
