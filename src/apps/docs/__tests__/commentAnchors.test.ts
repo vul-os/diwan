@@ -6,6 +6,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
+import type { Decoration, DecorationSet, DecorationAttrs } from '@tiptap/pm/view'
 import {
   clampAnchor,
   buildDecorationSpecs,
@@ -17,6 +18,24 @@ import {
   reconcileFootnoteItems,
   nextFootnoteId,
 } from '../footnotes.js'
+import type { Comment } from '../../../lib/crdt/comments.js'
+
+// These tests exercise the pure decoration/comment helpers with hand-built
+// stand-ins rather than a live pm-view Decoration/DecorationSet or a full
+// Comment record — only the fields each helper actually reads. Cast through
+// a narrow local type, same pattern the production module itself uses for
+// Decoration's untyped `.spec`/`.type` (see commentDecorations.ts's own
+// `DecorationLike`).
+type CommentStub = Pick<Comment, 'id' | 'state' | 'anchor'>
+const asComment = (c: CommentStub): Comment => c as unknown as Comment
+
+type DecorationStub = {
+  from?: number
+  to?: number
+  type?: { attrs?: DecorationAttrs }
+  spec?: { attrs?: DecorationAttrs }
+}
+const asDeco = (d: DecorationStub): Decoration => d as unknown as Decoration
 
 // ─── clampAnchor ──────────────────────────────────────────────────────────────
 
@@ -61,8 +80,8 @@ describe('clampAnchor', () => {
 describe('buildDecorationSpecs', () => {
   it('produces one spec per live anchor and flags resolved state', () => {
     const comments = [
-      { id: 'a', state: 'open', anchor: { type: 'text_range', from: 2, to: 6 } },
-      { id: 'b', state: 'resolved', anchor: { type: 'text_range', from: 8, to: 10 } },
+      asComment({ id: 'a', state: 'open', anchor: { type: 'text_range', from: 2, to: 6 } }),
+      asComment({ id: 'b', state: 'resolved', anchor: { type: 'text_range', from: 8, to: 10 } }),
     ]
     const { specs, orphans } = buildDecorationSpecs(comments, 50)
     expect(specs).toHaveLength(2)
@@ -73,9 +92,9 @@ describe('buildDecorationSpecs', () => {
 
   it('reports text anchors that collapsed as orphans, skips non-text anchors', () => {
     const comments = [
-      { id: 'gone', state: 'open', anchor: { type: 'text_range', from: 200, to: 210 } },
-      { id: 'slide', state: 'open', anchor: { type: 'slide', slide_id: 's1' } },
-      { id: 'ok', state: 'open', anchor: { type: 'text_range', from: 3, to: 9 } },
+      asComment({ id: 'gone', state: 'open', anchor: { type: 'text_range', from: 200, to: 210 } }),
+      asComment({ id: 'slide', state: 'open', anchor: { type: 'slide', slide_id: 's1' } }),
+      asComment({ id: 'ok', state: 'open', anchor: { type: 'text_range', from: 3, to: 9 } }),
     ]
     const { specs, orphans } = buildDecorationSpecs(comments, 50)
     expect(specs.map((s) => s.commentId)).toEqual(['ok'])
@@ -93,11 +112,11 @@ describe('buildDecorationSpecs', () => {
 // Minimal stand-in for a ProseMirror DecorationSet: only needs `.find()`.
 // Inline decorations expose their DOM attrs at `type.attrs` (verified against a
 // live pm-view instance), which is where decorationCommentId reads from.
-function fakeDecorationSet(decos) {
-  return { find: () => decos }
+function fakeDecorationSet(decos: Decoration[]): DecorationSet {
+  return { find: () => decos } as unknown as DecorationSet
 }
-function fakeDeco(commentId, from, to) {
-  return { from, to, type: { attrs: { 'data-comment-id': commentId } }, spec: {} }
+function fakeDeco(commentId: string, from: number, to: number): Decoration {
+  return asDeco({ from, to, type: { attrs: { 'data-comment-id': commentId } }, spec: {} })
 }
 
 describe('decorationCommentId', () => {
@@ -105,10 +124,10 @@ describe('decorationCommentId', () => {
     expect(decorationCommentId(fakeDeco('c1', 1, 5))).toBe('c1')
   })
   it('falls back to spec.attrs', () => {
-    expect(decorationCommentId({ spec: { attrs: { 'data-comment-id': 'c2' } } })).toBe('c2')
+    expect(decorationCommentId(asDeco({ spec: { attrs: { 'data-comment-id': 'c2' } } }))).toBe('c2')
   })
   it('returns null when no id is present', () => {
-    expect(decorationCommentId({})).toBeNull()
+    expect(decorationCommentId(asDeco({}))).toBeNull()
     expect(decorationCommentId(null)).toBeNull()
   })
 })
@@ -120,8 +139,8 @@ describe('readMappedRanges', () => {
       fakeDeco('b', 12, 20),
     ])
     const comments = [
-      { id: 'a', anchor: { type: 'text_range' } },
-      { id: 'b', anchor: { type: 'text_range' } },
+      asComment({ id: 'a', state: 'open', anchor: { type: 'text_range' } }),
+      asComment({ id: 'b', state: 'open', anchor: { type: 'text_range' } }),
     ]
     const map = readMappedRanges(decos, comments)
     expect(map.get('a')).toEqual({ from: 4, to: 9 })
@@ -131,8 +150,8 @@ describe('readMappedRanges', () => {
   it('reports null (orphan) for a comment whose decoration vanished', () => {
     const decos = fakeDecorationSet([fakeDeco('a', 4, 9)])
     const comments = [
-      { id: 'a', anchor: { type: 'text_range' } },
-      { id: 'b', anchor: { type: 'text_range' } }, // no decoration → orphaned
+      asComment({ id: 'a', state: 'open', anchor: { type: 'text_range' } }),
+      asComment({ id: 'b', state: 'open', anchor: { type: 'text_range' } }), // no decoration → orphaned
     ]
     const map = readMappedRanges(decos, comments)
     expect(map.get('a')).toEqual({ from: 4, to: 9 })
@@ -144,14 +163,14 @@ describe('readMappedRanges', () => {
       fakeDeco('a', 4, 9),
       fakeDeco('a', 4, 9), // flash duplicate — same span
     ])
-    const comments = [{ id: 'a', anchor: { type: 'text_range' } }]
+    const comments = [asComment({ id: 'a', state: 'open', anchor: { type: 'text_range' } })]
     const map = readMappedRanges(decos, comments)
     expect(map.get('a')).toEqual({ from: 4, to: 9 })
   })
 
   it('ignores non-text anchors', () => {
     const decos = fakeDecorationSet([])
-    const comments = [{ id: 's', anchor: { type: 'slide' } }]
+    const comments = [asComment({ id: 's', state: 'open', anchor: { type: 'slide' } })]
     const map = readMappedRanges(decos, comments)
     expect(map.has('s')).toBe(false)
   })
