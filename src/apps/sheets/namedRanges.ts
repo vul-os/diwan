@@ -1,5 +1,5 @@
 /**
- * src/apps/sheets/namedRanges.js  (WAVE-63)
+ * src/apps/sheets/namedRanges.ts  (WAVE-63)
  *
  * Named ranges → formula usability.
  *
@@ -26,15 +26,27 @@
  * so a malformed/hostile entry cannot rewrite arbitrary formula syntax.
  */
 
+export interface NamedRangeDef {
+  name: string
+  range: string
+  sheetName?: string
+}
+
+/** A sheet-like record carrying the app's `namedRanges` extension (not part of
+ * Fortune-Sheet's own `Sheet` type — stored as extra metadata on the first sheet). */
+export interface SheetWithNamedRanges {
+  namedRanges?: NamedRangeDef[]
+}
+
 const IDENT_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
 
 /** Does a sheet name need single-quoting in an A1 reference? */
-function needsQuote(name) {
+function needsQuote(name: string): boolean {
   return !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)
 }
 
 /** Build the `Sheet!range` (or `'Sheet Name'!range`) replacement reference. */
-function toRef(def) {
+function toRef(def: NamedRangeDef): string {
   const sheet = def.sheetName || ''
   const range = String(def.range || '').trim()
   if (!sheet) return range
@@ -42,13 +54,17 @@ function toRef(def) {
   return `${q}!${range}`
 }
 
+interface CodeSegment { code: string; str?: undefined }
+interface StringSegment { str: string; code?: undefined }
+type FormulaSegment = CodeSegment | StringSegment
+
 /**
  * Split a formula into an alternating list of [outsideString, stringLiteral, …]
  * so substitution only touches code, never the inside of a "quoted string".
  * Handles doubled quotes ("" escape) the spreadsheet way.
  */
-function splitByStrings(formula) {
-  const parts = []
+function splitByStrings(formula: string): FormulaSegment[] {
+  const parts: FormulaSegment[] = []
   let buf = ''
   let i = 0
   const n = formula.length
@@ -81,7 +97,7 @@ function splitByStrings(formula) {
  * formulas with no matching names. Longest names first so a name that is a
  * prefix of another doesn't partially match.
  */
-export function expandNamedRanges(formula, namedRanges) {
+export function expandNamedRanges(formula: string, namedRanges: NamedRangeDef[]): string {
   if (typeof formula !== 'string' || !formula) return formula
   if (!Array.isArray(namedRanges) || namedRanges.length === 0) return formula
 
@@ -96,8 +112,8 @@ export function expandNamedRanges(formula, namedRanges) {
   // not an identifier char or `(` (a function call). We do this WITHOUT a regex
   // lookbehind (unsupported on Safari < 16.4 — it throws at construction), by
   // checking the boundary chars manually around each `g`-scan match.
-  const before = (ch) => ch === undefined || !/[A-Za-z0-9_!.]/.test(ch)
-  const after = (ch) => ch === undefined || !/[A-Za-z0-9_(]/.test(ch)
+  const before = (ch: string | undefined) => ch === undefined || !/[A-Za-z0-9_!.]/.test(ch)
+  const after = (ch: string | undefined) => ch === undefined || !/[A-Za-z0-9_(]/.test(ch)
 
   const parts = splitByStrings(formula)
   const out = parts.map((p) => {
@@ -114,12 +130,12 @@ export function expandNamedRanges(formula, namedRanges) {
   return out.join('')
 }
 
-function escapeRe(s) {
+function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 /** Read named ranges off the workbook (stored on the first sheet). */
-export function getNamedRanges(data) {
+export function getNamedRanges(data: SheetWithNamedRanges[] | undefined | null): NamedRangeDef[] {
   const arr = data?.[0]?.namedRanges
   return Array.isArray(arr) ? arr : []
 }
