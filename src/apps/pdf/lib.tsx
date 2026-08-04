@@ -1,5 +1,5 @@
 /**
- * src/apps/pdf/lib.jsx — @vulos/office-client pdf library entry
+ * src/apps/pdf/lib.tsx — @vulos/office-client pdf library entry
  *
  * Exports <PDFApp /> — the PDF editor as a single embeddable React component.
  *
@@ -13,8 +13,14 @@
 
 import { Suspense, lazy } from 'react'
 import { MemoryRouter, Routes, Route, Navigate } from 'react-router-dom'
+import type { PDFEditorProps } from './PDFEditor.jsx'
 
 const PDFEditor = lazy(() => import('./PDFEditor.jsx'))
+
+interface PDFAppProps extends PDFEditorProps {
+  theme?: 'light' | 'dark' | 'auto'
+  initialDocID?: string
+}
 
 export function PDFApp({
   apiBase = '',
@@ -22,7 +28,7 @@ export function PDFApp({
   onSignOut,
   onNotification,
   initialDocID,
-}) {
+}: PDFAppProps) {
   const initialPath = initialDocID ? `/pdf/${initialDocID}` : '/pdf'
   return (
     <div data-theme={theme} style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>

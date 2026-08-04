@@ -153,7 +153,7 @@ const CURSORS: Record<Tool, string> = {
 // Annotation outline colour — warm ink, not bright blue.
 const ANNOT_INK = '#1a1916'
 
-interface PDFEditorProps {
+export interface PDFEditorProps {
   apiBase?: string
   onSignOut?: () => void
   onNotification?: (title: string, body: string, priority?: string) => void
