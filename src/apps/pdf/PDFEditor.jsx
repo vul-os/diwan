@@ -11,7 +11,7 @@ import {
   Upload, RotateCw, FilePlus, Trash, FileSignature,
 } from 'lucide-react'
 import { Button, IconButton, Tabs, Topbar, Tooltip } from '../../components/ui'
-import { extractFields, fieldsToAnnotations } from './formFields.js'
+import { extractFields, fieldsToAnnotations } from './formFields'
 // SOVEREIGNTY: cursive signature fonts vendored locally via @fontsource
 // (self-hosted woff2) instead of an @import from fonts.googleapis.com at
 // runtime — no user-IP leak to Google, stays air-gappable. Same fonts.
