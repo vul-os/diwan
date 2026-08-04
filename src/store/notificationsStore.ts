@@ -1,10 +1,31 @@
 import { create } from 'zustand'
 import { api } from '../lib/api'
 
+/** An in-app @-mention notification, as returned by GET /notifications. */
+export interface AppNotification {
+  id: string
+  read: boolean
+  actor?: string
+  file_id?: string
+  file_name?: string
+  snippet?: string
+  created_at: string
+  [key: string]: unknown
+}
+
+interface NotificationsState {
+  items: AppNotification[]
+  loading: boolean
+  fetch: () => Promise<void>
+  unreadCount: () => number
+  markRead: (id: string) => Promise<void>
+  markAllRead: () => Promise<void>
+}
+
 // notificationsStore — in-app @-mention notifications for the current account.
 // The server only ever returns the caller's OWN notifications, so there is no
 // cross-account exposure here.
-export const useNotificationsStore = create((set, get) => ({
+export const useNotificationsStore = create<NotificationsState>((set, get) => ({
   items: [],
   loading: false,
 
@@ -17,7 +38,7 @@ export const useNotificationsStore = create((set, get) => ({
       // consumer that does `items.filter(...)` — including the app-shell rail —
       // throws and takes down the whole UI. `items || []` is NOT enough: an
       // object body ({}) is truthy and would pass through.
-      set({ items: Array.isArray(items) ? items : [], loading: false })
+      set({ items: Array.isArray(items) ? (items as AppNotification[]) : [], loading: false })
     } catch {
       set({ loading: false })
     }

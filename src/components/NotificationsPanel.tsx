@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Bell, AtSign, CheckCheck, X } from 'lucide-react'
 import { useNotificationsStore } from '../store/notificationsStore'
 
-function timeAgo(s) {
+function timeAgo(s: string) {
   const diff = Date.now() - new Date(s).getTime()
   if (diff < 60000) return 'just now'
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`
@@ -11,24 +11,29 @@ function timeAgo(s) {
   return `${Math.floor(diff / 86400000)}d ago`
 }
 
-const ROUTE = { doc: 'docs', sheet: 'sheets', slide: 'slides' }
+const ROUTE: Record<string, string> = { doc: 'docs', sheet: 'sheets', slide: 'slides' }
 
 /**
  * NotificationsPanel — a dropdown surfacing @-mention notifications.
  * All text (actor, snippet, file name) is rendered as plain React text nodes,
  * so a crafted mention/comment body can carry no markup.
  */
-export default function NotificationsPanel({ onClose, fileTypeOf }) {
+interface NotificationsPanelProps {
+  onClose?: () => void
+  fileTypeOf?: (fileId: string) => string | undefined
+}
+
+export default function NotificationsPanel({ onClose, fileTypeOf }: NotificationsPanelProps) {
   const { items, fetch, markRead, markAllRead } = useNotificationsStore()
   const navigate = useNavigate()
 
   useEffect(() => { fetch() }, [fetch])
 
-  const open = (n) => {
+  const open = (n: { id: string; file_id?: string }) => {
     markRead(n.id)
     if (n.file_id) {
       const t = fileTypeOf?.(n.file_id)
-      const route = ROUTE[t] || 'docs'
+      const route = (t && ROUTE[t]) || 'docs'
       navigate(`/${route}/${n.file_id}`)
     }
     onClose?.()
