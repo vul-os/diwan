@@ -1,5 +1,5 @@
 /**
- * src/apps/sheets/PivotPanel.jsx  (WAVE-63 — reactive pivot; WAVE-64 — depth)
+ * src/apps/sheets/PivotPanel.tsx  (WAVE-63 — reactive pivot; WAVE-64 — depth)
  *
  * Pivot table configuration side panel. Instead of inserting a STATIC snapshot
  * into a new sheet (which went stale the moment a source cell changed), it now
@@ -26,24 +26,36 @@ import { Button, IconButton } from '../../components/ui'
 import {
   makePivot, insertPivot, updatePivot, computePivotModel, pivotHeaders, pivotToSheet,
   PIVOT_AGGS, PIVOT_DISPLAYS, PIVOT_DISPLAY_LABEL, PIVOT_GROUPINGS, PIVOT_GROUPING_LABEL,
+  type Pivot, type PivotSheet, type PivotValueSpec, type PivotAgg, type PivotDisplay, type PivotGrouping,
 } from './pivot.js'
 
 const MAX_VALUES = 8
 
+interface SelectionRect { r0: number; r1: number; c0: number; c1: number }
+
+export interface PivotPanelProps {
+  data: PivotSheet[]
+  pivot?: Pivot | null
+  selectionRect?: SelectionRect | null
+  onClose: () => void
+  onInsert: (data: PivotSheet[]) => void
+  onInsertStatic?: (data: PivotSheet[]) => void
+}
+
 // Turn a 0-indexed selection rect into an A1 range string.
-function colToLetter(idx) {
+function colToLetter(idx: number): string {
   let s = ''
   let n = idx + 1
   while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26) }
   return s
 }
-function rectToA1(rect) {
+function rectToA1(rect: SelectionRect | null | undefined): string {
   if (!rect) return ''
   const { r0, r1, c0, c1 } = rect
   return `${colToLetter(c0)}${r0 + 1}:${colToLetter(c1)}${r1 + 1}`
 }
 
-export default function PivotPanel({ data, pivot: editPivot, selectionRect, onClose, onInsert, onInsertStatic }) {
+export default function PivotPanel({ data, pivot: editPivot, selectionRect, onClose, onInsert, onInsertStatic }: PivotPanelProps) {
   const activeSheet = data?.[0]
   const isEditing = !!editPivot
 
@@ -61,9 +73,9 @@ export default function PivotPanel({ data, pivot: editPivot, selectionRect, onCl
   const [range, setRange] = useState(initialRange)
   const [rowField, setRowField] = useState(editPivot?.rowField || '')
   const [colField, setColField] = useState(editPivot?.colField || '')
-  const [rowGroup, setRowGroup] = useState(editPivot?.rowGroup || 'none')
-  const [colGroup, setColGroup] = useState(editPivot?.colGroup || 'none')
-  const [values, setValues] = useState(
+  const [rowGroup, setRowGroup] = useState<PivotGrouping>(editPivot?.rowGroup || 'none')
+  const [colGroup, setColGroup] = useState<PivotGrouping>(editPivot?.colGroup || 'none')
+  const [values, setValues] = useState<PivotValueSpec[]>(
     editPivot?.values?.length
       ? editPivot.values.map((v) => ({ ...v }))
       : editPivot?.valueField
@@ -92,19 +104,19 @@ export default function PivotPanel({ data, pivot: editPivot, selectionRect, onCl
   const model = useMemo(() => computePivotModel(draft, activeSheet || {}), [draft, activeSheet])
   const preview = model?.table || null
 
-  function patchValue(i, patch) {
+  function patchValue(i: number, patch: Partial<PivotValueSpec>) {
     setValues((vs) => vs.map((v, j) => (j === i ? { ...v, ...patch } : v)))
   }
   function addValue() {
     setValues((vs) => (vs.length >= MAX_VALUES ? vs : [...vs, { field: headers[0] || '', agg: 'SUM', display: 'raw' }]))
   }
-  function removeValue(i) {
+  function removeValue(i: number) {
     setValues((vs) => vs.filter((_, j) => j !== i))
   }
 
   function handleCommit() {
     const patch = { range, rowField, colField, rowGroup, colGroup, values, title }
-    const next = isEditing ? updatePivot(data, editPivot.id, patch) : insertPivot(data, patch)
+    const next = isEditing && editPivot ? updatePivot(data, editPivot.id, patch) : insertPivot(data, patch)
     onInsert(next)
     onClose()
   }
@@ -115,14 +127,14 @@ export default function PivotPanel({ data, pivot: editPivot, selectionRect, onCl
   function handleInsertStatic() {
     if (!onInsertStatic) return
     const sheet = pivotToSheet(draft, activeSheet || {}, title)
-    if (sheet) onInsertStatic([...data, sheet])
+    if (sheet) onInsertStatic([...data, sheet as unknown as PivotSheet])
     onClose()
   }
 
   const sel = 'w-full rounded-md border border-line bg-bg px-2 py-1.5 text-xs text-ink focus:outline-none focus:border-line-strong'
   const selSm = 'w-full rounded-md border border-line bg-bg px-1.5 py-1 text-[11px] text-ink focus:outline-none focus:border-line-strong'
   const pctCols = useMemo(() => {
-    const s = new Set()
+    const s = new Set<number>()
     ;(model?.displays || []).forEach((d, i) => { if (d && d !== 'raw') s.add(i) })
     return s
   }, [model])
@@ -156,7 +168,7 @@ export default function PivotPanel({ data, pivot: editPivot, selectionRect, onCl
                 <select
                   aria-label="Group row dates"
                   value={rowGroup}
-                  onChange={(e) => setRowGroup(e.target.value)}
+                  onChange={(e) => setRowGroup(e.target.value as PivotGrouping)}
                   className={selSm}
                 >
                   {PIVOT_GROUPINGS.map((g) => <option key={g} value={g}>{PIVOT_GROUPING_LABEL[g]}</option>)}
@@ -174,7 +186,7 @@ export default function PivotPanel({ data, pivot: editPivot, selectionRect, onCl
                 <select
                   aria-label="Group column dates"
                   value={colGroup}
-                  onChange={(e) => setColGroup(e.target.value)}
+                  onChange={(e) => setColGroup(e.target.value as PivotGrouping)}
                   className={selSm}
                 >
                   {PIVOT_GROUPINGS.map((g) => <option key={g} value={g}>{PIVOT_GROUPING_LABEL[g]}</option>)}
@@ -226,7 +238,7 @@ export default function PivotPanel({ data, pivot: editPivot, selectionRect, onCl
                       <select
                         aria-label={`Aggregation for value ${i + 1}`}
                         value={v.agg}
-                        onChange={(e) => patchValue(i, { agg: e.target.value })}
+                        onChange={(e) => patchValue(i, { agg: e.target.value as PivotAgg })}
                         className={selSm}
                       >
                         {PIVOT_AGGS.map((k) => <option key={k} value={k}>{k}</option>)}
@@ -234,7 +246,7 @@ export default function PivotPanel({ data, pivot: editPivot, selectionRect, onCl
                       <select
                         aria-label={`Display for value ${i + 1}`}
                         value={v.display}
-                        onChange={(e) => patchValue(i, { display: e.target.value })}
+                        onChange={(e) => patchValue(i, { display: e.target.value as PivotDisplay })}
                         className={selSm}
                       >
                         {PIVOT_DISPLAYS.map((d) => <option key={d} value={d}>{PIVOT_DISPLAY_LABEL[d]}</option>)}
