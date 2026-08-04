@@ -1,5 +1,5 @@
 /**
- * src/apps/slides/lib.jsx — @vulos/office-client slides library entry
+ * src/apps/slides/lib.tsx — @vulos/office-client slides library entry
  *
  * Exports <SlidesApp /> — the Slides editor as a single embeddable React component.
  *
@@ -13,8 +13,14 @@
 
 import { Suspense, lazy } from 'react'
 import { MemoryRouter, Routes, Route, Navigate } from 'react-router-dom'
+import type { SlidesEditorProps } from './SlidesEditor.jsx'
 
 const SlidesEditor = lazy(() => import('./SlidesEditor.jsx'))
+
+interface SlidesAppProps extends SlidesEditorProps {
+  theme?: 'light' | 'dark' | 'auto'
+  initialDocID?: string
+}
 
 export function SlidesApp({
   apiBase = '',
@@ -22,7 +28,7 @@ export function SlidesApp({
   onSignOut,
   onNotification,
   initialDocID,
-}) {
+}: SlidesAppProps) {
   const initialPath = initialDocID ? `/slides/${initialDocID}` : '/slides'
   return (
     <div data-theme={theme} style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
