@@ -25,20 +25,20 @@
  *   - Reduced-motion: the reconnecting pulse is gated on motion preference.
  *   - aria-live="polite" + role="status" so screen readers announce transitions
  *     without stealing focus.
- *
- * JSX only — no .tsx.
  */
 
 import { Wifi, WifiOff, Loader2, Eye, AlertTriangle } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
+import type { StatusPill, StatusPillStatus, StatusPillTone } from '../lib/collab/presenceCommon.js'
 
-const TONE_CLASS = {
+const TONE_CLASS: Record<StatusPillTone, string> = {
   success: 'text-success',
   warning: 'text-warning',
   danger:  'text-danger',
   muted:   'text-ink-muted',
 }
 
-const STATUS_META = {
+const STATUS_META: Record<StatusPillStatus, { Icon: LucideIcon; spin: boolean; pulse: boolean }> = {
   live:         { Icon: Wifi,          spin: false, pulse: false },
   solo:         { Icon: Wifi,          spin: false, pulse: false },
   connecting:   { Icon: Loader2,       spin: true,  pulse: false },
@@ -48,10 +48,12 @@ const STATUS_META = {
   mismatch:     { Icon: AlertTriangle, spin: false, pulse: false },
 }
 
-/**
- * @param {{ pill: { status: string, label: string, tone: string }, peerCount?: number }} props
- */
-export default function ConnectionPill({ pill, peerCount = 0 }) {
+interface ConnectionPillProps {
+  pill: StatusPill | null | undefined
+  peerCount?: number
+}
+
+export default function ConnectionPill({ pill, peerCount = 0 }: ConnectionPillProps) {
   if (!pill) return null
   const meta = STATUS_META[pill.status] || STATUS_META.offline
   const { Icon } = meta

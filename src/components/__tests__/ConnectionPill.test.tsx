@@ -9,8 +9,9 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import ConnectionPill from '../ConnectionPill.jsx'
+import type { StatusPillStatus, StatusPillTone } from '../../lib/collab/presenceCommon.js'
 
-function pill(status, label, tone) {
+function pill(status: StatusPillStatus, label: string, tone: StatusPillTone) {
   return { status, label, tone }
 }
 
