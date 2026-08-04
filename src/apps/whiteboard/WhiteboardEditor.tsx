@@ -30,8 +30,9 @@ import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Excalidraw } from '@excalidraw/excalidraw'
 import '@excalidraw/excalidraw/index.css'
+import type { ExcalidrawImperativeAPI, ExcalidrawProps } from '@excalidraw/excalidraw/types'
 import { ArrowLeft, Users, Eye, Share2, Presentation as BoardIcon, Info, WifiOff } from 'lucide-react'
-import { useFilesStore, getSaveState, onSaveStateChange } from '../../store/filesStore'
+import { useFilesStore, getSaveState, onSaveStateChange, type DiwanFile } from '../../store/filesStore'
 import { api } from '../../lib/api'
 import { useAuthStore } from '../../store/authStore'
 import { useResolvedTheme } from '../../components/ui/useTheme'
@@ -49,6 +50,8 @@ import { ExcalidrawYBinding } from './binding.js'
 import { useP2PCollab } from '../docs/useP2PCollab.js'
 import P2PShareModal from '../docs/components/P2PShareModal.jsx'
 
+type OnChangeArgs = Parameters<NonNullable<ExcalidrawProps['onChange']>>
+
 const AUTOSAVE_DELAY_MS = 1500
 
 export default function WhiteboardEditor() {
@@ -63,18 +66,18 @@ export default function WhiteboardEditor() {
   const collabEnabled = useMemo(() => docsCollabEnabled(), [])
 
   const { files, saveFileWithDraft, markDirty } = useFilesStore()
-  const [file, setFile] = useState(files.find((f) => f.id === id))
+  const [file, setFile] = useState<DiwanFile | undefined>(files.find((f) => f.id === id))
   const [title, setTitle] = useState(file?.name || 'Untitled whiteboard')
-  const [saveStatus, setSaveStatus] = useState(getSaveState(id))
+  const [saveStatus, setSaveStatus] = useState(getSaveState(id as string))
   const [seeded, setSeeded] = useState(false)
   const [showShare, setShowShare] = useState(false)
   useAuthStore((s) => s.accountId) // ensure identity resolves for share UI
 
   const titleRef = useRef(title)
   titleRef.current = title
-  const saveTimer = useRef(null)
-  const bindingRef = useRef(null)
-  const [excalidrawAPI, setExcalidrawAPI] = useState(null)
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const bindingRef = useRef<ExcalidrawYBinding | null>(null)
+  const [excalidrawAPI, setExcalidrawAPI] = useState<ExcalidrawImperativeAPI | null>(null)
 
   // ── The collaborative whiteboard (Yjs) — ALWAYS the local data model ────────
   // Unlike Docs (where TipTap can hold content solo), the Y.Doc + binding IS the
@@ -85,11 +88,11 @@ export default function WhiteboardEditor() {
   const ctx = useMemo(() => (ydoc ? createBoardYContext(ydoc) : null), [ydoc])
 
   // ── P2P collab (invite-link, E2E, ro-enforced) — the SAME hook Docs uses ────
-  const p2p = useP2PCollab({ fileId: id, ctx, enabled: collabEnabled })
+  const p2p = useP2PCollab({ fileId: id as string, ctx: ctx as object, enabled: collabEnabled })
 
   // Subscribe to this file's save state.
   useEffect(() => {
-    const unsub = onSaveStateChange(id, (s) => setSaveStatus({ ...s }))
+    const unsub = onSaveStateChange(id as string, (s) => setSaveStatus({ ...s }))
     return unsub
   }, [id])
 
@@ -97,7 +100,7 @@ export default function WhiteboardEditor() {
   useEffect(() => {
     if (file || !id) return
     api.getFile(id)
-      .then((f) => { setFile(f); setTitle(f.name || 'Untitled whiteboard') })
+      .then((f) => { const loaded = f as DiwanFile; setFile(loaded); setTitle(loaded.name || 'Untitled whiteboard') })
       .catch(() => navigate('/whiteboards'))
   }, [id, file, navigate])
 
@@ -116,7 +119,7 @@ export default function WhiteboardEditor() {
         Y.applyUpdate(ctx.ydoc, update, SEED_ORIGIN)
       }
     } catch (err) {
-      console.warn('[whiteboard] local seed failed (editor stays usable):', err?.message)
+      console.warn('[whiteboard] local seed failed (editor stays usable):', (err as { message?: string } | null | undefined)?.message)
     }
     setSeeded(true)
   }, [ctx, file, seeded])
@@ -164,9 +167,9 @@ export default function WhiteboardEditor() {
 
   useEffect(() => {
     if (!ctx) return
-    const onUpdate = (_update, origin) => {
+    const onUpdate = (_update: Uint8Array, origin: unknown) => {
       if (origin === SEED_ORIGIN) return
-      markDirty(id)
+      markDirty(id as string)
       clearTimeout(saveTimer.current)
       saveTimer.current = setTimeout(() => doSave(), AUTOSAVE_DELAY_MS)
     }
@@ -175,8 +178,8 @@ export default function WhiteboardEditor() {
   }, [ctx, id, doSave, markDirty])
 
   // Excalidraw local edits → drive the binding (which writes into the Y.Doc).
-  const onChange = useCallback((elements, appState, filesMap) => {
-    bindingRef.current?.handleChange(elements, appState, filesMap)
+  const onChange = useCallback((...args: OnChangeArgs) => {
+    bindingRef.current?.handleChange(...args)
   }, [])
 
   // Honesty guards (mirrors DocsEditor): an invite link that this deployment
@@ -202,9 +205,9 @@ export default function WhiteboardEditor() {
     )
   }, [p2p.peeringUnavailable, showToast])
 
-  const handleTitleChange = (v) => {
+  const handleTitleChange = (v: string) => {
     setTitle(v)
-    markDirty(id)
+    markDirty(id as string)
     clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => doSave(), AUTOSAVE_DELAY_MS)
   }
@@ -214,8 +217,9 @@ export default function WhiteboardEditor() {
       await p2p.startShare()
       setShowShare(true)
     } catch (err) {
-      if (err?.message === 'peering-unavailable') setShowShare(true) // modal explains
-      else if (err?.message !== 'collab-disabled') {
+      const message = (err as { message?: string } | null | undefined)?.message
+      if (message === 'peering-unavailable') setShowShare(true) // modal explains
+      else if (message !== 'collab-disabled') {
         showToast('Could not start a collaboration room.', 'error')
       }
     }
@@ -254,7 +258,11 @@ export default function WhiteboardEditor() {
         meta={
           <>
             {saveStatus.status && (
-              <SaveStatus status={saveStatus.status} text={saveStatusText} title={saveStatus.error || undefined} />
+              <SaveStatus
+                status={saveStatus.status as 'saved' | 'saving' | 'dirty' | 'error' | 'offline' | undefined}
+                text={saveStatusText}
+                title={saveStatus.error || undefined}
+              />
             )}
             {!collabEnabled && (
               <Tooltip label={DOCS_COLLAB_OFF_NOTICE}>
