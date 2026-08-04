@@ -90,10 +90,15 @@ describe('Share links + transfer ownership (MSW integration)', () => {
   // URL is there right after minting, and it is gone (with a plain explanation,
   // not a broken URL) for any link the session did not mint.
   it('shows no URL and no copy button for a link this session did not mint', async () => {
-    // Seed a link exactly as the server would return it on GET: no token field.
+    // Seed a link exactly as the server would return it on GET: the GET
+    // /share-links handler always strips `token` before responding (see
+    // handlers.ts), so its value here is never read by anything this test
+    // exercises — but MockShareLink's stored-record shape still requires the
+    // field (only the wire response omits it), hence the placeholder.
     mockState.shareLinks.doc1 = [{
       id: 'link-preexisting',
       file_id: 'doc1',
+      token: 'not-this-sessions-token',
       created_by: 'you@vulos.test',
       has_password: false,
       expires_at: null,
@@ -183,7 +188,10 @@ describe('Anonymous read-only view (MSW integration)', () => {
 
   function seedLink({ password = '' } = {}) {
     const token = 'tokX'
-    const link = { id: 'linkX', file_id: 'doc1', token, has_password: !!password, expires_at: null, revoked: false }
+    const link = {
+      id: 'linkX', file_id: 'doc1', token, has_password: !!password, expires_at: null, revoked: false,
+      created_at: new Date().toISOString(),
+    }
     mockState.shareLinks.doc1 = [link]
     mockState.linksByToken[token] = {
       link,
@@ -195,7 +203,7 @@ describe('Anonymous read-only view (MSW integration)', () => {
     return token
   }
 
-  const renderView = (token) =>
+  const renderView = (token: string) =>
     render(
       <MemoryRouter initialEntries={[`/view/${token}`]}>
         <Routes>
