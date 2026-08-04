@@ -43,14 +43,20 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import JSZip from 'jszip'
-import { importWorkbook, workbookToSheets } from '../sheetsImport.js'
-import { exportSheetsToXlsx, exportFidelity, exportNeedsConfirm } from '../sheetsExport.js'
-import { getImportNotes } from '../importNotes.js'
+import { importWorkbook, workbookToSheets, type ImportCellEntry, type ImportCellValue } from '../sheetsImport.js'
+import { exportSheetsToXlsx, exportFidelity, exportNeedsConfirm, type ExportSheet } from '../sheetsExport.js'
+import { getImportNotes, type INSheet } from '../importNotes.js'
+
+// charts.ts / sheetsExport.ts / sheetsImport.ts each declare their own narrow
+// view of the same plain-data FortuneSheet shape (ChartSheet / ExportSheet /
+// ImportSheet) — no shared base type. Production crosses these boundaries with
+// the same cast-through-unknown helper (SheetsEditor.tsx's `cast<T>`).
+function cast<T>(v: unknown): T { return v as T }
 
 // file-saver is the only side effect of the export path; capture the Blob so a
 // test can read the EXACT bytes a user would have downloaded.
-const saved = []
-vi.mock('file-saver', () => ({ saveAs: (blob, name) => { saved.push({ blob, name }) } }))
+const saved: { blob: Blob; name: string }[] = []
+vi.mock('file-saver', () => ({ saveAs: (blob: Blob, name: string) => { saved.push({ blob, name }) } }))
 
 const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures')
 
@@ -60,7 +66,7 @@ const FIXTURES = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtur
  * a test that skipped this copy would "measure" nonsense and report a bug that
  * isn't there (it did, once).
  */
-function fixture(name) {
+function fixture(name: string) {
   const buf = fs.readFileSync(path.join(FIXTURES, name))
   const bytes = new Uint8Array(buf.byteLength)
   bytes.set(buf)
@@ -68,16 +74,17 @@ function fixture(name) {
 }
 
 /** The parts of the .xlsx package the last export actually wrote. */
-async function exportedParts() {
+async function exportedParts(): Promise<string[]> {
   const zip = await JSZip.loadAsync(await saved[saved.length - 1].blob.arrayBuffer())
   return Object.keys(zip.files)
 }
-async function exportedPart(name) {
+async function exportedPart(name: string): Promise<string | undefined> {
   const zip = await JSZip.loadAsync(await saved[saved.length - 1].blob.arrayBuffer())
   return zip.file(name)?.async('string')
 }
 
-const cellAt = (sheet, r, c) => sheet.celldata.find((x) => x.r === r && x.c === c)?.v
+const cellAt = (sheet: { celldata: ImportCellEntry[] }, r: number, c: number): ImportCellValue | undefined =>
+  sheet.celldata.find((x) => x.r === r && x.c === c)?.v
 
 beforeEach(() => { saved.length = 0 })
 
@@ -96,8 +103,8 @@ describe('foreign .xlsx with charts — open, edit, export back', () => {
     expect(charts).toHaveLength(4)
     expect(charts.map((c) => c.type).sort()).toEqual(['column', 'column-stacked', 'line', 'pie'])
 
-    expect(charts.find((c) => c.type === 'line').title).toBe('Revenue and cost trend')
-    const column = charts.find((c) => c.type === 'column')
+    expect(charts.find((c) => c.type === 'line')!.title).toBe('Revenue and cost trend')
+    const column = charts.find((c) => c.type === 'column')!
     expect(column.title).toBe('Revenue by quarter')
     // Header row (series names) + header column (categories) folded back into the
     // single contiguous range our renderer reads.
@@ -108,8 +115,8 @@ describe('foreign .xlsx with charts — open, edit, export back', () => {
     expect(column.options.yAxisLabel).toBe('ZAR')
 
     // Two contiguous series → one range spanning both value columns.
-    expect(charts.find((c) => c.type === 'column-stacked').range).toBe('A1:C5')
-    expect(charts.find((c) => c.type === 'line').range).toBe('A1:C5')
+    expect(charts.find((c) => c.type === 'column-stacked')!.range).toBe('A1:C5')
+    expect(charts.find((c) => c.type === 'line')!.range).toBe('A1:C5')
 
     // Geometry came from the drawing anchors, so the charts do not all land in a
     // pile at the default offset.
@@ -121,12 +128,12 @@ describe('foreign .xlsx with charts — open, edit, export back', () => {
     const { sheets } = await importWorkbook(fixture('foreign-charts.xlsx').buffer, 'foreign-charts.xlsx')
     const s = sheets[0]
     expect(s.name).toBe('Sales')
-    expect(cellAt(s, 0, 0).v).toBe('Quarter')
-    expect(cellAt(s, 1, 1).v).toBe(100)
-    expect(cellAt(s, 1, 4).f).toBe('=B2-C2')                    // formula, as data
-    expect(cellAt(s, 1, 5).ct.fa).toBe('"$"#,##0.00')           // number format
+    expect(cellAt(s, 0, 0)!.v).toBe('Quarter')
+    expect(cellAt(s, 1, 1)!.v).toBe(100)
+    expect(cellAt(s, 1, 4)!.f).toBe('=B2-C2')                    // formula, as data
+    expect(cellAt(s, 1, 5)!.ct.fa).toBe('"$"#,##0.00')           // number format
     expect(s.config.merge).toEqual({ '6_0': { r: 6, c: 0, rs: 1, cs: 3 } })
-    expect(s.config.columnlen[0]).toBeGreaterThan(100)
+    expect(s.config.columnlen![0]).toBeGreaterThan(100)
   })
 
   it('THE BUG: import → edit a cell → export keeps the charts as real Excel charts', async () => {
@@ -139,7 +146,7 @@ describe('foreign .xlsx with charts — open, edit, export back', () => {
         cd.r === 1 && cd.c === 1 ? { ...cd, v: { ...cd.v, v: 999, m: '999' } } : cd),
     }))
 
-    const { embedded, skipped } = await exportSheetsToXlsx(edited, 'out')
+    const { embedded, skipped } = await exportSheetsToXlsx(cast<ExportSheet[]>(edited), 'out')
     expect(skipped).toEqual([])
     expect(embedded).toHaveLength(4)
 
@@ -157,12 +164,12 @@ describe('foreign .xlsx with charts — open, edit, export back', () => {
     const reread = workbookToSheets(
       await saved[0].blob.arrayBuffer().then((ab) => new Uint8Array(ab).buffer), 'out.xlsx'
     )
-    expect(cellAt(reread[0], 1, 1).v).toBe(999)
+    expect(cellAt(reread[0], 1, 1)!.v).toBe(999)
   })
 
   it('the exported file re-opens in Vulos with all four charts (full circle)', async () => {
     const { sheets } = await importWorkbook(fixture('foreign-charts.xlsx').buffer, 'foreign-charts.xlsx')
-    await exportSheetsToXlsx(sheets, 'out')
+    await exportSheetsToXlsx(cast<ExportSheet[]>(sheets), 'out')
 
     const bytes = new Uint8Array(await saved[0].blob.arrayBuffer())
     const { sheets: reopened } = await importWorkbook(bytes.buffer, 'out.xlsx')
@@ -170,7 +177,7 @@ describe('foreign .xlsx with charts — open, edit, export back', () => {
     const charts = reopened[0].charts || []
     expect(charts).toHaveLength(4)
     expect(charts.map((c) => c.type).sort()).toEqual(['column', 'column-stacked', 'line', 'pie'])
-    expect(charts.find((c) => c.type === 'column').title).toBe('Revenue by quarter')
+    expect(charts.find((c) => c.type === 'column')!.title).toBe('Revenue by quarter')
     // The bookkeeping sheet must not surface as a worksheet of rows.
     expect(reopened.map((s) => s.name)).not.toContain('Vulos Charts')
   })
@@ -178,8 +185,8 @@ describe('foreign .xlsx with charts — open, edit, export back', () => {
   it('a clean foreign import warns about nothing and exports with zero friction', async () => {
     const { sheets, notes } = await importWorkbook(fixture('foreign-charts.xlsx').buffer, 'foreign-charts.xlsx')
     expect(notes).toBeNull()
-    expect(getImportNotes(sheets)).toBeNull()
-    expect(exportFidelity(sheets, 'xlsx').missing).toBeNull()
+    expect(getImportNotes(cast<INSheet[]>(sheets))).toBeNull()
+    expect(exportFidelity(cast<ExportSheet[]>(sheets), 'xlsx').missing).toBeNull()
   })
 })
 
@@ -195,9 +202,9 @@ describe('charts our model cannot express — reported, never faked', () => {
     // add a series the user never plotted. We refuse, and we say why.
     expect(sheets[0].charts ?? []).toHaveLength(0)
 
-    expect(notes.charts).toHaveLength(3)
-    expect(notes.charts.map((c) => c.title).sort()).toEqual(['Detached labels', 'Non-adjacent', 'Radar'])
-    const reasonFor = (t) => notes.charts.find((c) => c.title === t).reason
+    expect(notes!.charts).toHaveLength(3)
+    expect(notes!.charts.map((c) => c.title).sort()).toEqual(['Detached labels', 'Non-adjacent', 'Radar'])
+    const reasonFor = (t: string) => notes!.charts.find((c) => c.title === t)!.reason
     expect(reasonFor('Radar')).toMatch(/radar.*aren’t supported/i)
     expect(reasonFor('Non-adjacent')).toMatch(/non-adjacent columns/i)
     expect(reasonFor('Detached labels')).toMatch(/category labels are not next to the data/i)
@@ -208,11 +215,11 @@ describe('charts our model cannot express — reported, never faked', () => {
       fixture('foreign-unreadable.xlsx').buffer, 'foreign-unreadable.xlsx'
     )
 
-    const report = exportFidelity(sheets, 'xlsx')
-    expect(report.missing.charts).toHaveLength(3)
-    expect(report.missing.filename).toBe('foreign-unreadable.xlsx')
+    const report = exportFidelity(cast<ExportSheet[]>(sheets), 'xlsx')
+    expect(report.missing!.charts).toHaveLength(3)
+    expect(report.missing!.filename).toBe('foreign-unreadable.xlsx')
     // The dialog must actually open — silence here is the whole bug.
-    expect(exportNeedsConfirm(sheets, 'xlsx')).toBe(true)
+    expect(exportNeedsConfirm(cast<ExportSheet[]>(sheets), 'xlsx')).toBe(true)
   })
 })
 
@@ -222,22 +229,22 @@ describe('foreign .xlsx with a pivot table', () => {
 
     // The numbers are not lost — Excel renders a pivot into real cells and we read
     // them. What is lost is the pivot OBJECT, and that is what we must not hide.
-    const pivotSheet = sheets.find((s) => s.name === 'PivotSheet')
-    expect(cellAt(pivotSheet, 3, 0).v).toBe('Grand Total')
-    expect(cellAt(pivotSheet, 3, 1).v).toBe(65)
+    const pivotSheet = sheets.find((s) => s.name === 'PivotSheet')!
+    expect(cellAt(pivotSheet, 3, 0)!.v).toBe('Grand Total')
+    expect(cellAt(pivotSheet, 3, 1)!.v).toBe(65)
 
-    expect(sheets[0].pivots ?? []).toHaveLength(0)   // no live pivot in the model
-    expect(notes.pivots).toBe(1)
+    expect(cast<{ pivots?: unknown[] }>(sheets[0]).pivots ?? []).toHaveLength(0)   // no live pivot in the model
+    expect(notes!.pivots).toBe(1)
   })
 
   it('warns on export, because the exported file will NOT have the pivot table', async () => {
     const { sheets } = await importWorkbook(fixture('foreign-pivot.xlsx').buffer, 'foreign-pivot.xlsx')
 
-    expect(exportNeedsConfirm(sheets, 'xlsx')).toBe(true)
-    expect(exportFidelity(sheets, 'xlsx').missing.pivots).toBe(1)
+    expect(exportNeedsConfirm(cast<ExportSheet[]>(sheets), 'xlsx')).toBe(true)
+    expect(exportFidelity(cast<ExportSheet[]>(sheets), 'xlsx').missing!.pivots).toBe(1)
 
     // And the warning is TRUE — the export really has no pivot parts.
-    await exportSheetsToXlsx(sheets, 'out')
+    await exportSheetsToXlsx(cast<ExportSheet[]>(sheets), 'out')
     const parts = await exportedParts()
     expect(parts.filter((n) => /pivot/i.test(n))).toEqual([])
   })
