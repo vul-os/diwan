@@ -28,7 +28,23 @@ beforeAll(() => server.listen({ onUnhandledRequest: 'bypass' }))
 afterEach(() => server.resetHandlers())
 afterAll(() => server.close())
 
-const CFG = { label: 'Documents', route: 'docs' }
+// AppHome.tsx's SearchResult/SearchDocsResponse shapes are intentionally not
+// exported (api.searchDocs returns `unknown` by design — see lib/api.ts); this
+// mirrors them locally, matching field-for-field, to type this test's own
+// fixtures and the cast at the api.searchDocs() boundary.
+interface TestSearchResult {
+  id: string
+  name?: string
+  type?: string
+  snippet?: string
+  owner?: string
+  shared?: boolean
+}
+interface TestSearchResponse {
+  query?: string
+  results: TestSearchResult[]
+}
+function cast<T>(v: unknown): T { return v as T }
 
 describe('Content search — api round-trip + ACL scoping (MSW)', () => {
   beforeEach(() => resetMock({ role: 'owner' }))
@@ -42,10 +58,10 @@ describe('Content search — api round-trip + ACL scoping (MSW)', () => {
       { id: 'shared', name: 'Team notes', type: 'doc', _body: 'widget planning', shared: true, owner: 'alice@vulos.test' },
     ]
 
-    const res = await api.searchDocs('widget', 'doc')
+    const res = cast<TestSearchResponse>(await api.searchDocs('widget', 'doc'))
     expect(mockState.calls.some((c) => c === 'GET /search')).toBe(true)
     expect(res.results).toHaveLength(2)
-    const shared = res.results.find((r) => r.id === 'shared')
+    const shared = res.results.find((r) => r.id === 'shared')!
     expect(shared.shared).toBe(true)
     expect(shared.owner).toBe('alice@vulos.test')
     // A document not in the caller's readable corpus never surfaces.
@@ -56,14 +72,14 @@ describe('Content search — api round-trip + ACL scoping (MSW)', () => {
     mockState.searchResults = [
       { id: 'mine', name: 'My roadmap', type: 'doc', _body: 'ship the widget' },
     ]
-    const res = await api.searchDocs('nonexistentterm', 'doc')
+    const res = cast<TestSearchResponse>(await api.searchDocs('nonexistentterm', 'doc'))
     expect(res.results).toHaveLength(0)
   })
 })
 
 describe('ContentSearchResults rendering (MSW-free)', () => {
   it('renders each hit with a shared-by attribution for shared docs', () => {
-    const results = [
+    const results: TestSearchResult[] = [
       { id: 'mine', name: 'My roadmap', snippet: 'ship the «widget» soon' },
       { id: 'shared', name: 'Team notes', snippet: 'the «widget» plan', shared: true, owner: 'alice@vulos.test' },
     ]
@@ -72,7 +88,6 @@ describe('ContentSearchResults rendering (MSW-free)', () => {
         results={results}
         searching={false}
         query="widget"
-        cfg={CFG}
         onOpen={() => {}}
       />,
     )
@@ -83,19 +98,21 @@ describe('ContentSearchResults rendering (MSW-free)', () => {
   })
 
   it('opens a hit when its row is activated', () => {
-    let opened = null
-    const results = [{ id: 'mine', name: 'My roadmap', snippet: 'a «hit»' }]
+    // A boxed field (rather than a bare `let`) sidesteps a TS control-flow
+    // narrowing pitfall where a `let` reassigned only inside a nested closure
+    // gets narrowed to its initializer's literal type at the read site.
+    const state: { opened: TestSearchResult | null } = { opened: null }
+    const results: TestSearchResult[] = [{ id: 'mine', name: 'My roadmap', snippet: 'a «hit»' }]
     render(
       <ContentSearchResults
         results={results}
         searching={false}
         query="hit"
-        cfg={CFG}
-        onOpen={(r) => { opened = r }}
+        onOpen={(r) => { state.opened = r }}
       />,
     )
     fireEvent.click(screen.getByRole('button', { name: /My roadmap/i }))
-    expect(opened?.id).toBe('mine')
+    expect(state.opened?.id).toBe('mine')
   })
 
   it('shows an explicit empty state when there are no matches', () => {
@@ -104,7 +121,6 @@ describe('ContentSearchResults rendering (MSW-free)', () => {
         results={[]}
         searching={false}
         query="ghost"
-        cfg={CFG}
         onOpen={() => {}}
       />,
     )
@@ -113,14 +129,14 @@ describe('ContentSearchResults rendering (MSW-free)', () => {
 
   it('renders nothing while idle (no query, no request in flight)', () => {
     const { container } = render(
-      <ContentSearchResults results={null} searching={false} query="" cfg={CFG} onOpen={() => {}} />,
+      <ContentSearchResults results={null} searching={false} query="" onOpen={() => {}} />,
     )
     expect(container.firstChild).toBeNull()
   })
 
   it('shows a loading affordance while a search is in flight', () => {
     render(
-      <ContentSearchResults results={null} searching query="widget" cfg={CFG} onOpen={() => {}} />,
+      <ContentSearchResults results={null} searching query="widget" onOpen={() => {}} />,
     )
     // The section header is present even before results arrive.
     expect(screen.getByText(/Matches in content/i)).toBeInTheDocument()
@@ -132,7 +148,7 @@ describe('SnippetText highlight + injection safety', () => {
     const { container } = render(<SnippetText snippet={'ship the «widget» soon'} />)
     const mark = container.querySelector('mark')
     expect(mark).not.toBeNull()
-    expect(mark.textContent).toBe('widget')
+    expect(mark!.textContent).toBe('widget')
     // The surrounding text is preserved.
     expect(container.textContent).toBe('ship the widget soon')
   })
@@ -145,7 +161,7 @@ describe('SnippetText highlight + injection safety', () => {
     // No real <img> node was created from the document content.
     expect(container.querySelector('img')).toBeNull()
     // The angle-bracket text survives verbatim inside the highlight.
-    expect(container.querySelector('mark').textContent).toContain('<img')
+    expect(container.querySelector('mark')!.textContent).toContain('<img')
   })
 
   it('handles an unmatched snippet (no guillemets) as plain text', () => {
