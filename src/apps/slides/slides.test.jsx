@@ -16,7 +16,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
-import { PRESET_THEMES, getTheme, DECK_TEMPLATES, MASTER_LAYOUTS } from './themes.js'
+import { PRESET_THEMES, getTheme, DECK_TEMPLATES, MASTER_LAYOUTS } from './themes'
 
 // ── 1. Theme gallery: PRESET_THEMES has 15 entries ─────────────────────────
 

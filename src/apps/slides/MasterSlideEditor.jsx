@@ -14,7 +14,7 @@
 
 import { useRef, useState } from 'react'
 import { X, Layout } from 'lucide-react'
-import { MASTER_LAYOUTS } from './themes.js'
+import { MASTER_LAYOUTS } from './themes'
 import { useDialogA11y } from '../../components/ui'
 
 const ALIGN_OPTIONS = ['left', 'center', 'right']

@@ -57,7 +57,7 @@ import MasterSlideEditor from './MasterSlideEditor.jsx'
 import TransitionPanel from './TransitionPanel.jsx'
 import TemplateGallery from './TemplateGallery.jsx'
 import { usePresenterView } from './PresenterView.jsx'
-import { getTheme } from './themes.js'
+import { getTheme } from './themes'
 
 // HTML sanitisation uses the shared config in src/lib/sanitize.js.
 

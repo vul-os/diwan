@@ -9,7 +9,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import ThemeGallery from './ThemeGallery.jsx'
-import { PRESET_THEMES } from './themes.js'
+import { PRESET_THEMES } from './themes'
 
 function open(props = {}) {
   return render(

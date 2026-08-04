@@ -8,7 +8,7 @@
 
 import { useRef, useState } from 'react'
 import { X, FileText, Check } from 'lucide-react'
-import { DECK_TEMPLATES, getTheme } from './themes.js'
+import { DECK_TEMPLATES, getTheme } from './themes'
 import { useDialogA11y } from '../../components/ui'
 
 export default function TemplateGallery({ onApply, onClose }) {

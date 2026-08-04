@@ -11,7 +11,7 @@
 
 import { useState, useRef } from 'react'
 import { X, Upload, Check, Palette } from 'lucide-react'
-import { PRESET_THEMES, getTheme } from './themes.js'
+import { PRESET_THEMES, getTheme } from './themes'
 import { useDialogA11y } from '../../components/ui'
 
 // Tab list (key, label) — drives both the tablist render and its keyboard nav.

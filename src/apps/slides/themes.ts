@@ -16,7 +16,23 @@
  *   textMuted    hex — secondary text
  *   dark         boolean — dark bg?
  */
-export const PRESET_THEMES = [
+export interface SlideTheme {
+  id: string
+  label: string
+  revealTheme: string
+  headingFont: string
+  bodyFont: string
+  primary: string
+  secondary: string
+  accent: string
+  background: string
+  surface: string
+  text: string
+  textMuted: string
+  dark: boolean
+}
+
+export const PRESET_THEMES: SlideTheme[] = [
   {
     id: 'obsidian',
     label: 'Obsidian',
@@ -247,12 +263,23 @@ export const PRESET_THEMES = [
 export const DEFAULT_THEME_ID = 'obsidian'
 
 /** Look up a theme by id. Falls back to the default. */
-export function getTheme(id) {
+export function getTheme(id: string | null | undefined): SlideTheme {
   return PRESET_THEMES.find((t) => t.id === id) || PRESET_THEMES[0]
 }
 
+export interface MasterLayout {
+  id: string
+  label: string
+  titleY: string
+  titleAlign: 'left' | 'center' | 'right'
+  bodyY: string
+  bodyAlign: 'left' | 'center' | 'right'
+  showLogo: boolean
+  footerText: string
+}
+
 /** The master-slide layouts per deck. Each deck can have 1–3 masters. */
-export const MASTER_LAYOUTS = [
+export const MASTER_LAYOUTS: MasterLayout[] = [
   {
     id: 'title',
     label: 'Title Master',
@@ -285,8 +312,24 @@ export const MASTER_LAYOUTS = [
   },
 ]
 
+export interface DeckTemplateSlide {
+  title: string
+  content: string
+  notes: string
+  background: string
+  master: string
+}
+
+export interface DeckTemplate {
+  id: string
+  label: string
+  description: string
+  themeId: string
+  slides: DeckTemplateSlide[]
+}
+
 /** Pre-built deck templates (seed content). */
-export const DECK_TEMPLATES = [
+export const DECK_TEMPLATES: DeckTemplate[] = [
   {
     id: 'pitch',
     label: 'Pitch Deck',
