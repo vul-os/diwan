@@ -16,26 +16,26 @@
  *   5. Restore focus to the trigger element on unmount.
  */
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type RefObject } from 'react'
 
 const FOCUSABLE =
   'a[href],button:not([disabled]),textarea:not([disabled]),input:not([disabled]),' +
   'select:not([disabled]),[tabindex]:not([tabindex="-1"])'
 
-export function useDialogA11y(containerRef, onClose) {
-  const priorFocusRef = useRef(null)
+export function useDialogA11y(containerRef: RefObject<HTMLElement | null>, onClose?: () => void): void {
+  const priorFocusRef = useRef<Element | null>(null)
 
   useEffect(() => {
     priorFocusRef.current = document.activeElement
     const container = containerRef.current
 
-    const focusables = () =>
-      Array.from(container?.querySelectorAll(FOCUSABLE) || [])
+    const focusables = (): HTMLElement[] =>
+      Array.from(container?.querySelectorAll<HTMLElement>(FOCUSABLE) || [])
 
     // Move focus inside the dialog once painted.
     const raf = requestAnimationFrame(() => focusables()[0]?.focus())
 
-    const onKeyDown = (e) => {
+    const onKeyDown = (e: KeyboardEvent) => {
       // Stop the Escape from bubbling to a parent dialog / editor handler so
       // one press closes only this dialog, not everything listening for Escape.
       if (e.key === 'Escape') { e.stopPropagation(); onClose?.(); return }
@@ -56,7 +56,7 @@ export function useDialogA11y(containerRef, onClose) {
       cancelAnimationFrame(raf)
       document.removeEventListener('keydown', onKeyDown)
       const el = priorFocusRef.current
-      if (el && typeof el.focus === 'function') el.focus()
+      if (el && typeof (el as HTMLElement).focus === 'function') (el as HTMLElement).focus()
     }
   }, [containerRef, onClose])
 }
