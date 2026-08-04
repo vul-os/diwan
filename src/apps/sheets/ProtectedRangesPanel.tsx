@@ -1,5 +1,5 @@
 /**
- * src/apps/sheets/ProtectedRangesPanel.jsx
+ * src/apps/sheets/ProtectedRangesPanel.tsx
  *
  * Protected ranges side panel — Google-parity warn / restrict, NO passwords.
  *
@@ -24,16 +24,34 @@ import { api } from '../../lib/api'
 import {
   getProtectedRanges, insertProtectedRange, deleteProtectedRange,
   clampRect, rectToA1, makeProtectedRange,
+  type ProtectedRangeRect, type PRSheet,
 } from './protectedRanges.js'
 
+interface Collaborator {
+  account_id: string
+  role: string
+  [key: string]: unknown
+}
+
+interface SelectionRect { r0: number; r1: number; c0: number; c1: number }
+
+export interface ProtectedRangesPanelProps {
+  data: PRSheet[]
+  fileId?: string | null
+  me?: string | null
+  selectionRect?: SelectionRect | null
+  onClose: () => void
+  onChange?: (data: PRSheet[]) => void
+}
+
 // Parse "B2:D10" (or "B2") → rect {startRow,startCol,endRow,endCol}, or null.
-function colToIndex(letters) {
+function colToIndex(letters: string): number {
   const s = String(letters).toUpperCase()
   let idx = 0
   for (let i = 0; i < s.length; i++) idx = idx * 26 + (s.charCodeAt(i) - 64)
   return idx - 1
 }
-function parseA1Range(ref) {
+function parseA1Range(ref: string): ProtectedRangeRect | null {
   const m = String(ref).trim().match(/^([A-Za-z]+)(\d+)(?::([A-Za-z]+)(\d+))?$/)
   if (!m) return null
   const a = { c: colToIndex(m[1]), r: parseInt(m[2], 10) - 1 }
@@ -42,15 +60,15 @@ function parseA1Range(ref) {
   return clampRect({ startRow: a.r, startCol: a.c, endRow: b.r, endCol: b.c })
 }
 
-export default function ProtectedRangesPanel({ data, fileId, me, selectionRect, onClose, onChange }) {
+export default function ProtectedRangesPanel({ data, fileId, selectionRect, onClose, onChange }: ProtectedRangesPanelProps) {
   const ranges = getProtectedRanges(data).map(makeProtectedRange)
   const [editing, setEditing] = useState(false)
   const [rangeText, setRangeText] = useState('')
   const [name, setName] = useState('')
   const [warningOnly, setWarningOnly] = useState(false)
-  const [editors, setEditors] = useState([])
+  const [editors, setEditors] = useState<string[]>([])
   const [error, setError] = useState('')
-  const [roster, setRoster] = useState([]) // [{account_id, role}]
+  const [roster, setRoster] = useState<Collaborator[]>([]) // [{account_id, role}]
   const [owner, setOwner] = useState('')
 
   useEffect(() => {
@@ -58,7 +76,8 @@ export default function ProtectedRangesPanel({ data, fileId, me, selectionRect, 
     if (!fileId) return
     api.listFileCollaborators(fileId).then((res) => {
       if (!live) return
-      const people = Array.isArray(res?.collaborators) ? res.collaborators : []
+      const r = res as { collaborators?: Collaborator[] } | undefined
+      const people = Array.isArray(r?.collaborators) ? r.collaborators : []
       setRoster(people)
       const o = people.find((p) => p.role === 'owner')
       if (o) setOwner(o.account_id)
@@ -83,7 +102,7 @@ export default function ProtectedRangesPanel({ data, fileId, me, selectionRect, 
     setEditing(true)
   }
 
-  function toggleEditor(acct) {
+  function toggleEditor(acct: string) {
     setEditors((prev) => prev.includes(acct) ? prev.filter((e) => e !== acct) : [...prev, acct])
   }
 
@@ -102,7 +121,7 @@ export default function ProtectedRangesPanel({ data, fileId, me, selectionRect, 
     onChange?.(next)
   }
 
-  function remove(id) {
+  function remove(id: string) {
     onChange?.(deleteProtectedRange(data, id))
   }
 
