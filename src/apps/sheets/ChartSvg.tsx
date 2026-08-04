@@ -1,5 +1,5 @@
 /**
- * src/apps/sheets/ChartSvg.jsx  (WAVE-54, extended WAVE-64)
+ * src/apps/sheets/ChartSvg.tsx  (WAVE-54, extended WAVE-64)
  *
  * Self-contained SVG chart renderer — NO charting library.
  *
@@ -24,7 +24,20 @@ import { useMemo } from 'react'
 import {
   extractChartData, chartAccessibleSummary, CHART_TYPES, CHART_PALETTE,
   stackModeOf, isHorizontalBar, histogramBins, histogramValues,
+  type Chart, type ChartSheet, type ExtractedChartData, type ChartSeries,
 } from './charts.js'
+
+interface Plot { x: number; y: number; w: number; h: number }
+
+export interface ChartSvgProps {
+  chart: Chart
+  sheet?: ChartSheet | null
+  width?: number
+  height?: number
+  extracted?: ExtractedChartData | null
+  titleId?: string
+  descId?: string
+}
 
 const PAD = { top: 34, right: 16, bottom: 40, left: 44 }
 // Chart chrome (axes / gridlines / labels) rides the design tokens so charts
@@ -34,7 +47,7 @@ const GRID = 'var(--line-strong)'
 const INK = 'var(--ink-muted)'
 const SECONDARY_PAD = 42   // extra right padding when a secondary axis is drawn
 
-function niceMax(v) {
+function niceMax(v: number): number {
   if (v <= 0) return 1
   const mag = Math.pow(10, Math.floor(Math.log10(v)))
   const norm = v / mag
@@ -49,7 +62,7 @@ const NO_BOTTOM_LEGEND = new Set(['pie', 'donut', 'histogram'])
  * ChartSvg — the SVG for a chart, given a descriptor + the sheet (or already-
  * extracted data). Split out so both the live overlay and tests can share it.
  */
-export function ChartSvg({ chart, sheet, width, height, extracted: extractedProp, titleId, descId }) {
+export function ChartSvg({ chart, sheet, width, height, extracted: extractedProp, titleId, descId }: ChartSvgProps) {
   const extracted = useMemo(
     () => extractedProp || extractChartData(chart, sheet),
     [extractedProp, chart, sheet]
@@ -68,7 +81,7 @@ export function ChartSvg({ chart, sheet, width, height, extracted: extractedProp
     extracted.series.length > 1
   const rightPad = PAD.right + (secondary ? SECONDARY_PAD : 0)
 
-  const plot = {
+  const plot: Plot = {
     x: PAD.left,
     y: PAD.top,
     w: Math.max(20, W - PAD.left - rightPad),
@@ -128,12 +141,14 @@ export function ChartSvg({ chart, sheet, width, height, extracted: extractedProp
   )
 }
 
+interface LegendProps { chart: Chart; series: ChartSeries[]; y: number; W: number; secondary: boolean }
+
 /**
  * Legend — one centred row of chips. For a COMBO chart with a secondary axis the
  * chips carry an axis marker (L/R) so the reader knows which scale a series is
  * measured against; a legend that hides that is actively misleading.
  */
-function Legend({ chart, series, y, W, secondary }) {
+function Legend({ chart, series, y, W, secondary }: LegendProps) {
   const chips = series.slice(0, 8)
   const isCombo = chart?.type === 'combo'
   const gap = Math.min(120, (W - 20) / Math.max(1, chips.length))
@@ -167,8 +182,13 @@ function Legend({ chart, series, y, W, secondary }) {
   )
 }
 
+interface AxisFrameProps {
+  chart: Chart; plot: Plot; W: number; H: number; legendH: number
+  yLabel?: string; xLabel?: string; secondary?: boolean
+}
+
 /** Shared axis frame (left + bottom rules and the optional axis titles). */
-function AxisFrame({ chart, plot, W, H, legendH, yLabel, xLabel, secondary }) {
+function AxisFrame({ chart, plot, W, H, legendH, yLabel, xLabel, secondary }: AxisFrameProps) {
   const y2 = chart.options?.y2AxisLabel
   return (
     <g>
@@ -199,8 +219,10 @@ function AxisFrame({ chart, plot, W, H, legendH, yLabel, xLabel, secondary }) {
   )
 }
 
+interface ValueGridProps { plot: Plot; maxV: number; minV?: number; ticks?: number; suffix?: string }
+
 /** Value-axis gridlines + tick labels (vertical value axis, i.e. columns/lines). */
-function ValueGrid({ plot, maxV, minV = 0, ticks = 4, suffix = '' }) {
+function ValueGrid({ plot, maxV, minV = 0, ticks = 4, suffix = '' }: ValueGridProps) {
   const span = maxV - minV || 1
   const out = []
   for (let t = 0; t <= ticks; t++) {
@@ -221,7 +243,7 @@ function ValueGrid({ plot, maxV, minV = 0, ticks = 4, suffix = '' }) {
 }
 
 /** Value-axis gridlines for the HORIZONTAL bar family (value runs along x). */
-function ValueGridX({ plot, maxV, minV = 0, ticks = 4, suffix = '' }) {
+function ValueGridX({ plot, maxV, minV = 0, ticks = 4, suffix = '' }: ValueGridProps) {
   const span = maxV - minV || 1
   const out = []
   for (let t = 0; t <= ticks; t++) {
@@ -241,7 +263,9 @@ function ValueGridX({ plot, maxV, minV = 0, ticks = 4, suffix = '' }) {
   return <g>{out}</g>
 }
 
-function CartesianChart({ chart, extracted, plot, W, H, legendH, secondary }) {
+interface ChartBodyProps { chart: Chart; extracted: ExtractedChartData; plot: Plot; W: number; H: number; legendH: number; secondary?: boolean }
+
+function CartesianChart({ chart, extracted, plot, W, H, legendH, secondary }: ChartBodyProps) {
   const { categories, series } = extracted
   const isBar = isHorizontalBar(chart.type)   // horizontal
   const isLine = chart.type === 'line'
@@ -253,7 +277,7 @@ function CartesianChart({ chart, extracted, plot, W, H, legendH, secondary }) {
   // series is not flattened onto a 0–10000 revenue scale.
   const barPart = isCombo ? series.slice(0, 1) : series
   const linePart = isCombo ? series.slice(1) : []
-  const maxOf = (list) => {
+  const maxOf = (list: ChartSeries[]) => {
     let m = 0
     for (const s of list) for (const v of s.values) if (v > m) m = v
     return m
@@ -263,7 +287,7 @@ function CartesianChart({ chart, extracted, plot, W, H, legendH, secondary }) {
   const maxV = primaryMax
 
   const nCat = Math.max(1, categories.length)
-  const shapes = []
+  const shapes: React.ReactNode[] = []
 
   if (isBar) {
     // Horizontal grouped bars.
@@ -350,7 +374,7 @@ function CartesianChart({ chart, extracted, plot, W, H, legendH, secondary }) {
     // COMBO line overlay: series[1..] drawn as lines across the band centres,
     // against the SECONDARY scale when the chart asks for one.
     if (isCombo && linePart.length) {
-      const cx = (ci) => plot.x + ci * bandW + bandW / 2
+      const cx = (ci: number) => plot.x + ci * bandW + bandW / 2
       const scale = secondary ? secondaryMax : maxV
       linePart.forEach((s, sj) => {
         const pts = s.values.map((v, ci) => [cx(ci), plot.y + plot.h - (scale ? (v / scale) * plot.h : 0)])
@@ -401,7 +425,7 @@ function CartesianChart({ chart, extracted, plot, W, H, legendH, secondary }) {
  * data). In 100% mode each category is normalised by the sum of ABSOLUTE values,
  * so the parts of a mixed-sign category still sum to 100% of its magnitude.
  */
-function StackedCartesian({ chart, extracted, plot, W, H, legendH }) {
+function StackedCartesian({ chart, extracted, plot, W, H, legendH }: ChartBodyProps) {
   const { categories, series } = extracted
   const mode = stackModeOf(chart.type)          // 'stacked' | 'percent'
   const horizontal = isHorizontalBar(chart.type)
@@ -409,7 +433,7 @@ function StackedCartesian({ chart, extracted, plot, W, H, legendH }) {
   const nCat = Math.max(1, categories.length)
 
   // Per-category positive / negative totals (and the |sum| used by 100% mode).
-  const posTot = [], negTot = [], absTot = []
+  const posTot: number[] = [], negTot: number[] = [], absTot: number[] = []
   for (let ci = 0; ci < nCat; ci++) {
     let p = 0, n = 0, a = 0
     for (const s of series) {
@@ -431,12 +455,12 @@ function StackedCartesian({ chart, extracted, plot, W, H, legendH }) {
 
   // Scale a value (already normalised for percent) to a pixel offset from the
   // axis origin along the value direction.
-  const px = (v) => (v / span) * (horizontal ? plot.w : plot.h)
+  const px = (v: number) => (v / span) * (horizontal ? plot.w : plot.h)
   const zero = horizontal
     ? plot.x + px(0 - minV)
     : plot.y + plot.h - px(0 - minV)
 
-  const shapes = []
+  const shapes: React.ReactNode[] = []
   const band = (horizontal ? plot.h : plot.w) / nCat
   const pad = band * 0.16
   const thick = Math.max(1, band - pad * 2)
@@ -505,7 +529,7 @@ function StackedCartesian({ chart, extracted, plot, W, H, legendH }) {
  * first). Bars are adjacent (no group gap) and the y axis counts occurrences,
  * so this reads as a distribution rather than as a category comparison.
  */
-function Histogram({ chart, extracted, plot, W, H, legendH }) {
+function Histogram({ chart, extracted, plot, W, H, legendH }: ChartBodyProps) {
   const { bins, max, total } = histogramBins(histogramValues(extracted), chart.options?.bins)
   if (!bins.length) {
     return (
@@ -547,11 +571,13 @@ function Histogram({ chart, extracted, plot, W, H, legendH }) {
   )
 }
 
+interface PieProps { chart: Chart; extracted: ExtractedChartData; W: number; H: number; legendH: number; donut: boolean; showLegend: boolean }
+
 /**
  * Pie / Donut — plots the FIRST series across categories. The donut variant adds
  * a hole and prints the TOTAL in the middle (the number a donut exists to show).
  */
-function Pie({ chart, extracted, W, H, legendH, donut, showLegend }) {
+function Pie({ extracted, W, H, legendH, donut, showLegend }: PieProps) {
   const s = extracted.series[0]
   const values = (s?.values || []).map((v) => (v > 0 ? v : 0))
   const total = values.reduce((a, b) => a + b, 0)
@@ -568,10 +594,10 @@ function Pie({ chart, extracted, W, H, legendH, donut, showLegend }) {
     acc += v
     const end = (acc / total) * Math.PI * 2
     const large = end - start > Math.PI ? 1 : 0
-    const p = (radius, ang) => [cx + radius * Math.sin(ang), cy - radius * Math.cos(ang)]
+    const p = (radius: number, ang: number): [number, number] => [cx + radius * Math.sin(ang), cy - radius * Math.cos(ang)]
     const [x1, y1] = p(r, start)
     const [x2, y2] = p(r, end)
-    let d
+    let d: string
     if (donut) {
       const [ix2, iy2] = p(inner, end)
       const [ix1, iy1] = p(inner, start)
@@ -615,13 +641,15 @@ function Pie({ chart, extracted, W, H, legendH, donut, showLegend }) {
   )
 }
 
+interface ScatterChartProps { chart: Chart; extracted: ExtractedChartData; plot: Plot; bubble: boolean }
+
 /**
  * ScatterChart (WAVE-63) — X/Y scatter and bubble. Interprets the extracted
  * series as columns: series[0] = X values, series[1] = Y values, and (bubble)
  * series[2] = point size. Points are aligned by category index. Pure SVG
  * <circle> nodes; the only text is the numeric-tick / point tooltip (escaped).
  */
-function ScatterChart({ chart, extracted, plot, bubble }) {
+function ScatterChart({ extracted, plot, bubble }: ScatterChartProps) {
   const { series } = extracted
   const xs = series[0]?.values || []
   const ys = series[1]?.values || []
@@ -645,7 +673,7 @@ function ScatterChart({ chart, extracted, plot, bubble }) {
   const yTop = niceMax(yMax)
   const xColor = CHART_PALETTE[0]
 
-  const gridLines = []
+  const gridLines: React.ReactNode[] = []
   const ticks = 4
   for (let t = 0; t <= ticks; t++) {
     const frac = t / ticks
@@ -664,7 +692,7 @@ function ScatterChart({ chart, extracted, plot, bubble }) {
     )
   }
 
-  const points = []
+  const points: React.ReactNode[] = []
   for (let i = 0; i < n; i++) {
     const px = plot.x + ((xs[i] - xMin) / (xMax - xMin)) * plot.w
     const py = plot.y + plot.h - (yTop ? (ys[i] / yTop) * plot.h : 0)
@@ -688,16 +716,16 @@ function ScatterChart({ chart, extracted, plot, bubble }) {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-function pieColor(i) { return CHART_PALETTE[i % CHART_PALETTE.length] }
-function plotRadius(w, h) { return Math.max(30, Math.min(w, h) / 2 - 24) }
+function pieColor(i: number): string { return CHART_PALETTE[i % CHART_PALETTE.length] }
+function plotRadius(w: number, h: number): number { return Math.max(30, Math.min(w, h) / 2 - 24) }
 
-function formatTick(v) {
+function formatTick(v: number): string {
   if (Math.abs(v) >= 1000000) return (v / 1000000).toFixed(1) + 'M'
   if (Math.abs(v) >= 1000) return (v / 1000).toFixed(1) + 'k'
   return Number.isInteger(v) ? String(v) : v.toFixed(1)
 }
 
-function truncate(s, n) {
+function truncate(s: unknown, n: number): string {
   const str = String(s ?? '')
   return str.length > n ? str.slice(0, n - 1) + '…' : str
 }
