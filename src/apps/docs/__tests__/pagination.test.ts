@@ -17,29 +17,52 @@ import {
   PAGE_SIZES, DEFAULT_PAGE_SETUP,
 } from '../pageSetup.js'
 
+// measurePageBreaks only reads these members off contentEl / its children — a
+// minimal stand-in cast through a narrow local type rather than a real
+// HTMLElement (jsdom doesn't lay out real pixel heights anyway).
+interface FakeRect {
+  top: number
+  bottom: number
+  height: number
+}
+interface FakeBlockEl {
+  nodeType: number
+  getBoundingClientRect: () => FakeRect
+  hasAttribute: (name: string) => boolean
+  getAttribute: (name: string) => string | null
+}
+interface FakeContentEl {
+  getBoundingClientRect: () => FakeRect
+  children: FakeBlockEl[]
+}
+
 // Build a fake content element whose children have deterministic layout rects.
 // Each block is `blockH` tall, stacked from `top0`. `contentTop` is the
 // container's own top. Optionally mark some indices as explicit page breaks.
-function fakeContent(blockHeights, { contentTop = 0, breakIndices = [] } = {}) {
+function fakeContent(
+  blockHeights: number[],
+  { contentTop = 0, breakIndices = [] as number[] } = {},
+): HTMLElement {
   let y = contentTop
-  const children = blockHeights.map((h, i) => {
+  const children: FakeBlockEl[] = blockHeights.map((h, i) => {
     const top = y
     const bottom = y + h
     y = bottom
-    const attrs = new Map()
+    const attrs = new Map<string, string>()
     if (breakIndices.includes(i)) attrs.set('data-page-break', 'true')
     return {
       nodeType: 1,
       getBoundingClientRect: () => ({ top, bottom, height: h }),
-      hasAttribute: (n) => attrs.has(n),
-      getAttribute: (n) => attrs.get(n) ?? null,
+      hasAttribute: (n: string) => attrs.has(n),
+      getAttribute: (n: string) => attrs.get(n) ?? null,
     }
   })
   const totalBottom = y
-  return {
+  const fake: FakeContentEl = {
     getBoundingClientRect: () => ({ top: contentTop, bottom: totalBottom, height: totalBottom - contentTop }),
     children,
   }
+  return fake as unknown as HTMLElement
 }
 
 describe('measurePageBreaks', () => {
