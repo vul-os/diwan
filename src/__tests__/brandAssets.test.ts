@@ -14,12 +14,12 @@ const PUBLIC_FAVICON = path.join(ROOT, 'public', 'favicon.svg')
 const SIDEBAR = path.join(ROOT, 'src', 'components', 'ui', 'Sidebar.jsx')
 const GENERATOR = path.join(ROOT, 'scripts', 'gen-logo-assets.mjs')
 
-function readOrThrow(p, label) {
+function readOrThrow(p: string, label: string): string {
   if (!existsSync(p)) throw new Error(`GUARD CANNOT RUN: ${label} is missing at ${p}`)
   return readFileSync(p, 'utf8')
 }
 
-function extract(src, re, label) {
+function extract(src: string, re: RegExp, label: string): string {
   const m = src.match(re)
   if (!m) throw new Error(`GUARD CANNOT RUN: could not locate ${label}`)
   return m[1]
@@ -30,11 +30,11 @@ function extract(src, re, label) {
 // not just exercise the generator's own function against itself). M/L take 2
 // numeric args; A takes 7 (rx ry xrot laf sweep x y) — the two flags (xrot is
 // 0 here, laf, sweep) must NOT be scaled, only rx/ry/x/y.
-function scalePathD(d, factor) {
-  const tokens = d.match(/[MLAZmlaz]|-?\d+(?:\.\d+)?/g)
-  const ARITY = { M: 2, L: 2, A: 7, Z: 0 }
-  const trim = (n) => Number(n.toFixed(6)).toString()
-  const out = []
+function scalePathD(d: string, factor: number): string {
+  const tokens = d.match(/[MLAZmlaz]|-?\d+(?:\.\d+)?/g) ?? []
+  const ARITY: Record<string, number> = { M: 2, L: 2, A: 7, Z: 0 }
+  const trim = (n: number) => Number(n.toFixed(6)).toString()
+  const out: string[] = []
   let i = 0
   while (i < tokens.length) {
     const cmd = tokens[i]

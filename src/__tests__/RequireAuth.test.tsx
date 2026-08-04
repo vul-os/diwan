@@ -25,7 +25,7 @@ function stubLocation(href = 'https://office.vulos.org/docs/abc') {
   })
 }
 
-const jsonRes = (status, body) => ({
+const jsonRes = (status: number, body: unknown) => ({
   status,
   ok: status >= 200 && status < 300,
   json: async () => body,
@@ -50,7 +50,7 @@ describe('RequireAuth', () => {
   })
 
   it('renders the app on an explicit authenticated 200', async () => {
-    global.fetch = vi.fn().mockResolvedValue(jsonRes(200, { authenticated: true, user_id: 'u1' }))
+    global.fetch = vi.fn().mockResolvedValue(jsonRes(200, { authenticated: true, user_id: 'u1' })) as typeof fetch
 
     await renderBoundary()
 
@@ -59,7 +59,7 @@ describe('RequireAuth', () => {
   })
 
   it('redirects to the central login on 401', async () => {
-    global.fetch = vi.fn().mockResolvedValue(jsonRes(401, { error: 'authentication required' }))
+    global.fetch = vi.fn().mockResolvedValue(jsonRes(401, { error: 'authentication required' })) as typeof fetch
 
     await renderBoundary()
 
@@ -70,7 +70,7 @@ describe('RequireAuth', () => {
   })
 
   it('redirects to the central login on 403', async () => {
-    global.fetch = vi.fn().mockResolvedValue(jsonRes(403, { error: 'forbidden' }))
+    global.fetch = vi.fn().mockResolvedValue(jsonRes(403, { error: 'forbidden' })) as typeof fetch
 
     await renderBoundary()
 
@@ -81,7 +81,7 @@ describe('RequireAuth', () => {
   })
 
   it('shows an error — NOT the app — when the server cannot answer (503)', async () => {
-    global.fetch = vi.fn().mockResolvedValue(jsonRes(503, { error: 'server auth not configured' }))
+    global.fetch = vi.fn().mockResolvedValue(jsonRes(503, { error: 'server auth not configured' })) as typeof fetch
 
     await renderBoundary()
 
@@ -91,7 +91,7 @@ describe('RequireAuth', () => {
   })
 
   it('shows an error — NOT the app — when the request fails (network/CORS/DNS)', async () => {
-    global.fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'))
+    global.fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch')) as typeof fetch
 
     await renderBoundary()
 
@@ -104,7 +104,7 @@ describe('RequireAuth', () => {
       status: 200,
       ok: true,
       json: async () => { throw new SyntaxError('Unexpected token < in JSON') }, // an HTML page
-    })
+    }) as typeof fetch
 
     await renderBoundary()
 
@@ -115,7 +115,7 @@ describe('RequireAuth', () => {
   it('retry re-checks the session and lets a recovered server through', async () => {
     global.fetch = vi.fn()
       .mockResolvedValueOnce(jsonRes(503, { error: 'server auth not configured' }))
-      .mockResolvedValueOnce(jsonRes(200, { authenticated: true, user_id: 'u1' }))
+      .mockResolvedValueOnce(jsonRes(200, { authenticated: true, user_id: 'u1' })) as typeof fetch
 
     await renderBoundary()
     await waitFor(() => expect(screen.getByRole('alert')).toBeTruthy())

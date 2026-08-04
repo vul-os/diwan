@@ -1,5 +1,5 @@
 /**
- * endpoints.test.js — smoke test that Diwan's first-party endpoints module
+ * endpoints.test.ts — smoke test that Diwan's first-party endpoints module
  * (src/lib/endpoints/index.js) still honours the office localStorage key +
  * health path.
  *
@@ -9,6 +9,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import type { EndpointPair } from '../lib/endpoints/index.js'
 
 const CLOUD = 'https://box.vulos.org'
 const LAN = 'https://box.abc.lan.vulos.org'
@@ -21,16 +22,16 @@ async function freshModule() {
   return mod
 }
 
-function setEndpoints({ cloud = CLOUD, lan = LAN } = {}) {
-  globalThis.window = globalThis.window || {}
+function setEndpoints({ cloud = CLOUD, lan = LAN }: { cloud?: string; lan?: string } = {}) {
+  globalThis.window = globalThis.window || (({}) as Window & typeof globalThis)
   window.__VULOS_ENDPOINTS__ = { cloud, lan }
 }
 
 beforeEach(() => {
   try { localStorage.clear() } catch { /* ignore */ }
-  globalThis.window = globalThis.window || {}
+  globalThis.window = globalThis.window || (({}) as Window & typeof globalThis)
   if (!window.addEventListener) window.addEventListener = () => {}
-  globalThis.navigator = globalThis.navigator || {}
+  globalThis.navigator = globalThis.navigator || (({}) as Navigator)
 })
 
 afterEach(() => {
@@ -43,7 +44,7 @@ describe('endpoints — office wiring', () => {
     setEndpoints()
     const ep = await freshModule()
     ep.resolveEndpoints()
-    const cached = JSON.parse(localStorage.getItem(OFFICE_LS_KEY))
+    const cached: EndpointPair = JSON.parse(localStorage.getItem(OFFICE_LS_KEY) as string)
     expect(cached.cloud).toBe(CLOUD)
     expect(cached.lan).toBe(LAN)
   })
@@ -59,7 +60,7 @@ describe('endpoints — office wiring', () => {
   it('falls back to cloud when LAN is down', async () => {
     setEndpoints()
     const ep = await freshModule()
-    vi.stubGlobal('fetch', vi.fn(async (url) => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       if (String(url).startsWith(LAN)) throw new Error('LAN unreachable')
       return { ok: true, status: 200 }
     }))

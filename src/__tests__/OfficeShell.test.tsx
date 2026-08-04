@@ -10,6 +10,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, waitFor, act } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
+import type { ReactNode } from 'react'
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -29,7 +30,7 @@ vi.mock('../apps/pdf/PDFEditor.jsx', () => ({
 
 // Mock RequireAuth to pass through children (auth tested separately)
 vi.mock('../shells/RequireAuth', () => ({
-  default: ({ children }) => <>{children}</>,
+  default: ({ children }: { children?: ReactNode }) => <>{children}</>,
 }))
 
 import OfficeShell from '../shells/OfficeShell'
