@@ -17,6 +17,7 @@
  */
 
 import { useEffect, useRef } from 'react'
+import type { MouseEvent as ReactMouseEvent, ReactNode, RefObject } from 'react'
 import { X } from 'lucide-react'
 import IconButton from './IconButton'
 
@@ -36,18 +37,18 @@ const FOCUSABLE =
  *  2. On Tab/Shift-Tab: if focus would leave the container, wrap it.
  *  3. On deactivation: restore focus to the remembered element (or triggerRef).
  */
-function useFocusTrap(containerRef, active) {
-  const priorFocusRef = useRef(null)
+function useFocusTrap(containerRef: RefObject<HTMLElement | null>, active: boolean) {
+  const priorFocusRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
     if (!active || !containerRef.current) return
 
     // Save whatever had focus before the modal opened.
-    priorFocusRef.current = document.activeElement
+    priorFocusRef.current = document.activeElement as HTMLElement | null
 
     // Move focus to the first focusable element inside the dialog.
     const focusables = () =>
-      Array.from(containerRef.current?.querySelectorAll(FOCUSABLE) || [])
+      Array.from(containerRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) || [])
 
     const first = focusables()[0]
     if (first) {
@@ -61,10 +62,10 @@ function useFocusTrap(containerRef, active) {
   useEffect(() => {
     if (!active || !containerRef.current) return
 
-    function handleKeyDown(e) {
+    function handleKeyDown(e: KeyboardEvent) {
       if (e.key !== 'Tab') return
       const focusables = Array.from(
-        containerRef.current?.querySelectorAll(FOCUSABLE) || []
+        containerRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) || []
       )
       if (focusables.length === 0) return
       const first = focusables[0]
@@ -100,13 +101,24 @@ function useFocusTrap(containerRef, active) {
   }, [active])
 }
 
-function Modal({ open, onClose, title, size = 'md', children, className = '' }) {
-  const dialogRef = useRef(null)
+type ModalSize = 'sm' | 'md' | 'lg' | 'xl'
+
+interface ModalProps {
+  open: boolean
+  onClose?: () => void
+  title?: string
+  size?: ModalSize
+  children?: ReactNode
+  className?: string
+}
+
+function Modal({ open, onClose, title, size = 'md', children, className = '' }: ModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null)
 
   // Escape to close.
   useEffect(() => {
     if (!open) return
-    function onKey(e) { if (e.key === 'Escape') onClose?.() }
+    function onKey(e: KeyboardEvent) { if (e.key === 'Escape') onClose?.() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [open, onClose])
@@ -116,7 +128,7 @@ function Modal({ open, onClose, title, size = 'md', children, className = '' }) 
 
   if (!open) return null
 
-  const sizeMap = {
+  const sizeMap: Record<ModalSize, string> = {
     sm: 'max-w-sm',
     md: 'max-w-md',
     lg: 'max-w-lg',
@@ -126,7 +138,7 @@ function Modal({ open, onClose, title, size = 'md', children, className = '' }) 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose?.() }}
+      onClick={(e: ReactMouseEvent<HTMLDivElement>) => { if (e.target === e.currentTarget) onClose?.() }}
       style={{ background: 'rgba(0, 0, 0, 0.62)', backdropFilter: 'blur(3px)' }}
     >
       <div
@@ -150,11 +162,11 @@ function Modal({ open, onClose, title, size = 'md', children, className = '' }) 
   )
 }
 
-Modal.Body = function ModalBody({ className = '', children }) {
+function ModalBody({ className = '', children }: { className?: string; children?: ReactNode }) {
   return <div className={`px-5 py-4 ${className}`}>{children}</div>
 }
 
-Modal.Footer = function ModalFooter({ className = '', children }) {
+function ModalFooter({ className = '', children }: { className?: string; children?: ReactNode }) {
   return (
     <div className={`px-5 py-3 border-t border-line bg-bg-elev2 flex items-center justify-end gap-2 ${className}`}>
       {children}
@@ -162,4 +174,6 @@ Modal.Footer = function ModalFooter({ className = '', children }) {
   )
 }
 
-export default Modal
+const ModalWithSlots = Object.assign(Modal, { Body: ModalBody, Footer: ModalFooter })
+
+export default ModalWithSlots
