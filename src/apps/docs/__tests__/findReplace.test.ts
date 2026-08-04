@@ -1,18 +1,31 @@
 import { describe, it, expect } from 'vitest'
 
-function escapeRegex(str) {
+// NOTE (pre-existing, not touched by this conversion): this is a standalone
+// reimplementation of the literal/regex-match scanning logic, operating on a
+// plain string. The real `findAllMatches` exported from
+// `../components/FindReplace.tsx` takes a ProseMirror `doc: PMNode` and walks
+// its text nodes instead — a different signature entirely, so there is
+// nothing in the source to import types from here. Flagging for whoever
+// revisits this file; out of scope for a type-only conversion.
+
+interface TextMatch {
+  index: number
+  length: number
+}
+
+function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
-function findAllMatches(textContent, term, caseSensitive, useRegex) {
+function findAllMatches(textContent: string, term: string, caseSensitive: boolean, useRegex: boolean): TextMatch[] {
   if (!term) return []
   const flags = caseSensitive ? 'g' : 'gi'
-  let re
+  let re: RegExp
   try {
     re = new RegExp(useRegex ? term : escapeRegex(term), flags)
   } catch { return [] }
-  const matches = []
-  let m
+  const matches: TextMatch[] = []
+  let m: RegExpExecArray | null
   while ((m = re.exec(textContent)) !== null) {
     matches.push({ index: m.index, length: m[0].length })
     if (re.lastIndex === m.index) re.lastIndex++
