@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode, type ChangeEvent, type MouseEvent as ReactMouseEvent } from 'react'
 import { useParams } from 'react-router-dom'
 import * as pdfjsLib from 'pdfjs-dist'
 import SignaturePad from 'signature_pad'
@@ -39,7 +39,33 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
  *     - all field types share the accent; differentiation is the LABEL, not
  *       a rainbow of borders (the previous design read like a kindergarten).
  */
-const FIELD_LABELS_AND_HUE = {
+type SignFieldKind = 'signature' | 'initial' | 'date' | 'name' | 'text'
+
+interface SignField {
+  id: string
+  type: SignFieldKind
+  page: number
+  x: number
+  y: number
+  w: number
+  h: number
+  required: boolean
+}
+
+interface SignerViewResponse {
+  signer_name: string
+  source_file?: string
+  fields: SignField[]
+}
+
+interface PdfPageRender {
+  canvas: HTMLCanvasElement
+  width: number
+  height: number
+  pageNum: number
+}
+
+const FIELD_LABELS_AND_HUE: Record<SignFieldKind, string> = {
   // Single accent for all fields keeps the page calm.  We vary the label only.
   signature: 'Signature',
   initial:   'Initial',
@@ -50,7 +76,7 @@ const FIELD_LABELS_AND_HUE = {
 
 // Kept for backwards-compat in case any code reads from it; new layout uses
 // the unified `field-affordance` style.
-const FIELD_COLORS = {
+const FIELD_COLORS: Record<SignFieldKind, string> = {
   signature: 'border-accent bg-accent-tint',
   initial:   'border-accent bg-accent-tint',
   date:      'border-accent bg-accent-tint',
@@ -60,7 +86,7 @@ const FIELD_COLORS = {
 
 const FIELD_LABELS = FIELD_LABELS_AND_HUE
 
-const TYPED_FONTS = [
+const TYPED_FONTS: Array<{ label: string; value: string }> = [
   { label: 'Elegant', value: '"Dancing Script", cursive' },
   { label: 'Classic', value: '"Pacifico", cursive' },
   { label: 'Neat',    value: '"Satisfy", cursive' },
@@ -74,9 +100,9 @@ const TYPED_FONTS = [
 function ensureGFonts() { /* no-op: fonts are bundled locally, nothing to inject */ }
 
 // ── DrawPad: canvas-based draw mode using signature_pad ──────────
-function DrawPad({ onDataUrl }) {
-  const canvasRef = useRef(null)
-  const padRef    = useRef(null)
+function DrawPad({ onDataUrl }: { onDataUrl: (url: string | null) => void }) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const padRef    = useRef<SignaturePad | null>(null)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -120,15 +146,16 @@ function DrawPad({ onDataUrl }) {
 }
 
 // ── TypedPad: text → PNG via canvas ─────────────────────────────
-function TypedPad({ signerName, onDataUrl }) {
+function TypedPad({ signerName, onDataUrl }: { signerName?: string; onDataUrl: (url: string | null) => void }) {
   const [text, setText] = useState(signerName || '')
   const [fontIdx, setFontIdx] = useState(0)
-  const canvasRef = useRef(null)
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
   const render = useCallback(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     const ctx = canvas.getContext('2d')
+    if (!ctx) return
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     ctx.fillStyle = '#fff'
     ctx.fillRect(0, 0, canvas.width, canvas.height)
@@ -186,15 +213,16 @@ function TypedPad({ signerName, onDataUrl }) {
 }
 
 // ── UploadPad: file upload → base64 data URL ─────────────────────
-function UploadPad({ onDataUrl }) {
-  const [preview, setPreview] = useState(null)
+function UploadPad({ onDataUrl }: { onDataUrl: (url: string | null) => void }) {
+  const [preview, setPreview] = useState<string | null>(null)
 
-  const onFile = e => {
+  const onFile = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     const reader = new FileReader()
-    reader.onload = ev => {
-      const url = ev.target.result
+    reader.onload = (ev) => {
+      const url = ev.target?.result
+      if (typeof url !== 'string') return
       setPreview(url)
       onDataUrl(url)
     }
@@ -216,10 +244,17 @@ function UploadPad({ onDataUrl }) {
 }
 
 // ── FieldFillModal: let the signer fill one field ───────────────
-function FieldFillModal({ field, signerName, onSave, onClose }) {
+function FieldFillModal({
+  field, signerName, onSave, onClose,
+}: {
+  field: SignField
+  signerName?: string
+  onSave: (fieldId: string, value: string) => void
+  onClose: () => void
+}) {
   const isSignatureOrInitial = field.type === 'signature' || field.type === 'initial'
   const [mode, setMode] = useState('draw') // draw | type | upload
-  const [dataUrl, setDataUrl] = useState(null)
+  const [dataUrl, setDataUrl] = useState<string | null>(null)
   const [textValue, setTextValue] = useState(
     field.type === 'date' ? new Date().toLocaleDateString() : ''
   )
@@ -228,13 +263,13 @@ function FieldFillModal({ field, signerName, onSave, onClose }) {
 
   const save = () => {
     if (!canSave) return
-    onSave(field.id, isSignatureOrInitial ? dataUrl : textValue.trim())
+    onSave(field.id, (isSignatureOrInitial ? dataUrl : textValue.trim()) || '')
   }
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in"
-      onClick={e => { if (e.target === e.currentTarget) onClose() }}
+      onClick={(e: ReactMouseEvent<HTMLDivElement>) => { if (e.target === e.currentTarget) onClose() }}
       style={{ background: 'rgba(26, 25, 22, 0.36)', backdropFilter: 'blur(2px)' }}
     >
       <div className="bg-paper rounded-xl shadow-e3 border border-line w-full max-w-lg overflow-hidden animate-scale-in">
@@ -335,17 +370,17 @@ function FieldFillModal({ field, signerName, onSave, onClose }) {
 export default function SignView() {
   const { token } = useParams()
 
-  const [state, setState] = useState('loading') // loading | locked | error | ready | done
-  const [view, setView] = useState(null)         // SignerViewResponse from API
+  const [state, setState] = useState<'loading' | 'locked' | 'error' | 'ready' | 'done'>('loading')
+  const [view, setView] = useState<SignerViewResponse | null>(null)
   const [errorMsg, setErrorMsg] = useState('')
 
   // PDF rendering state
-  const [pdfPages, setPdfPages] = useState([])
+  const [pdfPages, setPdfPages] = useState<PdfPageRender[]>([])
   const [pdfLoading, setPdfLoading] = useState(false)
 
   // Ceremony state
-  const [fieldValues, setFieldValues] = useState({}) // fieldId → value (dataUrl or text)
-  const [activeField, setActiveField] = useState(null) // field being filled
+  const [fieldValues, setFieldValues] = useState<Record<string, string>>({}) // fieldId → value (dataUrl or text)
+  const [activeField, setActiveField] = useState<SignField | null>(null) // field being filled
   const [consent, setConsent] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
@@ -356,7 +391,7 @@ export default function SignView() {
 
     fetch(`/api/sign/${token}`)
       .then(async (res) => {
-        const data = await res.json()
+        const data = await res.json() as SignerViewResponse & { locked?: boolean; error?: string }
         if (res.status === 403 && data.locked) {
           setState('locked')
           return
@@ -368,7 +403,7 @@ export default function SignView() {
         }
         setView(data)
         // Auto-fill date fields
-        const autoValues = {}
+        const autoValues: Record<string, string> = {}
         for (const f of (data.fields ?? [])) {
           if (f.type === 'date') autoValues[f.id] = new Date().toLocaleDateString()
         }
@@ -392,7 +427,7 @@ export default function SignView() {
     setPdfLoading(true)
     pdfjsLib.getDocument(pdfUrl).promise
       .then(async (pdf) => {
-        const pages = []
+        const pages: PdfPageRender[] = []
         for (let i = 1; i <= pdf.numPages; i++) {
           const page = await pdf.getPage(i)
           const scale = 1.5
@@ -401,6 +436,7 @@ export default function SignView() {
           canvas.width = viewport.width
           canvas.height = viewport.height
           const ctx = canvas.getContext('2d')
+          if (!ctx) continue
           await page.render({ canvasContext: ctx, viewport }).promise
           pages.push({ canvas, width: viewport.width, height: viewport.height, pageNum: i })
         }
@@ -416,9 +452,9 @@ export default function SignView() {
   const allRequiredFilled = requiredFields.every(f => !!fieldValues[f.id])
   const canSubmit = allRequiredFilled && consent && !submitting
 
-  const isFilled = id => !!fieldValues[id]
+  const isFilled = (id: string) => !!fieldValues[id]
 
-  const handleFieldFill = (fieldId, value) => {
+  const handleFieldFill = (fieldId: string, value: string) => {
     setFieldValues(prev => ({ ...prev, [fieldId]: value }))
     setActiveField(null)
   }
@@ -430,7 +466,7 @@ export default function SignView() {
     setSubmitError('')
 
     // Build fieldValues map: {fieldId: value, ...}
-    const fieldValuesPayload = {}
+    const fieldValuesPayload: Record<string, string> = {}
     for (const f of fields) {
       fieldValuesPayload[f.id] = fieldValues[f.id] ?? ''
     }
@@ -441,7 +477,7 @@ export default function SignView() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(fieldValuesPayload),
       })
-      const data = await res.json()
+      const data = await res.json() as { error?: string }
       if (!res.ok) {
         setSubmitError(data.error || 'Submission failed. Please try again.')
         return
@@ -459,7 +495,7 @@ export default function SignView() {
   // Shared centred-frame layout for the four "informational" states.
   // Force light data-theme on these surfaces — a public signer page should
   // always feel like warm paper, regardless of the visitor's OS dark mode.
-  const StatusFrame = ({ children }) => (
+  const StatusFrame = ({ children }: { children: ReactNode }) => (
     <div data-theme="light" className="h-screen flex flex-col items-center justify-center gap-4 bg-bg px-4 paper-grain">
       {children}
     </div>
@@ -531,6 +567,7 @@ export default function SignView() {
   // Public surface — force light theme so the page always feels like paper,
   // and dial back the colour vocabulary: one accent for "act here", a single
   // sage success colour for "done", everything else warm neutral.
+  if (!view) return null
 
   const filledCount = fields.filter((f) => isFilled(f.id)).length
   const progressPct = fields.length ? Math.round((filledCount / fields.length) * 100) : 0
