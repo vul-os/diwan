@@ -13,7 +13,13 @@
  *   </Card>
  */
 
-function Card({ variant = 'flat', className = '', children, ...rest }) {
+import type { HTMLAttributes } from 'react'
+
+interface CardProps extends HTMLAttributes<HTMLDivElement> {
+  variant?: 'flat' | 'raised'
+}
+
+function Card({ variant = 'flat', className = '', children, ...rest }: CardProps) {
   const cn = [
     'bg-paper text-ink border border-line rounded-lg overflow-hidden',
     variant === 'raised' ? 'shadow-e1' : '',
@@ -28,7 +34,7 @@ function Card({ variant = 'flat', className = '', children, ...rest }) {
   )
 }
 
-Card.Header = function CardHeader({ className = '', children, ...rest }) {
+function CardHeader({ className = '', children, ...rest }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
       className={`px-4 py-3 border-b border-line flex items-center gap-3 ${className}`}
@@ -39,7 +45,7 @@ Card.Header = function CardHeader({ className = '', children, ...rest }) {
   )
 }
 
-Card.Body = function CardBody({ className = '', children, ...rest }) {
+function CardBody({ className = '', children, ...rest }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div className={`p-4 ${className}`} {...rest}>
       {children}
@@ -47,7 +53,7 @@ Card.Body = function CardBody({ className = '', children, ...rest }) {
   )
 }
 
-Card.Footer = function CardFooter({ className = '', children, ...rest }) {
+function CardFooter({ className = '', children, ...rest }: HTMLAttributes<HTMLDivElement>) {
   return (
     <div
       className={`px-4 py-3 border-t border-line bg-bg-elev2 flex items-center gap-2 ${className}`}
@@ -58,4 +64,10 @@ Card.Footer = function CardFooter({ className = '', children, ...rest }) {
   )
 }
 
-export default Card
+const CardWithSlots = Object.assign(Card, {
+  Header: CardHeader,
+  Body: CardBody,
+  Footer: CardFooter,
+})
+
+export default CardWithSlots
