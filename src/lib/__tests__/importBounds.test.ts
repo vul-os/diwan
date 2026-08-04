@@ -149,7 +149,7 @@ describe('safeLoadZip / entryText / entryDataUri', () => {
 import zlib from 'node:zlib'
 import { inflateEntryBounded, assertArchiveBounds, MAX_SINGLE_ENTRY, MAX_TOTAL_UNCOMPRESSED } from '../importBounds.js'
 
-function crc32(buf) {
+function crc32(buf: Buffer): number {
   let c = ~0
   for (let i = 0; i < buf.length; i++) {
     c ^= buf[i]
@@ -159,7 +159,7 @@ function crc32(buf) {
 }
 
 // Single deflate entry whose headers LIE about the uncompressed size.
-function buildLyingZip(name, content, declaredUncompressed) {
+function buildLyingZip(name: string, content: Buffer, declaredUncompressed: number): Uint8Array {
   const nameBuf = Buffer.from(name, 'utf8')
   const comp = zlib.deflateRawSync(content)
   const crc = crc32(content)

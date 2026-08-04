@@ -25,7 +25,7 @@ import { docsCollabEnabled, updateLogEnabled, substrateSyncEnabled } from '../fl
  * process.env is what the accessor falls through to — which is what lets a test
  * set one.
  */
-function withEnv(name, value, fn) {
+function withEnv<T>(name: string, value: string | undefined, fn: () => T): T {
   const had = Object.prototype.hasOwnProperty.call(process.env, name)
   const prev = process.env[name]
   if (value === undefined) delete process.env[name]

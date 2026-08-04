@@ -16,7 +16,7 @@ beforeEach(() => {
 })
 afterEach(() => vi.useRealTimers())
 
-const ago = (ms) => new Date(NOW - ms)
+const ago = (ms: number) => new Date(NOW - ms)
 const SEC = 1000, MIN = 60 * SEC, HOUR = 60 * MIN, DAY = 24 * HOUR
 
 describe('timeAgo', () => {

@@ -16,26 +16,29 @@ import { odtToHtml } from '../../apps/docs/odtImport.js'
 import { pptxToSlides, odpToSlides } from '../../apps/slides/slidesImport.js'
 import { workbookToSheets } from '../../apps/sheets/sheetsImport.js'
 
-let traps
+let traps: ReturnType<typeof vi.fn<(...args: unknown[]) => never>>
+let savedGlobals: { fetch: typeof fetch; XMLHttpRequest: typeof XMLHttpRequest; WebSocket: typeof WebSocket; EventSource: typeof EventSource }
 
 beforeEach(() => {
-  traps = vi.fn(() => { throw new Error('NETWORK ACCESS during import — SSRF/tracking risk') })
+  traps = vi.fn<(...args: unknown[]) => never>(() => { throw new Error('NETWORK ACCESS during import — SSRF/tracking risk') })
   const G = globalThis
-  traps.saved = {
+  savedGlobals = {
     fetch: G.fetch,
     XMLHttpRequest: G.XMLHttpRequest,
     WebSocket: G.WebSocket,
     EventSource: G.EventSource,
   }
-  G.fetch = (...a) => traps(...a)
-  // XHR: trap open() (the point a URL is supplied).
-  G.XMLHttpRequest = class { open(...a) { traps(...a) } send() { traps() } setRequestHeader() {} }
-  G.WebSocket = class { constructor(...a) { traps(...a) } }
-  G.EventSource = class { constructor(...a) { traps(...a) } }
+  G.fetch = ((...a: unknown[]) => traps(...a)) as typeof fetch
+  // XHR: trap open() (the point a URL is supplied). Deliberately minimal test
+  // doubles — not real XMLHttpRequest/WebSocket/EventSource implementations —
+  // hence the assertions past their real constructor types.
+  G.XMLHttpRequest = class { open(...a: unknown[]) { traps(...a) } send() { traps() } setRequestHeader() {} } as unknown as typeof XMLHttpRequest
+  G.WebSocket = class { constructor(...a: unknown[]) { traps(...a) } } as unknown as typeof WebSocket
+  G.EventSource = class { constructor(...a: unknown[]) { traps(...a) } } as unknown as typeof EventSource
 })
 
 afterEach(() => {
-  Object.assign(globalThis, traps.saved)
+  Object.assign(globalThis, savedGlobals)
 })
 
 const RASTER = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])

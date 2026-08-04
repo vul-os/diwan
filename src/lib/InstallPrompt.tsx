@@ -20,7 +20,13 @@ import { isEmbedded } from './pwa.js'
 
 const DISMISS_KEY = 'vulos.office.pwa.install-dismissed.v1'
 
-function alreadyHandled() {
+// Chromium-only, not part of the standard DOM lib types.
+interface BeforeInstallPromptEvent extends Event {
+  prompt(): Promise<void>
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed'; platform: string }>
+}
+
+function alreadyHandled(): boolean {
   try {
     if (localStorage.getItem(DISMISS_KEY) === '1') return true
   } catch {
@@ -29,7 +35,7 @@ function alreadyHandled() {
   // Running as an installed PWA already ⇒ never prompt.
   try {
     if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return true
-    if (window.navigator && window.navigator.standalone) return true
+    if (window.navigator && (window.navigator as Navigator & { standalone?: boolean }).standalone) return true
   } catch {
     /* noop */
   }
@@ -37,7 +43,7 @@ function alreadyHandled() {
 }
 
 export default function InstallPrompt() {
-  const [deferred, setDeferred] = useState(null)
+  const [deferred, setDeferred] = useState<BeforeInstallPromptEvent | null>(null)
   const [visible, setVisible] = useState(false)
   const [offline, setOffline] = useState(
     typeof navigator !== 'undefined' && navigator.onLine === false
@@ -46,11 +52,11 @@ export default function InstallPrompt() {
   useEffect(() => {
     if (isEmbedded()) return // OS-hosted embed: host owns install/offline UX.
 
-    const onBeforeInstall = (e) => {
+    const onBeforeInstall = (e: Event) => {
       // Suppress the browser's default mini-infobar; drive our own affordance.
       e.preventDefault()
       if (alreadyHandled()) return
-      setDeferred(e)
+      setDeferred(e as BeforeInstallPromptEvent)
       setVisible(true)
     }
     const onInstalled = () => {

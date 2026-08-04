@@ -96,7 +96,7 @@ function isUnsafeEntryName(name: unknown): boolean {
  * single byte. Callers should still prefer `entryText()` below to read entries
  * (it re-checks the actual inflated length as belt-and-braces).
  */
-export async function safeLoadZip(arrayBuffer: ArrayBuffer, filename = 'file'): Promise<JSZipInternal> {
+export async function safeLoadZip(arrayBuffer: ArrayBuffer | Uint8Array, filename = 'file'): Promise<JSZipInternal> {
   assertFileSize(arrayBuffer.byteLength, filename)
   let zip: JSZipInternal
   try {
@@ -240,7 +240,7 @@ function inflateEntryBounded(
  * covered by importNoFetch.test.js.)
  */
 export async function assertArchiveBounds(
-  arrayBuffer: ArrayBuffer,
+  arrayBuffer: ArrayBuffer | Uint8Array,
   filename = 'file',
   perEntryCap = MAX_SINGLE_ENTRY
 ): Promise<JSZipInternal> {

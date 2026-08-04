@@ -14,7 +14,7 @@
  */
 import zlib from 'node:zlib'
 
-function crc32(buf) {
+function crc32(buf: Buffer): number {
   let c = ~0
   for (let i = 0; i < buf.length; i++) {
     c ^= buf[i]
@@ -24,7 +24,7 @@ function crc32(buf) {
 }
 
 /** Single deflate entry whose local + central headers LIE about uncompressed size. */
-export function buildLyingZip(name, content, declaredUncompressed) {
+export function buildLyingZip(name: string, content: Buffer, declaredUncompressed: number): Uint8Array {
   const nameBuf = Buffer.from(name, 'utf8')
   const comp = zlib.deflateRawSync(content)
   const crc = crc32(content)
