@@ -1,45 +1,80 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import type { NavigateFunction } from 'react-router-dom'
 import {
   FileText, Table2, Presentation, FileSearch, PenTool, Clock,
   ArrowUpRight, FolderSearch, HardDrive, RefreshCw, Loader2, Plus,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import { useFilesStore } from '../store/filesStore'
 import { useLocalFilesStore } from '../store/localFilesStore'
+import type { LocalFileEntry } from '../store/localFilesStore'
 import { importFromUrl } from '../lib/importFile'
 import { timeAgo, formatBytes } from '../lib/format'
+import type { DateInput } from '../lib/format'
 import NewFileModal from './NewFileModal'
 import { Card, Button, Tooltip, useToast, Skeleton, DocThumb } from './ui'
 
+// A local-scan file as this page actually reads it: `ext`/`appType`/`modified`
+// are always present on real scan results, but LocalFileEntry keeps them
+// optional/untyped (index signature) since other consumers read fewer fields.
+type HomeLocalFile = LocalFileEntry & { ext: string; appType: string; modified: string }
+
+interface TypeInfoEntry {
+  icon: LucideIcon
+  iconCn: string
+  bgCn: string
+  route: string
+}
+
+interface LocalTypeInfoEntry {
+  icon: LucideIcon
+  iconCn: string
+  bgCn: string
+  label: string
+}
+
 // ─── Per-app tint map — shares the rail's tokens so content ↔ sidebar agree ──
-const typeInfo = {
+const typeInfo: Record<string, TypeInfoEntry> = {
   doc:   { icon: FileText,     iconCn: 'text-app-docs',   bgCn: 'bg-app-docs-bg',   route: 'docs'   },
   sheet: { icon: Table2,       iconCn: 'text-app-sheets', bgCn: 'bg-app-sheets-bg', route: 'sheets' },
   slide: { icon: Presentation, iconCn: 'text-app-slides', bgCn: 'bg-app-slides-bg', route: 'slides' },
   whiteboard: { icon: PenTool, iconCn: 'text-app-board',  bgCn: 'bg-app-board-bg',  route: 'whiteboards' },
 }
 
-const localTypeInfo = {
+const localTypeInfo: Record<string, LocalTypeInfoEntry> = {
   doc:   { icon: FileText,     iconCn: 'text-app-docs',   bgCn: 'bg-app-docs-bg',   label: 'Document'     },
   sheet: { icon: Table2,       iconCn: 'text-app-sheets', bgCn: 'bg-app-sheets-bg', label: 'Spreadsheet'  },
   slide: { icon: Presentation, iconCn: 'text-app-slides', bgCn: 'bg-app-slides-bg', label: 'Presentation' },
   pdf:   { icon: FileSearch,   iconCn: 'text-app-pdf',    bgCn: 'bg-app-pdf-bg',    label: 'PDF'          },
 }
 
-async function openLocalFile(file, navigate, setImporting, showToast) {
+async function openLocalFile(
+  file: HomeLocalFile,
+  navigate: NavigateFunction,
+  setImporting: (path: string | null) => void,
+  showToast: (msg: string, tone?: 'info' | 'success' | 'error') => void,
+) {
   setImporting(file.path)
   try {
     await importFromUrl(file, navigate)
   } catch (e) {
     console.error(e)
-    showToast(`Could not open ${file.name}: ${e.message}`, 'error')
+    showToast(`Could not open ${file.name}: ${e instanceof Error ? e.message : String(e)}`, 'error')
   } finally {
     setImporting(null)
   }
 }
 
 // ─── Quick-start cluster ─────────────────────────────────────────────────────
-const quickStarts = [
+interface QuickStart {
+  label: string
+  shortLabel: string
+  icon: LucideIcon
+  type: string
+}
+
+const quickStarts: QuickStart[] = [
   { label: 'New Document',     shortLabel: 'Document',     icon: FileText,     type: 'doc'   },
   { label: 'New Spreadsheet',  shortLabel: 'Spreadsheet',  icon: Table2,       type: 'sheet' },
   { label: 'New Presentation', shortLabel: 'Presentation', icon: Presentation, type: 'slide' },
@@ -52,17 +87,17 @@ export default function Home() {
   const { files, loading: filesLoading, fetchFiles } = useFilesStore()
   const { files: localFiles, loading: localLoading, scanned, scan } = useLocalFilesStore()
   const [showLocalAll, setShowLocalAll] = useState(false)
-  const [importing, setImporting] = useState(null)
+  const [importing, setImporting] = useState<string | null>(null)
   const [showNew, setShowNew] = useState(false)
-  const [newType, setNewType] = useState(null)
+  const [newType, setNewType] = useState<string | null>(null)
 
   useEffect(() => { fetchFiles() }, [])
   useEffect(() => { if (!scanned) scan() }, [scanned])
 
   const recentFiles = files.filter(f => typeInfo[f.type]).slice(0, 12)
-  const visibleLocal = showLocalAll ? localFiles : localFiles.slice(0, 8)
+  const visibleLocal = (showLocalAll ? localFiles : localFiles.slice(0, 8)) as HomeLocalFile[]
 
-  const openNew = (type) => { setNewType(type); setShowNew(true) }
+  const openNew = (type: string) => { setNewType(type); setShowNew(true) }
 
   return (
     <div className="flex-1 overflow-auto bg-bg">
@@ -262,7 +297,7 @@ export default function Home() {
                       </div>
                       <div className="flex items-center gap-3 flex-shrink-0 font-mono text-2xs text-ink-faint">
                         <span>{formatBytes(file.size)}</span>
-                        <span>{timeAgo(file.modified)}</span>
+                        <span>{timeAgo(file.modified as DateInput)}</span>
                         <span className={`px-1.5 py-0.5 rounded-sm ${info.bgCn} ${info.iconCn} border border-line font-semibold uppercase text-[9px]`}>
                           {file.ext.slice(1)}
                         </span>
@@ -291,7 +326,7 @@ export default function Home() {
 
       {showNew && (
         <NewFileModal
-          defaultType={newType || 'doc'}
+          defaultType={(newType || 'doc') as 'doc' | 'sheet' | 'slide' | 'whiteboard'}
           onClose={() => { setShowNew(false); setNewType(null) }}
         />
       )}
