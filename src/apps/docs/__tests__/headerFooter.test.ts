@@ -25,14 +25,22 @@ import { saveAs } from 'file-saver'
 
 vi.mock('file-saver', () => ({ saveAs: vi.fn() }))
 
-function makeEditor() {
+function makeEditor(): Editor {
   return new Editor({
     extensions: [Document, Paragraph, Text],
     content: '<p>Body</p>',
   })
 }
 
-let editor
+// A saveAs Blob argument narrowed away from the `Blob | string` union the real
+// file-saver signature allows — this suite only ever hands it a Blob.
+function firstSavedBlob(): Blob {
+  const data = vi.mocked(saveAs).mock.calls[0]?.[0]
+  if (!(data instanceof Blob)) throw new Error('expected saveAs to be called with a Blob')
+  return data
+}
+
+let editor: Editor | null = null
 afterEach(() => { editor?.destroy(); editor = null; vi.clearAllMocks() })
 
 // ── 1. Sanitisation / normalisation ──────────────────────────────────────────
@@ -137,7 +145,7 @@ describe('header/footer + page-setup export', () => {
       pageSetup: { size: 'a4', orientation: 'landscape', margins: { top: 1, right: 1, bottom: 1, left: 1 } },
       headerFooter: { enabled: true, header: { center: '{{title}}' }, footer: { right: 'Page {{page}}' } },
     })
-    const blob = saveAs.mock.calls[0][0]
+    const blob = firstSavedBlob()
     const text = await blob.text()
     expect(text).toMatch(/@page/)
     expect(text).toMatch(/@top-center|@bottom-right/)
@@ -157,7 +165,7 @@ describe('header/footer + page-setup export', () => {
     exportToHtml(editor, hostile, {
       headerFooter: { enabled: true, header: { center: '{{title}}' } },
     })
-    const blob = saveAs.mock.calls[0][0]
+    const blob = firstSavedBlob()
     const text = await blob.text()
     // No literal </style> may appear before the real closing tag's position
     // other than the genuine one; concretely: no <script> element must survive.
@@ -173,7 +181,7 @@ describe('header/footer + page-setup export', () => {
     exportToHtml(editor, '"><script>alert(1)</script>', {
       headerFooter: { enabled: true, header: { left: 'safe' } },
     })
-    const blob = saveAs.mock.calls[0][0]
+    const blob = firstSavedBlob()
     const text = await blob.text()
     // The hostile filename must be escaped in <title> / running elements.
     expect(text).not.toContain('<script>alert(1)</script>')
@@ -186,6 +194,6 @@ describe('header/footer + page-setup export', () => {
       headerFooter: { enabled: true, footer: { center: 'Page {{page}} of {{pages}}' } },
     })
     expect(saveAs).toHaveBeenCalled()
-    expect(saveAs.mock.calls[0][0]).toBeInstanceOf(Blob)
+    expect(firstSavedBlob()).toBeInstanceOf(Blob)
   })
 })
