@@ -29,11 +29,11 @@ import { server, resetMock, mockState } from '../../../__tests__/msw/server.js'
 // The gate under test. Each case sets the return value before mounting.
 const collabEnabled = vi.fn(() => false)
 vi.mock('../../../lib/flags.js', async (importOriginal) => {
-  const actual = await importOriginal()
+  const actual = await importOriginal<typeof import('../../../lib/flags.js')>()
   return { ...actual, docsCollabEnabled: () => collabEnabled() }
 })
 
-import DocsEditor from '../DocsEditor.jsx'
+import DocsEditor from '../DocsEditor.js'
 
 beforeAll(() => server.listen({ onUnhandledRequest: 'bypass' }))
 afterEach(() => { server.resetHandlers(); vi.restoreAllMocks() })
@@ -50,8 +50,16 @@ function mountEditor() {
 }
 
 /** Every /collab/* call the app made (in or out) since the mock was reset. */
-function collabCalls() {
+function collabCalls(): string[] {
   return mockState.calls.filter((c) => c.includes('/collab/'))
+}
+
+/** The mounted editor's ProseMirror content element — throws if not present
+ *  (every case waits for it first, so this only asserts what's already true). */
+function proseMirrorEl(): HTMLElement {
+  const el = document.querySelector('.ProseMirror')
+  if (!el) throw new Error('.ProseMirror not mounted')
+  return el as HTMLElement
 }
 
 describe('Docs live co-editing gate — OFF (default)', () => {
@@ -71,7 +79,7 @@ describe('Docs live co-editing gate — OFF (default)', () => {
   it('typing publishes no ops (nothing leaves the tab)', async () => {
     mountEditor()
     await waitFor(() => expect(document.querySelector('.ProseMirror')).toBeTruthy())
-    const pm = document.querySelector('.ProseMirror')
+    const pm = proseMirrorEl()
     await userEvent.click(pm)
     await userEvent.keyboard('hello collab')
     await new Promise((r) => setTimeout(r, 400)) // past the publish debounce
@@ -98,7 +106,7 @@ describe('Docs live co-editing gate — OFF (default)', () => {
   it('the editor still works as a single-user editor', async () => {
     mountEditor()
     await waitFor(() => expect(document.querySelector('.ProseMirror')).toBeTruthy())
-    const pm = document.querySelector('.ProseMirror')
+    const pm = proseMirrorEl()
     await userEvent.click(pm)
     await userEvent.keyboard('solo editing works')
     expect(pm.textContent).toContain('solo editing works')
@@ -121,7 +129,7 @@ describe('Docs live co-editing gate — ON', () => {
     // ever traverse a central server. Even with co-editing ON, the editor makes
     // zero /collab/* server calls (the P2P fabric would use /api/peering/*, which
     // this host does not mount, so it stays local — the honest degrade).
-    const pm = document.querySelector('.ProseMirror')
+    const pm = proseMirrorEl()
     await userEvent.click(pm)
     await userEvent.keyboard('collaborative text')
     await new Promise((r) => setTimeout(r, 400)) // past any publish/presence debounce
