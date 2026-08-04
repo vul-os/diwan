@@ -1,5 +1,5 @@
 /**
- * src/entries/office.jsx — entry point for office.vulos.org (dist-office/)
+ * src/entries/office.tsx — entry point for office.vulos.org (dist-office/)
  *
  * Mounts OfficeShell with BrowserRouter for history-API deep linking.
  * The backend must serve index.html for all unmatched paths (SPA fallback).
@@ -21,7 +21,7 @@ configure({ lsKeyPrefix: 'vulos.office.endpoints.v1', healthPath: '/api/auth/sta
 // the OS hub, or on unsupported browsers — see src/lib/pwa.js.
 import { registerServiceWorker } from '../lib/pwa.js'
 
-createRoot(document.getElementById('root')).render(
+createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
       <OfficeShell />

@@ -1,7 +1,7 @@
 /**
  * vite.config.office.js — office.vulos.org bundle
  *
- * Builds to dist-office/ from src/entries/office.jsx.
+ * Builds to dist-office/ from src/entries/office.tsx.
  * Code-splits per app (docs/sheets/slides/pdf) for optimal load times.
  *
  * Deploy: upload dist-office/ to Tigris at office/<sha>/
