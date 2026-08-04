@@ -10,8 +10,21 @@
  */
 
 import { forwardRef, useId } from 'react'
+import type { InputHTMLAttributes, ReactNode, Ref } from 'react'
 
-const sizeClasses = {
+type InputSize = 'sm' | 'md' | 'lg'
+
+interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'size'> {
+  label?: ReactNode
+  hint?: ReactNode
+  error?: ReactNode
+  size?: InputSize
+  leading?: ReactNode
+  trailing?: ReactNode
+  className?: string
+}
+
+const sizeClasses: Record<InputSize, string> = {
   sm: 'h-7 text-xs',
   md: 'h-9 text-sm',
   lg: 'h-11 text-md',
@@ -28,8 +41,8 @@ const Input = forwardRef(function Input(
     className = '',
     id,
     ...rest
-  },
-  ref,
+  }: InputProps,
+  ref: Ref<HTMLInputElement>,
 ) {
   const reactId = useId()
   const inputId = id || reactId
