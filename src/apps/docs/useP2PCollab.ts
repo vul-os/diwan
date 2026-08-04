@@ -38,13 +38,35 @@
  *          will never sync.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { YP2PCollabSession } from '../../lib/crdt/yP2PSession.js'
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
+import type * as Y from 'yjs'
+import type { Schema } from '@tiptap/pm/model'
+import { YP2PCollabSession, type AnyYContext } from '../../lib/crdt/yP2PSession.js'
+import type { RoomCap } from '../../lib/crdt/p2pRoom.js'
 import { resolveReachableBase } from '../../lib/collab/reachableBase.js'
 import {
   selectCollabTransport,
   TRANSPORT_LOCAL_ONLY,
 } from '../../lib/collab/transportSelection.js'
+
+type PeerState = string
+
+interface P2PLinks {
+  rwLink: string
+  roLink: string
+}
+
+/**
+ * The Y context DocsEditor builds via `createYContext(null, ydoc)` and mutates
+ * IN PLACE once the ProseMirror editor mounts (`yctx.schema = editor.schema`;
+ * see DocsEditor.jsx). `schema` therefore starts `null` on the very same object
+ * this hook holds a reference to, which is exactly the race ctxReady/waitForCtx
+ * below exist to handle — this hook cannot just take `AnyYContext` from
+ * ydoc.ts's `YContext` (which requires a non-null `schema`) at its own boundary.
+ */
+type DocsYContext = { ydoc: Y.Doc; shadow: Y.Doc; schema: Schema | null }
+
+type ShareResult = { rwLink: string; roLink: string; roomId: string }
 
 /** True when the current location carries a P2P invite fragment. */
 export function hasInviteInLocation() {
@@ -68,8 +90,15 @@ function getOrCreatePeerId() {
  * document path) or the caller's own `applyUpdate` validator (the whiteboard's
  * Excalidraw-scene path). Mirrors the check YP2PCollabSession's constructor makes.
  */
-function ctxReady(ctx) {
-  return !!ctx && !!ctx.ydoc && (!!ctx.schema || typeof ctx.applyUpdate === 'function')
+// `ctx` is a mutable object built up in place by the caller (DocsEditor attaches
+// `schema` after mount — see waitForCtx below), so at the moment this runs it may
+// not yet satisfy AnyYContext even though the hook's declared ctx type says it
+// will. Checked as `unknown` rather than trusted from the type, which is the
+// whole point of this guard.
+function ctxReady(ctx: unknown): ctx is AnyYContext {
+  if (!ctx || typeof ctx !== 'object') return false
+  const c = ctx as { ydoc?: unknown; schema?: unknown; applyUpdate?: unknown }
+  return !!c.ydoc && (!!c.schema || typeof c.applyUpdate === 'function')
 }
 
 /**
@@ -91,9 +120,12 @@ function ctxReady(ctx) {
  * Bounded, so a genuinely broken context still fails (loudly, as before) instead
  * of hanging the join forever.
  */
-function waitForCtx(ctx, { timeoutMs = 15_000, intervalMs = 50 } = {}) {
+function waitForCtx(
+  ctx: DocsYContext | null | undefined,
+  { timeoutMs = 15_000, intervalMs = 50 }: { timeoutMs?: number; intervalMs?: number } = {},
+): Promise<boolean> {
   if (ctxReady(ctx)) return Promise.resolve(true)
-  return new Promise((resolve) => {
+  return new Promise<boolean>((resolve) => {
     const deadline = Date.now() + timeoutMs
     const tick = () => {
       if (ctxReady(ctx)) return resolve(true)
@@ -104,25 +136,47 @@ function waitForCtx(ctx, { timeoutMs = 15_000, intervalMs = 50 } = {}) {
   })
 }
 
-/**
- * @param {object} opts
- * @param {string} opts.fileId
- * @param {object} opts.ctx  { ydoc, shadow, schema } (createYContext)
- * @param {boolean} [opts.autoJoinFromLink=true]
- * @param {boolean} [opts.enabled=true]  master switch (VITE_DOCS_COLLAB)
- */
-export function useP2PCollab({ fileId, ctx, autoJoinFromLink = true, enabled = true }) {
-  const [active, setActive] = useState(false)
-  const [cap, setCap] = useState(null)          // 'rw' | 'ro'
-  const [roomId, setRoomId] = useState(null)
-  const [peers, setPeers] = useState({})        // peerId → state
-  const [links, setLinks] = useState(null)      // { rwLink, roLink } when sharing
-  const [peeringUnavailable, setPeeringUnavailable] = useState(false)
-  const sessionRef = useRef(null)
+export interface UseP2PCollabOptions {
+  fileId: string
+  /** { ydoc, shadow, schema } (createYContext); `schema` may still be `null`
+   *  until the ProseMirror editor mounts — see DocsYContext above. */
+  ctx: DocsYContext | null
+  autoJoinFromLink?: boolean
+  /** master switch (VITE_DOCS_COLLAB) */
+  enabled?: boolean
+}
 
-  const wireSession = useCallback((session) => {
+export interface UseP2PCollabResult {
+  active: boolean
+  cap: RoomCap | null
+  readOnly: boolean
+  roomId: string | null
+  peers: Record<string, PeerState>
+  peerCount: number
+  links: P2PLinks | null
+  peeringUnavailable: boolean
+  collabDisabled: boolean
+  inviteIgnored: boolean
+  startShare: () => Promise<ShareResult>
+  rotate: () => Promise<ShareResult>
+  leave: () => void
+  session: RefObject<YP2PCollabSession | null>
+}
+
+export function useP2PCollab({
+  fileId, ctx, autoJoinFromLink = true, enabled = true,
+}: UseP2PCollabOptions): UseP2PCollabResult {
+  const [active, setActive] = useState(false)
+  const [cap, setCap] = useState<RoomCap | null>(null)
+  const [roomId, setRoomId] = useState<string | null>(null)
+  const [peers, setPeers] = useState<Record<string, PeerState>>({})   // peerId → state
+  const [links, setLinks] = useState<P2PLinks | null>(null)           // { rwLink, roLink } when sharing
+  const [peeringUnavailable, setPeeringUnavailable] = useState(false)
+  const sessionRef = useRef<YP2PCollabSession | null>(null)
+
+  const wireSession = useCallback((session: YP2PCollabSession) => {
     session.addEventListener('state', (ev) => {
-      const { peerId, state } = ev.detail
+      const { peerId, state } = (ev as CustomEvent<{ peerId: string; state: string }>).detail
       setPeers((prev) => ({ ...prev, [peerId]: state }))
     })
   }, [])
@@ -175,8 +229,11 @@ export function useP2PCollab({ fileId, ctx, autoJoinFromLink = true, enabled = t
       }
       if (cancelled) return
       try {
+        // waitForCtx just confirmed ctxReady(ctx) above (that's the only way it
+        // resolves true) — ctx is a complete AnyYContext at this point, just not
+        // narrowed as such since the check happened inside that call.
         const session = await YP2PCollabSession.fromInvite({
-          inviteLink, peerId, fileId, ctx, rendezvousBaseUrl, rendezvousPrefix,
+          inviteLink, peerId, fileId, ctx: ctx as AnyYContext, rendezvousBaseUrl, rendezvousPrefix,
         })
         if (cancelled) { session.leave(); return }
         wireSession(session)
@@ -188,7 +245,7 @@ export function useP2PCollab({ fileId, ctx, autoJoinFromLink = true, enabled = t
       } catch (err) {
         // A malformed/tampered invite fails closed — we simply don't enter P2P
         // mode (the editor stays in normal local/cloud mode).
-        console.warn('[p2p] join from link failed:', err?.message)
+        console.warn('[p2p] join from link failed:', (err as Error)?.message)
         if (!cancelled) teardown()
       }
     })()
@@ -197,7 +254,7 @@ export function useP2PCollab({ fileId, ctx, autoJoinFromLink = true, enabled = t
   }, [enabled, ctx, autoJoinFromLink, fileId, wireSession, teardown])
 
   // ── SHARE: mint a fresh room and expose rw/ro links ────────────────────────
-  const startShare = useCallback(async () => {
+  const startShare = useCallback(async (): Promise<ShareResult> => {
     // Co-editing disabled for this deployment: refuse to mint a room rather than
     // hand the user links that would look real and never sync anything.
     if (!enabled) throw new Error('collab-disabled')
@@ -231,8 +288,10 @@ export function useP2PCollab({ fileId, ctx, autoJoinFromLink = true, enabled = t
       : '/'
     const originBase = reachable || (typeof window !== 'undefined' ? window.location.origin : '')
     const baseUrl = originBase ? `${originBase}${pathname}` : undefined
+    // waitForCtx just confirmed ctxReady(ctx) above — see the matching comment
+    // on the join path.
     const { session, rwLink, roLink, roomId: rid } = await YP2PCollabSession.create({
-      peerId, fileId, baseUrl, ctx, rendezvousBaseUrl, rendezvousPrefix,
+      peerId, fileId, baseUrl, ctx: ctx as AnyYContext, rendezvousBaseUrl, rendezvousPrefix,
     })
     wireSession(session)
     sessionRef.current = session
