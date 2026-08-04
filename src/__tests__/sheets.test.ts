@@ -65,16 +65,27 @@ describe('csvToSheet', () => {
 // ─── 2. Conditional formatting rule ──────────────────────────────────────────
 
 // Helper: render ConditionalFormatPanel in isolation.
+// NOTE: vi.mock's real signature only ever took (path, factory) — the
+// trailing `{ spy: false }` here was a dead 3rd argument (vitest's `mock()`
+// has no such parameter, so JS silently dropped it at call time); removing it
+// is a no-op at runtime, just satisfies vi.mock's typed arity.
 vi.mock('../../components/ui', async (orig) => {
   const real = await orig()
   return real
-}, { spy: false })
+})
 
 // We test the rule-building logic directly without full DOM mount.
 describe('Conditional format rule builder', () => {
   it('serialises a cell_value rule correctly', () => {
     // Replicate the ruleToFS function logic inline (module is JSX, importing triggers React).
-    function ruleToFS(rule) {
+    interface CFRule {
+      type: string
+      operator: string
+      value1: string
+      value2: string
+      format: { textColor: string; bgColor: string; bold: boolean }
+    }
+    function ruleToFS(rule: CFRule) {
       return {
         conditionName:   rule.type,
         conditionSymbol: rule.operator,
@@ -87,7 +98,7 @@ describe('Conditional format rule builder', () => {
       }
     }
 
-    const rule = {
+    const rule: CFRule = {
       type: 'cell_value', operator: '>', value1: '100', value2: '',
       format: { bgColor: '#FFFF00', textColor: '', bold: false },
     }
@@ -103,9 +114,12 @@ describe('Conditional format rule builder', () => {
 
 // Test the pure computation logic directly.
 describe('Pivot table computation', () => {
-  function buildPivot(table, rowField, colField, valueField, aggFn) {
-    const AGG = {
-      SUM:    (vals) => vals.reduce((a, b) => a + (Number(b) || 0), 0),
+  type PivotCell = string | number
+  type PivotTable = PivotCell[][]
+
+  function buildPivot(table: PivotTable, rowField: string, colField: string, valueField: string, aggFn: string): PivotTable | null {
+    const AGG: Record<string, (vals: PivotCell[]) => number> = {
+      SUM:    (vals) => vals.reduce((a: number, b) => a + (Number(b) || 0), 0),
       COUNT:  (vals) => vals.length,
     }
     if (!table || table.length < 2) return null
@@ -115,7 +129,7 @@ describe('Pivot table computation', () => {
     const valIdx  = headers.indexOf(valueField)
     if (rowIdx < 0 || valIdx < 0) return null
 
-    const rows = new Set(), cols = new Set(), groups = {}
+    const rows = new Set<string>(), cols = new Set<string>(), groups: Record<string, PivotCell[]> = {}
     for (let i = 1; i < table.length; i++) {
       const row = table[i]
       const rv  = String(row[rowIdx] ?? '')
@@ -128,9 +142,9 @@ describe('Pivot table computation', () => {
     }
 
     const rowArr = [...rows].sort(), colArr = [...cols].sort()
-    const result = [[rowField, ...colArr, 'Total']]
+    const result: PivotTable = [[rowField, ...colArr, 'Total']]
     for (const rv of rowArr) {
-      const dataRow = [rv]
+      const dataRow: PivotCell[] = [rv]
       let rowTotal = 0
       for (const cv of colArr) {
         const vals = groups[`${rv}||${cv}`] || []
@@ -143,7 +157,7 @@ describe('Pivot table computation', () => {
   }
 
   it('creates a pivot table with correct totals', () => {
-    const table = [
+    const table: PivotTable = [
       ['Region', 'Product', 'Sales'],
       ['North', 'A', 100],
       ['North', 'B', 200],
@@ -151,11 +165,11 @@ describe('Pivot table computation', () => {
     ]
     const pivot = buildPivot(table, 'Region', 'Product', 'Sales', 'SUM')
     expect(pivot).toBeTruthy()
-    expect(pivot[0]).toContain('A')
-    expect(pivot[0]).toContain('B')
+    expect(pivot![0]).toContain('A')
+    expect(pivot![0]).toContain('B')
     // North row total should be 300.
-    const northRow = pivot.find((r) => r[0] === 'North')
-    expect(northRow[northRow.length - 1]).toBe(300)
+    const northRow = pivot!.find((r) => r[0] === 'North')
+    expect(northRow![northRow!.length - 1]).toBe(300)
   })
 
   it('returns null for empty table', () => {
@@ -163,12 +177,12 @@ describe('Pivot table computation', () => {
   })
 
   it('counts rows with COUNT aggregation', () => {
-    const table = [
+    const table: PivotTable = [
       ['Cat', 'Val'],
       ['A', 10], ['A', 20], ['B', 5],
     ]
     const pivot = buildPivot(table, 'Cat', '', 'Val', 'COUNT')
-    const aRow = pivot.find((r) => r[0] === 'A')
+    const aRow = pivot!.find((r) => r[0] === 'A')
     expect(aRow).toBeTruthy()
   })
 })
@@ -176,7 +190,13 @@ describe('Pivot table computation', () => {
 // ─── 4. Filter view toggle (pure logic) ───────────────────────────────────────
 
 describe('Filter view computation', () => {
-  function matchesRule(value, rule) {
+  interface FilterRule {
+    colIndex: number
+    type: string
+    value: string
+  }
+
+  function matchesRule(value: unknown, rule: FilterRule): boolean {
     const v  = String(value ?? '').toLowerCase()
     const rv = String(rule.value ?? '').toLowerCase()
     switch (rule.type) {
@@ -189,8 +209,8 @@ describe('Filter view computation', () => {
     }
   }
 
-  function computeHiddenRows(rows, filterRules) {
-    const hidden = []
+  function computeHiddenRows(rows: unknown[][], filterRules: FilterRule[]): number[] {
+    const hidden: number[] = []
     for (let ri = 1; ri < rows.length; ri++) {
       const row = rows[ri]
       let fail = false
@@ -229,7 +249,12 @@ describe('Filter view computation', () => {
 // ─── 5. Named range validation ────────────────────────────────────────────────
 
 describe('Named range validation', () => {
-  function validate(f, existing = []) {
+  interface NamedRangeField {
+    name: string
+    range: string
+  }
+
+  function validate(f: NamedRangeField, existing: NamedRangeField[] = []): string | null {
     if (!f.name.trim()) return 'Name is required'
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(f.name)) return 'Name must start with a letter and contain only letters, digits, underscores'
     if (!f.range.trim()) return 'Range is required'
