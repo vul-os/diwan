@@ -9,9 +9,14 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import ThemeGallery from './ThemeGallery.jsx'
-import { PRESET_THEMES } from './themes'
+import { PRESET_THEMES, type SlideTheme } from './themes'
 
-function open(props = {}) {
+interface OpenProps {
+  onApply?: (payload: { themeId: string; customTheme: Partial<SlideTheme> | null }) => void
+  onClose?: () => void
+}
+
+function open(props: OpenProps = {}) {
   return render(
     <ThemeGallery
       currentThemeId={PRESET_THEMES[0].id}
