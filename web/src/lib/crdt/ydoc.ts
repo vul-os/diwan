@@ -211,15 +211,23 @@ export function validateDocJSON(json: unknown): string | null {
     const attrs = n.attrs
     if (attrs && typeof attrs === 'object') {
       // Images: raster sources only (the same gate as the local insert path).
+      // attrs' values are `unknown` (PMJSON) — a hostile peer's doc JSON could
+      // put anything there, including an object whose String() is the
+      // useless-and-misleading "[object Object]"; only a real string is a
+      // src/href worth validating, anything else fails the allow-list below
+      // on its own merits (a non-string is never `SAFE_IMAGE_SRC`-shaped).
       if (n.type === 'image' && attrs.src != null) {
-        const src = String(attrs.src)
+        const src = typeof attrs.src === 'string' ? attrs.src : ''
         if (!SAFE_IMAGE_SRC.test(src)) return 'image src not allowed'
       }
       // Any attribute that ends up in an href/src must not be a script URL.
       for (const key of ['href', 'src']) {
         const v = attrs[key]
-        if (v != null && UNSAFE_URL.test(String(v)) && !(n.type === 'image' && key === 'src')) {
-          return `unsafe ${key}`
+        if (v != null) {
+          const s = typeof v === 'string' ? v : ''
+          if (UNSAFE_URL.test(s) && !(n.type === 'image' && key === 'src')) {
+            return `unsafe ${key}`
+          }
         }
       }
     }
@@ -227,7 +235,7 @@ export function validateDocJSON(json: unknown): string | null {
       if (!m || typeof m !== 'object') return 'malformed mark'
       const href = m.attrs?.href
       if (href != null) {
-        const h = String(href)
+        const h = typeof href === 'string' ? href : ''
         if (UNSAFE_URL.test(h) || !SAFE_HREF.test(h)) return 'unsafe link href'
       }
     }
@@ -255,7 +263,7 @@ export function checkFragmentRenderable(fragment: Y.XmlFragment, schema: Schema)
   try {
     json = yXmlFragmentToProsemirrorJSON(fragment)
   } catch (err) {
-    return { ok: false, reason: `unreadable fragment: ${(err as Error)?.message || err}` }
+    return { ok: false, reason: `unreadable fragment: ${err instanceof Error ? err.message : String(err)}` }
   }
   const bad = validateDocJSON(json)
   if (bad) return { ok: false, reason: bad, json }
@@ -264,14 +272,15 @@ export function checkFragmentRenderable(fragment: Y.XmlFragment, schema: Schema)
     node = PMNode.fromJSON(schema, json)
     node.check()
   } catch (err) {
-    return { ok: false, reason: `not renderable: ${(err as Error)?.message || err}`, json }
+    return { ok: false, reason: `not renderable: ${err instanceof Error ? err.message : String(err)}`, json }
   }
   // Hand back CANONICAL ProseMirror JSON (node.toJSON()), not y-prosemirror's
   // raw conversion — the latter emits `attrs: {}` on attribute-less marks, which
   // is semantically identical but not byte-identical to what the editor produces.
   // Callers compare this against editor.getJSON() (and persist it), so it must be
   // the same shape.
-  return { ok: true, json: node.toJSON() }
+  // ProseMirror's Node.toJSON() is typed `any` upstream.
+  return { ok: true, json: node.toJSON() as Record<string, unknown> }
 }
 
 // ── Deterministic seeding (the migration primitive) ──────────────────────────
@@ -347,7 +356,7 @@ export function applyRemoteUpdate(ctx: YContext, update: Uint8Array): ApplyRemot
     // Malformed/garbage bytes: Yjs throws while decoding. Fail closed — and note
     // the shadow may now be partially updated, so rebuild it.
     resyncShadow(ctx)
-    return { applied: false, reason: `undecodable update: ${(err as Error)?.message || err}` }
+    return { applied: false, reason: `undecodable update: ${err instanceof Error ? err.message : String(err)}` }
   }
   const check = checkFragmentRenderable(shadow.getXmlFragment(Y_FRAGMENT), schema)
   if (!check.ok) {
@@ -358,7 +367,7 @@ export function applyRemoteUpdate(ctx: YContext, update: Uint8Array): ApplyRemot
     Y.applyUpdate(ydoc, update, REMOTE_ORIGIN)
   } catch (err) {
     resyncShadow(ctx)
-    return { applied: false, reason: `apply failed: ${(err as Error)?.message || err}` }
+    return { applied: false, reason: `apply failed: ${err instanceof Error ? err.message : String(err)}` }
   }
   return { applied: true }
 }
