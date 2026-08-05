@@ -107,10 +107,6 @@ export interface HistogramResult { bins: HistogramBin[]; max: number; total: num
 export interface ChartSeries { name: string; values: number[]; numeric: number[]; color: string }
 export interface ExtractedChartData { categories: string[]; series: ChartSeries[]; empty: boolean }
 
-/** The `[{ row: [r0,r1], column: [c0,c1] }]` shape `parseRange` (ConditionalFormatPanel.jsx,
- * not yet converted) always returns — a local, explicit view of its contract. */
-interface ParsedRangeRect { row: [number, number]; column: [number, number] }
-
 export const CHART_TYPES: ChartTypeMeta[] = [
   { value: 'column',  label: 'Column',  icon: '▮',  group: 'Bar & column' },
   { value: 'bar',     label: 'Bar',     icon: '▬',  group: 'Bar & column' },
@@ -254,7 +250,13 @@ export function newChartId(): string {
  */
 export function escapeChartText(v: unknown, max = 200): string {
   if (v === null || v === undefined) return ''
-  let s = typeof v === 'string' ? v : String(v)
+  // Coerce non-strings: a real spreadsheet cell value is always string /
+  // number / boolean at this layer, and String() renders each of those
+  // meaningfully. Anything else (a stray object, were one ever to reach
+  // here) has no meaningful string form — String()'s "[object Object]"
+  // would be worse than just dropping it, so it's treated as empty instead
+  // of silently becoming that literal text.
+  let s = typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' ? String(v) : ''
   // Collapse tab/newline to a single space, then drop the remaining C0/DEL
   // control chars so a hostile cell can't smuggle terminal/format sequences.
   s = s.replace(/[\t\n\r]+/g, ' ')
@@ -453,7 +455,9 @@ function cellNumber(cell: ChartCellEntry | undefined): number {
  * category labels.
  */
 export function extractChartData(chart: Chart | ChartInput, sheet: ChartSheet | null | undefined): ExtractedChartData {
-  const parsed = parseRange(String(chart?.range || ''))?.[0] as ParsedRangeRect
+  // chart may be a pre-validation ChartInput, whose `range` is `unknown`.
+  const rangeStr = typeof chart?.range === 'string' ? chart.range : ''
+  const parsed = parseRange(rangeStr)[0]
   const [r0, r1] = parsed.row
   const [c0, c1] = parsed.column
   // Guard against a pathological range blowing up memory.
@@ -513,7 +517,9 @@ export function extractChartData(chart: Chart | ChartInput, sheet: ChartSheet | 
  * on every keystroke elsewhere in the grid.
  */
 export function chartValuesSignature(chart: Chart | ChartInput, sheet: ChartSheet | null | undefined): string {
-  const parsed = parseRange(String(chart?.range || ''))?.[0] as ParsedRangeRect
+  // chart may be a pre-validation ChartInput, whose `range` is `unknown`.
+  const rangeStr = typeof chart?.range === 'string' ? chart.range : ''
+  const parsed = parseRange(rangeStr)[0]
   const [r0, r1] = parsed.row
   const [c0, c1] = parsed.column
   const rows = Math.min(r1 - r0 + 1, 1000)
@@ -529,9 +535,14 @@ export function chartValuesSignature(chart: Chart | ChartInput, sheet: ChartShee
   // Include the config that changes the plotted shape/labels. WAVE-64: bins and
   // secondaryAxis are shape-affecting too — omitting them would freeze a chart's
   // memoised extraction when only those change.
-  return chart.type + '|' + chart.range + '|' + chart.title + '|' +
-    (chart.options?.headerRow) + '|' + (chart.options?.headerCol) + '|' +
-    (chart.options?.secondaryAxis) + '|' + (chart.options?.bins) + '|' +
+  // chart may be a pre-validation ChartInput, whose fields are all `unknown` —
+  // this is a fingerprint, not a display string, so String()'s worst case
+  // (a stray object rendering as "[object Object]") still yields a stable,
+  // if ugly, key; correctness here is "changes iff the input changes", not
+  // human readability.
+  return String(chart.type) + '|' + String(chart.range) + '|' + String(chart.title) + '|' +
+    String(chart.options?.headerRow) + '|' + String(chart.options?.headerCol) + '|' +
+    String(chart.options?.secondaryAxis) + '|' + String(chart.options?.bins) + '|' +
     parts.join(',')
 }
 
