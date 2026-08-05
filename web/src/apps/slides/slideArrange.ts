@@ -61,7 +61,7 @@ export function ungroupObjects(objects: SlideObject[], ids: string[]): SlideObje
   return objects.map((o) => {
     if (o.group && groups.has(o.group)) {
       const { group: _group, ...rest } = o
-      return rest as SlideObject
+      return rest
     }
     return o
   })
