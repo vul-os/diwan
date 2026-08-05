@@ -3,7 +3,7 @@
 // backend/config/config_test.go's TestDefault_RendezvousURLEmpty); the 'builtin' topology is
 // the default and needs no relay binary at all.
 /**
- * stack.mjs — boots the REAL stack the peer-to-peer claim depends on.
+ * stack.ts — boots the REAL stack the peer-to-peer claim depends on.
  *
  * Nothing here is mocked. Two topologies are supported, and the DEFAULT is the
  * one that matters most:
@@ -40,7 +40,7 @@
  * Everything is torn down in reverse order; ports are probed rather than slept on.
  */
 
-import { spawn, execFile } from 'node:child_process'
+import { spawn, execFile, type ChildProcess } from 'node:child_process'
 import { promisify } from 'node:util'
 import { mkdtempSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -68,31 +68,38 @@ export const BUILTIN_PREFIX = '/api/rendezvous'
 export const RELAYD_BIN = process.env.VULOS_RELAYD_BIN || ''
 
 /** True when the 'external' topology can run at all. */
-export function relaydBinAvailable() {
+export function relaydBinAvailable(): boolean {
   return !!RELAYD_BIN && existsSync(RELAYD_BIN)
 }
 
 /** Reserve a free localhost port by binding and immediately releasing it. */
-function freePort() {
+function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const srv = net.createServer()
     srv.on('error', reject)
     srv.listen(0, '127.0.0.1', () => {
-      const { port } = srv.address()
+      const address = srv.address()
+      const port = typeof address === 'object' && address ? address.port : 0
       srv.close(() => resolve(port))
     })
   })
 }
 
+interface WaitForOptions {
+  timeout?: number
+  interval?: number
+  what?: string
+}
+
 /** Poll `check()` until it returns truthy or the deadline passes. No fixed sleeps. */
-async function waitFor(check, { timeout = 30_000, interval = 100, what = 'condition' } = {}) {
+async function waitFor(check: () => Promise<boolean> | boolean, { timeout = 30_000, interval = 100, what = 'condition' }: WaitForOptions = {}): Promise<void> {
   const deadline = Date.now() + timeout
-  let lastErr
+  let lastErr: Error | undefined
   for (;;) {
     try {
       if (await check()) return
     } catch (err) {
-      lastErr = err
+      lastErr = err as Error
     }
     if (Date.now() > deadline) {
       throw new Error(`timed out waiting for ${what}${lastErr ? `: ${lastErr.message}` : ''}`)
@@ -101,9 +108,13 @@ async function waitFor(check, { timeout = 30_000, interval = 100, what = 'condit
   }
 }
 
-async function httpOk(url) {
+async function httpOk(url: string): Promise<boolean> {
   const res = await fetch(url)
   return res.ok
+}
+
+export interface BuiltBinaries {
+  officeBin: string
 }
 
 /**
@@ -111,41 +122,71 @@ async function httpOk(url) {
  * binary embeds dist/ via go:embed — without it the server would serve a stale or
  * absent app and every browser assertion would be meaningless.
  */
-export async function buildBinaries(outDir) {
+export async function buildBinaries(outDir: string): Promise<BuiltBinaries> {
   const officeBin = path.join(outDir, 'diwan-e2e')
   await execFileAsync('npx', ['vite', 'build'], { cwd: REPO_ROOT, timeout: 300_000, maxBuffer: 64 << 20 })
   await execFileAsync('go', ['build', '-o', officeBin, '.'], { cwd: REPO_ROOT, timeout: 300_000, maxBuffer: 64 << 20 })
   return { officeBin }
 }
 
-function spawnLogged(bin, args, opts, name, logs) {
+function spawnLogged(bin: string, args: string[], opts: Parameters<typeof spawn>[2], name: string, logs: string[]): ChildProcess {
   const proc = spawn(bin, args, { stdio: ['ignore', 'pipe', 'pipe'], ...opts })
-  const push = (chunk) => {
+  const push = (chunk: Buffer | string) => {
     const line = chunk.toString()
     logs.push(`[${name}] ${line.trimEnd()}`)
   }
-  proc.stdout.on('data', push)
-  proc.stderr.on('data', push)
+  proc.stdout?.on('data', push)
+  proc.stderr?.on('data', push)
   proc.on('error', (err) => logs.push(`[${name}] spawn error: ${err.message}`))
   return proc
+}
+
+export type RendezvousMode = 'builtin' | 'external' | 'none'
+
+export interface StackOptions {
+  rendezvous?: RendezvousMode
+  offices?: number
+  localOnlyOffice?: boolean
+}
+
+export interface OfficeInstance {
+  name: string
+  url: string
+  dir: string
+  port: number
+  builtin: boolean
+  rendezvousUrl: string
+}
+
+export interface Stack {
+  root: string
+  mode: RendezvousMode
+  relayUrl: string
+  relayAdminUrl: string
+  offices: OfficeInstance[]
+  localOnly: OfficeInstance | null
+  logs: string[]
+  stop: () => Promise<void>
+}
+
+interface StartOfficeOptions {
+  rendezvousUrl?: string
+  builtin?: boolean
 }
 
 /**
  * Boot the stack.
  *
- * @param {object} opts
- * @param {'builtin'|'external'|'none'} [opts.rendezvous='builtin']
- *   'builtin'  — Diwan serves discovery itself (default; no external anything)
- *   'external' — discovery delegated to VULOS_RELAYD_BIN; built-in surface OFF
- *   'none'     — no discovery at all (the honest local-only negative control)
- * @param {number} [opts.offices=1] how many Diwan instances to boot
- * @param {boolean} [opts.localOnlyOffice=false] also boot one with NO discovery
- * @returns {Promise<object>} the live stack (URLs, logs, stop())
+ *   rendezvous='builtin'  — Diwan serves discovery itself (default; no external anything)
+ *   rendezvous='external' — discovery delegated to VULOS_RELAYD_BIN; built-in surface OFF
+ *   rendezvous='none'     — no discovery at all (the honest local-only negative control)
+ *   offices                how many Diwan instances to boot
+ *   localOnlyOffice         also boot one with NO discovery
  */
-export async function startStack({ rendezvous = 'builtin', offices = 1, localOnlyOffice = false } = {}) {
+export async function startStack({ rendezvous = 'builtin', offices = 1, localOnlyOffice = false }: StackOptions = {}): Promise<Stack> {
   const root = mkdtempSync(path.join(tmpdir(), 'diwan-p2p-'))
-  const logs = []
-  const procs = []
+  const logs: string[] = []
+  const procs: ChildProcess[] = []
 
   const { officeBin } = await buildBinaries(root)
 
@@ -185,7 +226,7 @@ export async function startStack({ rendezvous = 'builtin', offices = 1, localOnl
   }
 
   // ── standalone Diwan instances ────────────────────────────────────────────
-  const startOffice = async (name, { rendezvousUrl = '', builtin = false } = {}) => {
+  const startOffice = async (name: string, { rendezvousUrl = '', builtin = false }: StartOfficeOptions = {}): Promise<OfficeInstance> => {
     const dir = path.join(root, name)
     mkdirSync(path.join(dir, 'data'), { recursive: true })
     mkdirSync(path.join(dir, 'uploads'), { recursive: true })
@@ -223,16 +264,16 @@ export async function startStack({ rendezvous = 'builtin', offices = 1, localOnl
       // explanation — a port already taken, a data dir it cannot write, a config
       // it rejected — is discarded in exactly the run that needed it.
       const tail = logs.slice(-40).join('\n') || '(the process produced no output)'
-      throw new Error(`${err.message}\n──── ${name} output ────\n${tail}\n────────────────────────`)
+      throw new Error(`${(err as Error).message}\n──── ${name} output ────\n${tail}\n────────────────────────`)
     }
     return { name, url, dir, port, builtin, rendezvousUrl }
   }
 
-  const officeOpts = {
+  const officeOpts: StartOfficeOptions = {
     builtin: rendezvous === 'builtin',
     rendezvousUrl: rendezvous === 'external' ? relayUrl : '',
   }
-  const officeList = []
+  const officeList: OfficeInstance[] = []
   for (let i = 0; i < offices; i++) {
     officeList.push(await startOffice(`office${i + 1}`, officeOpts))
   }
@@ -240,7 +281,7 @@ export async function startStack({ rendezvous = 'builtin', offices = 1, localOnl
     ? await startOffice('office-local-only', { builtin: false, rendezvousUrl: '' })
     : null
 
-  const stop = async () => {
+  const stop = async (): Promise<void> => {
     for (const p of procs.reverse()) {
       try { p.kill('SIGKILL') } catch { /* already gone */ }
     }
@@ -248,6 +289,11 @@ export async function startStack({ rendezvous = 'builtin', offices = 1, localOnl
   }
 
   return { root, mode: rendezvous, relayUrl, relayAdminUrl, offices: officeList, localOnly, logs, stop }
+}
+
+export interface RendezvousResolveResult {
+  status: number
+  body: unknown
 }
 
 /**
@@ -262,33 +308,38 @@ export async function startStack({ rendezvous = 'builtin', offices = 1, localOnl
  * "some announce happened", while a presence record keyed by the exact key the
  * browser signed says THIS peer got through — which is the claim under test.
  *
- * @param {string} baseUrl origin of the rendezvous server
- * @param {string} key base64url Ed25519 key to look up
- * @param {string} [prefix] mount prefix ('/rendezvous' for relayd,
- *   '/api/rendezvous' for Diwan's built-in surface)
- * @returns {Promise<{status: number, body: any}>}
+ * @param baseUrl origin of the rendezvous server
+ * @param key base64url Ed25519 key to look up
+ * @param prefix mount prefix ('/rendezvous' for relayd, '/api/rendezvous' for
+ *   Diwan's built-in surface)
  */
-export async function rendezvousResolve(baseUrl, key, prefix = '/rendezvous') {
+export async function rendezvousResolve(baseUrl: string, key: string, prefix = '/rendezvous'): Promise<RendezvousResolveResult> {
   const res = await fetch(`${baseUrl}${prefix}/resolve/${encodeURIComponent(key)}`)
-  let body = null
+  let body: unknown = null
   try { body = await res.json() } catch { /* non-JSON (e.g. 404 text) */ }
   return { status: res.status, body }
 }
 
 /** Back-compat alias used by the external-relay suite. */
-export function relayResolve(relayUrl, key) {
+export function relayResolve(relayUrl: string, key: string): Promise<RendezvousResolveResult> {
   return rendezvousResolve(relayUrl, key, '/rendezvous')
 }
 
+interface CreateDocResponse {
+  id?: string
+  file?: { id?: string }
+  data?: { id?: string }
+}
+
 /** Create a document on a Diwan instance through its real HTTP API. */
-export async function createDoc(officeUrl, name) {
+export async function createDoc(officeUrl: string, name: string): Promise<string> {
   const res = await fetch(`${officeUrl}/api/files`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, type: 'doc', content: { _html: '<p></p>' } }),
   })
   if (!res.ok) throw new Error(`create doc on ${officeUrl}: HTTP ${res.status} ${await res.text()}`)
-  const body = await res.json()
+  const body = await res.json() as CreateDocResponse
   const id = body.id || body.file?.id || body.data?.id
   if (!id) throw new Error(`create doc on ${officeUrl}: no id in ${JSON.stringify(body)}`)
   return id
