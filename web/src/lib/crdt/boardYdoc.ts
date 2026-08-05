@@ -104,7 +104,7 @@ export function applyRemoteBoardUpdate(ctx: BoardYContext, update: Uint8Array): 
     Y.applyUpdate(shadow, update, REMOTE_ORIGIN)
   } catch (err) {
     resyncBoardShadow(ctx)
-    return { applied: false, reason: `undecodable update: ${(err as Error)?.message || err}` }
+    return { applied: false, reason: `undecodable update: ${err instanceof Error ? err.message : String(err)}` }
   }
   const bad = validateBoardMaps(shadow.getMap(ELEMENTS_KEY), shadow.getMap(FILES_KEY))
   if (bad) {
@@ -115,7 +115,7 @@ export function applyRemoteBoardUpdate(ctx: BoardYContext, update: Uint8Array): 
     Y.applyUpdate(ydoc, update, REMOTE_ORIGIN)
   } catch (err) {
     resyncBoardShadow(ctx)
-    return { applied: false, reason: `apply failed: ${(err as Error)?.message || err}` }
+    return { applied: false, reason: `apply failed: ${err instanceof Error ? err.message : String(err)}` }
   }
   return { applied: true }
 }
