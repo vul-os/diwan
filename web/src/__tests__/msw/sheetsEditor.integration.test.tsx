@@ -61,11 +61,13 @@ describe('Sheets cell edit via Find/Replace (real component + model)', () => {
 
   it('drives an edit through the SheetsFindReplace UI, calling onChange with new data', async () => {
     const data = makeData()
-    let current: FRSheet[] = data
+    let current = data
     // SheetsFindReplace's real onChange type is (data: FRSheet[]) => void — it
     // only ever calls onChange(newData) directly, never a setState-style
-    // updater function.
-    const onChange = (newData: FRSheet[]) => { current = newData }
+    // updater function. FRSheet's celldata is wider/optional (unlike this
+    // fixture's concrete shape), so the read below still narrows through Cell,
+    // same as the other test in this file.
+    const onChange = (newData: FRSheet[]) => { current = newData as typeof data }
     render(<SheetsFindReplace data={data} onChange={onChange} onClose={() => {}} />)
 
     // Reveal the replace row (toggle button carries aria-pressed).
