@@ -100,9 +100,9 @@ function ActivityList({ fileId }: { fileId: string }) {
     }
   }, [fileId])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { void load() }, [load])
 
-  if (error) return <ErrorState size="sm" message={error} onRetry={load} />
+  if (error) return <ErrorState size="sm" message={error} onRetry={() => void load()} />
 
   if (events.length === 0) return (
     <EmptyState
@@ -204,7 +204,7 @@ function SnapshotsTab({ fileId, onRestore }: SnapshotsTabProps) {
     }
   }, [fileId])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { void load() }, [load])
 
   const handleCreate = async () => {
     const label = labelInput.trim()
@@ -253,7 +253,7 @@ function SnapshotsTab({ fileId, onRestore }: SnapshotsTabProps) {
             <Input
               value={labelInput}
               onChange={e => setLabelInput(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') handleCreate() }}
+              onKeyDown={e => { if (e.key === 'Enter') void handleCreate() }}
               placeholder="e.g. v1 final draft"
               size="sm"
               className="flex-1"
@@ -261,7 +261,7 @@ function SnapshotsTab({ fileId, onRestore }: SnapshotsTabProps) {
             <Button
               variant="primary"
               size="sm"
-              onClick={handleCreate}
+              onClick={() => void handleCreate()}
               disabled={creating || !labelInput.trim()}
             >
               {creating ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />}
@@ -276,7 +276,7 @@ function SnapshotsTab({ fileId, onRestore }: SnapshotsTabProps) {
           )}
 
           {error && !loading && (
-            <ErrorState size="sm" message={error} onRetry={load} />
+            <ErrorState size="sm" message={error} onRetry={() => void load()} />
           )}
 
           {!loading && !error && (
@@ -371,7 +371,7 @@ function SnapshotsTab({ fileId, onRestore }: SnapshotsTabProps) {
           <Button variant="secondary" size="md" onClick={() => setConfirmVersion(null)}>
             Cancel
           </Button>
-          <Button variant="primary" size="md" onClick={() => doRestore(confirmVersion)}>
+          <Button variant="primary" size="md" onClick={() => void doRestore(confirmVersion)}>
             <RotateCcw size={13} /> Restore
           </Button>
         </Modal.Footer>
