@@ -190,11 +190,13 @@ describe('selectCollabTransport', () => {
     // Honesty contract: anything that is not a usable URL/path must degrade,
     // never become a half-built base the fabric would fetch against. The seam
     // contract promises a string; these mocks deliberately violate it at
-    // runtime (an untrusted/misbehaving resolver) to prove the guard holds —
-    // hence the casts, not a claim that this is well-typed input.
+    // runtime (an untrusted/misbehaving resolver) to prove the guard holds.
+    // No cast is needed to do that: vi.fn() with no type argument resolves
+    // mockResolvedValue's parameter to any, so it accepts this object as-is —
+    // not a claim that this is well-typed input.
     const choice = await selectCollabTransport(seams({
-      resolveRendezvous: vi.fn().mockResolvedValue({ url: RDV_URL } as unknown as string),
-      resolveBuiltinPrefix: vi.fn().mockResolvedValue({ prefix: BUILTIN_PREFIX } as unknown as string),
+      resolveRendezvous: vi.fn().mockResolvedValue({ url: RDV_URL }),
+      resolveBuiltinPrefix: vi.fn().mockResolvedValue({ prefix: BUILTIN_PREFIX }),
     }))
 
     expect(choice).toEqual(NO_RENDEZVOUS(TRANSPORT_LOCAL_ONLY))
