@@ -75,7 +75,10 @@ describe('applyNumberFormat', () => {
 
   it('is immutable', () => {
     applyNumberFormat(data, [0, 0], [0, 1], 'currency')
-    expect(asObj(data[0].celldata![0]).ct!.fa).toBe('General')
+    // data (unlike applyNumberFormat's return) is the literal fixture above —
+    // its celldata is inferred non-optional, so only `.ct!` (CellObject.ct IS
+    // optional) is a real narrowing here.
+    expect(asObj(data[0].celldata[0]).ct!.fa).toBe('General')
   })
 
   it('general clears back to automatic', () => {
