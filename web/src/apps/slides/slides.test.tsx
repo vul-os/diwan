@@ -116,7 +116,7 @@ describe('presenter view', () => {
     }
 
     render(<TestHook />)
-    await act(async () => { openPresenter(0) })
+    act(() => { openPresenter(0) })
 
     expect(createObjectURLSpy).toHaveBeenCalled()
     expect(openSpy).toHaveBeenCalledWith(
