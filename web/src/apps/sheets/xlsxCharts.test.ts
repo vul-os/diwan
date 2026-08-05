@@ -57,7 +57,10 @@ async function xlsxWith(charts: Chart[]) {
   const sheet = sheetFrom(GRID, charts)
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, fortuneToWorksheet(sheet), 'Sheet1')
-  const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+  // XLSX.write()'s return is any in the library's own types (overloaded on
+  // opts in a way TS can't narrow from an inline object) — cast to
+  // ArrayBuffer, documented as type: 'array''s real return.
+  const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
   const res = await injectChartsIntoXlsx(buf, charts, sheet)
   return { ...res, zip: await JSZip.loadAsync(res.buffer) }
 }
@@ -243,8 +246,10 @@ describe('injectChartsIntoXlsx — package surgery', () => {
     // PACKAGE INTEGRITY: SheetJS can still parse the workbook and its cells.
     const back = XLSX.read(buffer, { type: 'array' })
     expect(back.SheetNames).toContain('Sheet1')
-    expect(back.Sheets.Sheet1.B2.v).toBe(100)
-    expect(back.Sheets.Sheet1.A1.v).toBe('Quarter')
+    // WorkSheet's own [cell: string]: CellObject | WSKeys | any index signature
+    // resolves .B2/.A1 to any by TS's rules — cast the two reads.
+    expect((back.Sheets.Sheet1.B2 as XLSX.CellObject).v).toBe(100)
+    expect((back.Sheets.Sheet1.A1 as XLSX.CellObject).v).toBe('Quarter')
   })
 
   it('anchors each chart at its saved position/size', async () => {
@@ -270,7 +275,7 @@ describe('injectChartsIntoXlsx — package surgery', () => {
       const wb = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(wb, fortuneToWorksheet(sheetFrom()), 'Sheet1')
       return wb
-    })(), { bookType: 'xlsx', type: 'array' })
+    })(), { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
     const res = await injectChartsIntoXlsx(buf, [], sheetFrom())
     expect(res.embedded).toEqual([])
     expect(res.skipped).toEqual([])
@@ -288,7 +293,7 @@ describe('injectChartsIntoXlsx — package surgery', () => {
   it('FAILS CLOSED when the package already carries drawings (shape we do not understand)', async () => {
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, fortuneToWorksheet(sheetFrom()), 'Sheet1')
-    const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+    const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
     const zip = await JSZip.loadAsync(buf)
     zip.file('xl/drawings/drawing1.xml', '<xdr:wsDr/>')
     const withDrawing = await zip.generateAsync({ type: 'arraybuffer' })
