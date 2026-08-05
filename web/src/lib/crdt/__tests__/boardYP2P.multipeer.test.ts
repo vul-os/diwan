@@ -82,9 +82,9 @@ async function until(ok: () => unknown, label: string, timeout = 5000): Promise<
  * that have converged can still have inserted the ids into their Y.Map in
  * different orders, so a plain JSON.stringify comparison would never settle.
  */
-const stable = (v: unknown): string => JSON.stringify(v, (_k, val) =>
+const stable = (v: unknown): string => JSON.stringify(v, (_k: string, val: unknown) =>
   (val && typeof val === 'object' && !Array.isArray(val)
-    ? Object.fromEntries(Object.keys(val).sort().map((k) => [k, (val as Record<string, unknown>)[k]]))
+    ? Object.fromEntries(Object.keys(val as Record<string, unknown>).sort().map((k) => [k, (val as Record<string, unknown>)[k]]))
     : val))
 const sameEls = (x: unknown, y: unknown) => stable(x) === stable(y)
 
