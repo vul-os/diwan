@@ -23,7 +23,10 @@ import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
   testDir: './e2e-p2p',
-  testMatch: '**/*.e2e.js',
+  // See playwright.config.js for why this matches both extensions rather
+  // than just '.e2e.ts': a permissive glob so a future half-migration can't
+  // silently empty this suite the way an extension-exact pattern did here.
+  testMatch: '**/*.e2e.@(ts|js)',
   // Building three binaries + ICE negotiation. The build happens once, in the
   // first test's beforeAll, so the budget has to cover it.
   timeout: 300_000,
