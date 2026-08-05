@@ -28,7 +28,7 @@ beforeEach(() => {
     WebSocket: G.WebSocket,
     EventSource: G.EventSource,
   }
-  G.fetch = ((...a: unknown[]) => traps(...a)) as typeof fetch
+  G.fetch = (...a: unknown[]) => traps(...a)
   // XHR: trap open() (the point a URL is supplied). Deliberately minimal test
   // doubles — not real XMLHttpRequest/WebSocket/EventSource implementations —
   // hence the assertions past their real constructor types.
