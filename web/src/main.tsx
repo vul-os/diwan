@@ -13,7 +13,11 @@ configure({ lsKeyPrefix: 'vulos.office.endpoints.v1', healthPath: '/api/auth/sta
 // Loaded lazily so the `xlsx` import it pulls in stays OUT of the production
 // graph entirely. Dev-only means production never pulls that weight.
 if (import.meta.env.DEV) {
-  import('./lib/roundTripCheck.js')
+  // Dev-only diagnostic; a chunk-load failure here should never break the
+  // app, just be visible in the console.
+  import('./lib/roundTripCheck.js').catch((err: unknown) => {
+    console.warn('[dev] roundTripCheck failed to load:', err)
+  })
 }
 // OFFICE-OFFLINE-01: register the app-shell SW (+ prime cloud↔LAN failover +
 // update detection) via the guarded PWA helper. No-op in dev, when embedded in
