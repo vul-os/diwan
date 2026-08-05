@@ -16,7 +16,8 @@
  *   • Numbered    — the "Numbered list" button turns the block into an <ol>.
  */
 
-import { test, expect } from './fixtures.js'
+import { type Locator } from '@playwright/test'
+import { test, expect, type OfficePage } from './fixtures.js'
 
 const DECK = {
   id: 'deck1', name: 'Pitch', type: 'slide',
@@ -27,7 +28,7 @@ const DECK = {
   },
 }
 
-async function openDeck(page) {
+async function openDeck(page: OfficePage): Promise<void> {
   await page.route(/\/api\/files\/deck1$/, (route) => {
     if (route.request().method() !== 'GET') return route.fallback()
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify(DECK) })
@@ -42,13 +43,9 @@ async function openDeck(page) {
   await expect(page.locator('.vslide-object').first()).toBeVisible({ timeout: 15_000 })
 }
 
-// The inline object text editor is the visible ProseMirror surface (opens when
-// you click an already-selected text object).
-const body = (page) => page.locator('[data-object-text-editor] .ProseMirror').first()
-
 // Open a text object for editing, replace its text with a known selection, so a
 // mark/list op has a real selection to act on.
-async function typeAndSelectAll(page) {
+async function typeAndSelectAll(page: OfficePage): Promise<Locator> {
   // Double-click the body text object (the last text object on the slide) to
   // open its inline editor.
   const objects = page.locator('.vslide-object')
@@ -66,6 +63,7 @@ async function typeAndSelectAll(page) {
     const range = document.createRange()
     range.selectNodeContents(el)
     const sel = window.getSelection()
+    if (!sel) throw new Error('window.getSelection() returned null')
     sel.removeAllRanges(); sel.addRange(range)
   })
   await page.keyboard.type('Highlight me please')
@@ -98,8 +96,13 @@ test.describe('Slides text formatting (wave-48) — E2E', () => {
     // value tracker swallows the synthetic event and onChange never fires.
     const hi = page.getByLabel('Choose highlight color')
     await hi.evaluate((el) => {
-      const setter = Object.getOwnPropertyDescriptor(
-        window.HTMLInputElement.prototype, 'value').set
+      const descriptor = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')
+      // This IS the unbound native property setter, extracted on purpose so it
+      // can be invoked with an explicit receiver (`.call(el, ...)` below)
+      // instead of React's tracked <input>.value setter — the whole point.
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      const setter = descriptor?.set
+      if (!setter) throw new Error('HTMLInputElement.prototype has no value setter')
       setter.call(el, '#ffe066')
       el.dispatchEvent(new Event('input', { bubbles: true }))
       el.dispatchEvent(new Event('change', { bubbles: true }))

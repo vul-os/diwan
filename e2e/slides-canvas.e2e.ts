@@ -25,12 +25,45 @@
  *   • anim  — Play applies the real `vslide-anim-*` keyframe class to the object.
  */
 
-import { test, expect } from './fixtures.js'
+import { type Locator } from '@playwright/test'
+import { test, expect, type OfficePage } from './fixtures.js'
+
+interface SlideAnimation {
+  id: string
+  label: string
+  type: string
+  effect: string
+  order: number
+}
+
+interface Deck {
+  id: string
+  name: string
+  type: string
+  content: {
+    themeId: string
+    theme: string
+    transition: string
+    slides: [{
+      id: string
+      title: string
+      content: string
+      notes: string
+      animations?: SlideAnimation[]
+    }]
+    masters: null
+    customTheme: null
+  }
+}
+
+interface MakeDeckOptions {
+  animations?: SlideAnimation[] | null
+}
 
 // A deck whose single slide carries a title + body — the legacy→object migration
 // turns these into TWO positioned text objects, giving us a multi-object slide to
 // arrange/align/group without depending on the insert UI.
-function makeDeck({ animations = null } = {}) {
+function makeDeck({ animations = null }: MakeDeckOptions = {}): Deck {
   return {
     id: 'deck1', name: 'Pitch', type: 'slide',
     content: {
@@ -44,7 +77,7 @@ function makeDeck({ animations = null } = {}) {
   }
 }
 
-async function openDeck(page, deck = makeDeck()) {
+async function openDeck(page: OfficePage, deck: Deck = makeDeck()): Promise<void> {
   await page.route(/\/api\/files\/deck1$/, (route) => {
     if (route.request().method() !== 'GET') return route.fallback()
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify(deck) })
@@ -59,20 +92,33 @@ async function openDeck(page, deck = makeDeck()) {
 }
 
 // Read the numeric % from an inline `left`/`top`/`width` style value.
-const pctOf = (v) => parseFloat(String(v).replace('%', ''))
-const styleNum = (loc, prop) => loc.evaluate((el, p) => el.style[p], prop)
+const pctOf = (v: string | number): number => parseFloat(String(v).replace('%', ''))
+const styleNum = (loc: Locator, prop: string): Promise<string> =>
+  loc.evaluate((el, p) => (el.style as unknown as Record<string, string>)[p], prop)
 // Extract the rotate() angle (deg) from an inline transform, 0 when none.
-const rotationOf = (loc) => loc.evaluate((el) => {
+const rotationOf = (loc: Locator): Promise<number> => loc.evaluate((el) => {
   const m = /rotate\(([-\d.]+)deg\)/.exec(el.style.transform || '')
   return m ? parseFloat(m[1]) : 0
 })
+
+interface BoundingBox {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+function requireBox(box: BoundingBox | null, what: string): BoundingBox {
+  if (!box) throw new Error(`expected a bounding box for ${what}`)
+  return box
+}
 
 // Insert a fresh text box (x:0.3 w:0.4 — plenty of room to grow/move without
 // hitting the stage edge) and return a STABLE locator to it by data-object-id.
 // Objects render in z-sorted DOM order, so an nth()/first() locator re-resolves
 // to a different object the moment a z-order op reorders the stack — the id
 // locator is immune to that. Escape leaves edit mode but KEEPS the selection.
-async function insertBox(page) {
+async function insertBox(page: OfficePage): Promise<Locator> {
   const before = await page.locator('.vslide-object').count()
   await page.getByRole('button', { name: 'Insert text box' }).click()
   await expect(page.locator('.vslide-object')).toHaveCount(before + 1)
@@ -90,7 +136,7 @@ async function insertBox(page) {
   // editing, so the arrange toolbar + resize/rotate handles are present.
   await page.keyboard.press('Escape')
   await editor.waitFor({ state: 'detached', timeout: 5000 })
-  const stage = await page.locator('.vslide-stage').boundingBox()
+  const stage = requireBox(await page.locator('.vslide-stage').boundingBox(), '.vslide-stage')
   await page.mouse.click(stage.x + stage.width * 0.95, stage.y + stage.height * 0.95) // empty corner
   await expect(obj).toHaveAttribute('aria-pressed', 'false')
   await obj.click()
@@ -102,7 +148,7 @@ async function insertBox(page) {
 
 // Measured stage size (px) — drag deltas are scaled to it so a move/resize is a
 // meaningful fraction of the slide regardless of the preview viewport size.
-async function stageBox(page) {
+async function stageBox(page: OfficePage): Promise<BoundingBox | null> {
   return page.locator('.vslide-stage').boundingBox()
 }
 
@@ -136,8 +182,8 @@ test.describe('Slides object canvas — geometry (CAPSTONE E2E)', () => {
     const leftBefore = pctOf(await styleNum(obj, 'left'))
     const topBefore = pctOf(await styleNum(obj, 'top'))
 
-    const box = await obj.boundingBox()
-    const stage = await stageBox(page)
+    const box = requireBox(await obj.boundingBox(), 'the inserted object')
+    const stage = requireBox(await stageBox(page), '.vslide-stage')
     // Drag ~20% of the stage down-and-right, in steps so the canvas pointermove
     // handler fires and commits on pointer-up.
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
@@ -159,8 +205,8 @@ test.describe('Slides object canvas — geometry (CAPSTONE E2E)', () => {
 
     const handle = page.getByLabel('Resize se')
     await expect(handle).toBeVisible()
-    const hb = await handle.boundingBox()
-    const stage = await stageBox(page)
+    const hb = requireBox(await handle.boundingBox(), 'the resize handle')
+    const stage = requireBox(await stageBox(page), '.vslide-stage')
     // Pull the SE handle right+down by ~15% of the stage → the box widens.
     await page.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2)
     await page.mouse.down()
@@ -177,7 +223,7 @@ test.describe('Slides object canvas — geometry (CAPSTONE E2E)', () => {
 
     const rot = page.getByLabel('Rotate')
     await expect(rot).toBeVisible()
-    const rb = await rot.boundingBox()
+    const rb = requireBox(await rot.boundingBox(), 'the rotate handle')
     // Grab the rotate handle and swing it sideways around the object centre.
     await page.mouse.move(rb.x + rb.width / 2, rb.y + rb.height / 2)
     await page.mouse.down()
@@ -260,7 +306,7 @@ test.describe('Slides animations — playback (CAPSTONE E2E)', () => {
       animations: [{ id: 'a1', label: 'Fade in', type: 'entrance', effect: 'fade-in', order: 0 }],
     }))
 
-    const pageErrors = []
+    const pageErrors: string[] = []
     page.on('pageerror', (e) => pageErrors.push(e.message))
 
     const play = page.getByRole('button', { name: 'Play animations' })

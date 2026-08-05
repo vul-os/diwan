@@ -22,7 +22,13 @@ const BASE_URL = `http://localhost:${PORT}`
 
 export default defineConfig({
   testDir: './e2e',
-  testMatch: '**/*.e2e.js',
+  // Deliberately matches BOTH extensions, not just '.e2e.ts': a spec suite
+  // mid-migration (some files converted, some not) must still run every file,
+  // and a future partial revert or partial conversion must not silently empty
+  // the suite the way an exact '.e2e.js'-only (or '.e2e.ts'-only) pattern did
+  // here — this repo's whole e2e/ + e2e-p2p/ tree is TypeScript now, but the
+  // permissive glob is the guard against that regression recurring.
+  testMatch: '**/*.e2e.@(ts|js)',
   // A cold vite preview + first navigation can be slow in CI.
   timeout: 30_000,
   expect: { timeout: 7_000 },

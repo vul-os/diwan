@@ -1,5 +1,23 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 import { installBackend } from './fixtures.js'
+
+interface WebManifestIcon {
+  sizes: string
+  purpose?: string
+}
+
+interface WebManifest {
+  id: string
+  name: string
+  short_name: string
+  start_url: string
+  scope: string
+  display: string
+  background_color: string
+  theme_color: string
+  categories: unknown[]
+  icons: WebManifestIcon[]
+}
 
 /**
  * pwa.e2e.js — browser-level PWA contract for the standalone Office shell,
@@ -22,12 +40,12 @@ test.use({ serviceWorkers: 'allow' })
 
 // Wait for the service worker to control the page (skipWaiting + clients.claim
 // make this quick, but the very first navigation may load uncontrolled).
-async function waitForController(page) {
+async function waitForController(page: Page): Promise<void> {
   await page.evaluate(async () => {
     if (!('serviceWorker' in navigator)) throw new Error('no serviceWorker support')
     await navigator.serviceWorker.ready
     if (navigator.serviceWorker.controller) return
-    await new Promise((resolve) => {
+    await new Promise<void>((resolve) => {
       navigator.serviceWorker.addEventListener('controllerchange', () => resolve(), { once: true })
       // Fallback: some engines set the controller between ready and the listener.
       setTimeout(resolve, 3000)
@@ -36,7 +54,7 @@ async function waitForController(page) {
 }
 
 test('web app manifest is linked from the shell and is valid + installable', async ({ page }) => {
-  const errors = []
+  const errors: string[] = []
   page.on('pageerror', (e) => errors.push(e.message))
 
   await installBackend(page)
@@ -44,10 +62,13 @@ test('web app manifest is linked from the shell and is valid + installable', asy
 
   const href = await page.getAttribute('link[rel="manifest"]', 'href')
   expect(href).toBe('/manifest.webmanifest')
+  // The expect() above already fails the test here if href is null; this just
+  // gives the type checker the same fact.
+  if (!href) throw new Error('expected a manifest link href')
 
   const manifest = await page.evaluate(async (u) => {
     const r = await fetch(u)
-    return r.json()
+    return r.json() as Promise<WebManifest>
   }, href)
 
   expect(manifest.id).toBeTruthy()
@@ -73,7 +94,7 @@ test('web app manifest is linked from the shell and is valid + installable', asy
 })
 
 test('service worker registers and takes control of the page', async ({ page }) => {
-  const errors = []
+  const errors: string[] = []
   page.on('pageerror', (e) => errors.push(e.message))
 
   await installBackend(page)
@@ -96,7 +117,7 @@ test('service worker registers and takes control of the page', async ({ page }) 
 })
 
 test('the app shell loads OFFLINE (offline reload still renders the shell)', async ({ page, context }) => {
-  const errors = []
+  const errors: string[] = []
   page.on('pageerror', (e) => errors.push(e.message))
 
   await installBackend(page)
@@ -130,7 +151,7 @@ test('the app shell loads OFFLINE (offline reload still renders the shell)', asy
 })
 
 test('SECURITY: the SW never caches a session/token/api response or document bytes', async ({ page }) => {
-  const errors = []
+  const errors: string[] = []
   page.on('pageerror', (e) => errors.push(e.message))
 
   const SECRET = 'vc_token_SHOULD_NOT_BE_CACHED_1234567890'
@@ -181,7 +202,7 @@ test('SECURITY: the SW never caches a session/token/api response or document byt
 
   const audit = await page.evaluate(async ({ secret, docSecret }) => {
     const names = await caches.keys()
-    const urls = []
+    const urls: string[] = []
     let secretLeaked = false
     for (const name of names) {
       const cache = await caches.open(name)

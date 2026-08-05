@@ -15,14 +15,28 @@
  * — so what the importer produced is exactly what the editor renders.
  */
 
-import { test, expect } from './fixtures.js'
+import { test, expect, type OfficePage } from './fixtures.js'
 import JSZip from 'jszip'
 import * as XLSX from 'xlsx'
 
-const RASTER = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])
+// The hostile-import test sets this from injected markup IF the sanitiser
+// fails closed; the assertion is that it never fires. Typed as `number | boolean`
+// to agree with e2e/docs-structured.e2e.ts's augmentation of the same ambient
+// Window property (see that file for why).
+declare global {
+  interface Window {
+    __pwned?: number | boolean
+  }
+}
+
+interface FilePayload {
+  name: string
+  mimeType: string
+  buffer: Buffer
+}
 
 // ── Fixture builders (real packages) ────────────────────────────────────────
-async function makeDocx(bodyText) {
+async function makeDocx(bodyText: string): Promise<Buffer> {
   const zip = new JSZip()
   zip.file('[Content_Types].xml',
     `<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">` +
@@ -38,21 +52,25 @@ async function makeDocx(bodyText) {
   return zip.generateAsync({ type: 'nodebuffer' })
 }
 
-function makeXlsx(cellText) {
+// xlsx's own types declare write()'s return as `any` (types/index.d.ts) for
+// every bookType/output combination — this asserts the concrete type its own
+// docs promise for `type: 'array'` (a Uint8Array), rather than letting that
+// `any` propagate into these functions' declared Buffer return type.
+function makeXlsx(cellText: string): Buffer {
   const wb = XLSX.utils.book_new()
   const ws = XLSX.utils.aoa_to_sheet([[cellText, 42], ['row2', 7]])
   XLSX.utils.book_append_sheet(wb, ws, 'Data')
-  return Buffer.from(XLSX.write(wb, { bookType: 'xlsx', type: 'array' }))
+  return Buffer.from(XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as Uint8Array)
 }
 
-function makeOds(cellText) {
+function makeOds(cellText: string): Buffer {
   const wb = XLSX.utils.book_new()
   const ws = XLSX.utils.aoa_to_sheet([[cellText, 1], ['b', 2]])
   XLSX.utils.book_append_sheet(wb, ws, 'Data')
-  return Buffer.from(XLSX.write(wb, { bookType: 'ods', type: 'array' }))
+  return Buffer.from(XLSX.write(wb, { bookType: 'ods', type: 'array' }) as Uint8Array)
 }
 
-async function makePptx(text) {
+async function makePptx(text: string): Promise<Buffer> {
   const slideXml = `<?xml version="1.0"?>
 <p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
@@ -72,7 +90,7 @@ async function makePptx(text) {
   return Buffer.from(await zip.generateAsync({ type: 'nodebuffer' }))
 }
 
-async function makeOdt(text) {
+async function makeOdt(text: string): Promise<Buffer> {
   const NS = [
     'xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"',
     'xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"',
@@ -89,7 +107,7 @@ async function makeOdt(text) {
 
 // Drive the unified Open flow: land on the given app home, feed the file to the
 // hidden picker input, and let importFile() route + navigate.
-async function openViaPicker(page, home, file) {
+async function openViaPicker(page: OfficePage, home: string, file: FilePayload): Promise<void> {
   await page.goto(home)
   // The hidden picker input is the real readiness signal (and setInputFiles works
   // on it directly). We wait for it rather than the "Open file" button, which is

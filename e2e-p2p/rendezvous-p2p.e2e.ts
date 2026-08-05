@@ -3,7 +3,7 @@
 // default is empty (backend/config/config_test.go: TestDefault_RendezvousURLEmpty) and its
 // sibling builtin-rendezvous-p2p.e2e.js proves the DEFAULT path needs no relay at all.
 /**
- * rendezvous-p2p.e2e.js — the OPTIONAL posture, proved end to end with nothing
+ * rendezvous-p2p.e2e.ts — the OPTIONAL posture, proved end to end with nothing
  * mocked:
  *
  *   "A standalone Diwan can delegate peer discovery to an operator's OWN
@@ -15,7 +15,7 @@
  * It used to be the ONLY path, which made Diwan's central claim conditional on
  * another product being deployed. It is not any more: the binary now serves its
  * own discovery surface (backend/rendezvous), and THAT default is proved by
- * builtin-rendezvous-p2p.e2e.js — a suite with no external dependency, which
+ * builtin-rendezvous-p2p.e2e.ts — a suite with no external dependency, which
  * therefore cannot be skipped.
  *
  * So this file covers a posture an operator may CHOOSE (one shared relay across
@@ -60,14 +60,27 @@
  * through the relayd" is visible directly rather than inferred through a proxy.
  */
 
-import { test, expect } from '@playwright/test'
-import { startStack, relayResolve, createDoc, relaydBinAvailable, BUILTIN_PREFIX } from './stack.mjs'
+import { test, expect, type Page } from '@playwright/test'
+import { startStack, relayResolve, createDoc, relaydBinAvailable, BUILTIN_PREFIX, type Stack } from './stack'
 import {
   instrumentWebRTC, selectedCandidatePairs, mirrorConsole, recordRequests, openDoc, mintInviteLink,
-} from './helpers.mjs'
+  type RecordedRequest,
+} from './helpers'
+
+interface ReachabilityResponse {
+  builtin_rendezvous_prefix: string
+  rendezvous_url: string
+}
+
+interface CorsProbeResult {
+  ice?: { status: number; body: unknown }
+  iceError?: string
+  announce?: { status: number; body: string }
+  announceError?: string
+}
 
 /** Shared stack for the whole file — building the binaries once is the point. */
-let stack
+let stack: Stack
 
 test.beforeAll(async () => {
   // This suite exercises the OPTIONAL posture, so it may legitimately be absent —
@@ -77,15 +90,15 @@ test.beforeAll(async () => {
   // was while it cloned a repo that had been renamed).
   //
   // Nothing about Diwan's DEFAULT path depends on this file: that is proved,
-  // unskippably, by builtin-rendezvous-p2p.e2e.js.
+  // unskippably, by builtin-rendezvous-p2p.e2e.ts.
   test.skip(!relaydBinAvailable(),
     'no vulos-relayd binary supplied — set VULOS_RELAYD_BIN to exercise the external-relay ' +
-    'posture. Diwan\'s default (built-in) P2P path is covered by builtin-rendezvous-p2p.e2e.js.')
+    'posture. Diwan\'s default (built-in) P2P path is covered by builtin-rendezvous-p2p.e2e.ts.')
   stack = await startStack({ rendezvous: 'external', offices: 2, localOnlyOffice: true })
 })
 
-test.afterAll(async () => {
-  if (stack) await stack.stop()
+test.afterAll(() => {
+  if (stack) stack.stop()
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -95,7 +108,8 @@ test('relayd rendezvous is browser-reachable cross-origin — the guarantee the 
   // protocol.
   const health = await request.get(`${stack.relayUrl}/rendezvous/healthz`)
   expect(health.ok()).toBe(true)
-  expect((await health.json()).role).toBe('rendezvous')
+  const healthBody = await health.json() as { role: string }
+  expect(healthBody.role).toBe('rendezvous')
 
   // ── The CORS contract, asserted as a REQUIREMENT ──────────────────────────
   //
@@ -141,7 +155,7 @@ test('relayd rendezvous is browser-reachable cross-origin — the guarantee the 
   try {
     await page.goto(stack.offices[0].url)
     const out = await page.evaluate(async (relayUrl) => {
-      const result = {}
+      const result: CorsProbeResult = {}
       try {
         const r = await fetch(`${relayUrl}/rendezvous/ice`)
         result.ice = { status: r.status, body: await r.json() }
@@ -161,9 +175,11 @@ test('relayd rendezvous is browser-reachable cross-origin — the guarantee the 
     }, stack.relayUrl)
 
     expect(out.iceError, 'a browser on another origin could not read GET /rendezvous/ice').toBeUndefined()
+    if (!out.ice) throw new Error('expected the ICE probe to have succeeded (iceError was undefined)')
     expect(out.ice.status).toBe(200)
     expect(out.ice.body).toHaveProperty('ice_servers')
     expect(out.announceError, 'the preflighted announce POST was blocked by the browser').toBeUndefined()
+    if (!out.announce) throw new Error('expected the announce probe to have succeeded (announceError was undefined)')
     // Readable rejection, not an opaque failure — apps can show a real error.
     expect(out.announce.status).toBe(400)
     expect(out.announce.body.length, 'the error body must be readable cross-origin').toBeGreaterThan(0)
@@ -179,7 +195,7 @@ test('a standalone Diwan advertises the rendezvous and mounts no host-box peerin
   const peering = await request.get(`${a.url}/api/peering/ice`)
   expect(peering.status(), 'a standalone Diwan must not serve host-box peering').toBe(404)
 
-  const reach = await (await request.get(`${a.url}/api/reachability`)).json()
+  const reach = await (await request.get(`${a.url}/api/reachability`)).json() as ReachabilityResponse
   expect(reach.rendezvous_url).toBe(stack.relayUrl)
   // These instances run with `builtin_rendezvous: false`, which is what makes the
   // premise of this whole file exactly true rather than approximately: with the
@@ -238,8 +254,8 @@ test('THE PAYOFF — two standalone Diwan servers collaborate P2P through the re
     // relay's presence store. Read straight from the relay's own origin.
     const announcedKeys = [...reqA, ...reqB]
       .filter((r) => r.url.startsWith(`${stack.relayUrl}/rendezvous/announce`) && r.postData)
-      .map((r) => { try { return JSON.parse(r.postData).key } catch { return null } })
-      .filter(Boolean)
+      .map((r) => { try { return (JSON.parse(r.postData as string) as { key?: string }).key } catch { return null } })
+      .filter((k): k is string => Boolean(k))
     expect(announcedKeys.length, 'no signed announce was sent to the relay').toBeGreaterThan(0)
 
     await expect.poll(async () => {
@@ -278,7 +294,8 @@ test('THE PAYOFF — two standalone Diwan servers collaborate P2P through the re
 
     // No host-box peering was involved anywhere — this really was the
     // rendezvous transport, not a fallback onto some /api/peering/* surface.
-    for (const [name, reqs] of [['A', reqA], ['B', reqB]]) {
+    const named: [string, RecordedRequest[]][] = [['A', reqA], ['B', reqB]]
+    for (const [name, reqs] of named) {
       const peering = reqs.filter((r) => r.url.includes('/api/peering/stream'))
       expect(peering, `peer ${name} used host-box peering signaling`).toHaveLength(0)
     }
@@ -352,7 +369,7 @@ test('offline divergence — both peers edit disconnected, then converge on reco
     // immediately.
     await ctxA.setOffline(true)
     await ctxB.setOffline(true)
-    const dropPeers = (page) => page.evaluate(() => (window.__pcs || []).forEach((pc) => { try { pc.close() } catch { /* already closed */ } }))
+    const dropPeers = (page: Page) => page.evaluate(() => (window.__pcs || []).forEach((pc) => { try { pc.close() } catch { /* already closed */ } }))
     await dropPeers(pageA)
     await dropPeers(pageB)
 
@@ -395,10 +412,14 @@ test('offline divergence — both peers edit disconnected, then converge on reco
 test('NEGATIVE — with no rendezvous configured, standalone Diwan reports local-only and never fakes a session', async ({ browser, request }) => {
   const lo = stack.localOnly
   expect(lo, 'the local-only instance must be booted for this test').toBeTruthy()
+  // expect(...).toBeTruthy() above is the real runtime guarantee (it fails the
+  // test right here if lo is null); this just gives the type checker the same
+  // fact so the rest of the test can use `lo` without re-checking.
+  if (!lo) throw new Error('the local-only instance must be booted for this test')
 
   // The server tells the truth: no rendezvous configured, and no host-box
   // peering either — so there is nothing for the client to reach for.
-  const reach = await (await request.get(`${lo.url}/api/reachability`)).json()
+  const reach = await (await request.get(`${lo.url}/api/reachability`)).json() as ReachabilityResponse
   expect(reach.rendezvous_url).toBe('')
   expect((await request.get(`${lo.url}/api/peering/ice`)).status()).toBe(404)
 
@@ -417,7 +438,7 @@ test('NEGATIVE — with no rendezvous configured, standalone Diwan reports local
     await expect(page.getByText(/P2P collaboration isn't available on this server/i))
       .toBeVisible({ timeout: 30_000 })
     const links = await page.locator('input[readonly]').evaluateAll(
-      (els) => els.map((e) => e.value).filter((v) => /#vp2p=/.test(v)),
+      (els) => (els as HTMLInputElement[]).map((e) => e.value).filter((v) => /#vp2p=/.test(v)),
     )
     expect(links, 'a local-only deployment must not mint invite links').toHaveLength(0)
 

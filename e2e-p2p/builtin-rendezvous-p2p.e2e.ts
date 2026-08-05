@@ -3,7 +3,7 @@
 // its absence from the default path, the same pattern already recognised for a CI step
 // elsewhere in this suite.
 /**
- * builtin-rendezvous-p2p.e2e.js — the DEFAULT path, proved end to end with
+ * builtin-rendezvous-p2p.e2e.ts — the DEFAULT path, proved end to end with
  * nothing mocked and nothing external:
  *
  *   "One `diwan` binary on one box is enough for two people to collaborate
@@ -46,13 +46,19 @@
  */
 
 import { test, expect } from '@playwright/test'
-import { startStack, createDoc, rendezvousResolve, BUILTIN_PREFIX } from './stack.mjs'
+import { startStack, createDoc, rendezvousResolve, BUILTIN_PREFIX, type Stack } from './stack'
 import {
   instrumentWebRTC, selectedCandidatePairs, mirrorConsole, recordRequests, openDoc, mintInviteLink,
-} from './helpers.mjs'
+  type RecordedRequest,
+} from './helpers'
+
+interface ReachabilityResponse {
+  builtin_rendezvous_prefix: string
+  rendezvous_url: string
+}
 
 /** Shared stack for the whole file — building the binary once is the point. */
-let stack
+let stack: Stack
 
 test.beforeAll(async () => {
   // One Diwan with its own discovery surface, plus one with NOTHING configured
@@ -60,8 +66,8 @@ test.beforeAll(async () => {
   stack = await startStack({ rendezvous: 'builtin', offices: 1, localOnlyOffice: true })
 })
 
-test.afterAll(async () => {
-  if (stack) await stack.stop()
+test.afterAll(() => {
+  if (stack) stack.stop()
 })
 
 test('a bare standalone Diwan serves its own discovery surface and no host-box peering', async ({ request }) => {
@@ -72,7 +78,7 @@ test('a bare standalone Diwan serves its own discovery surface and no host-box p
   expect(peering.status(), 'a standalone Diwan must not serve host-box peering').toBe(404)
 
   // It advertises its own surface, as a PATH on this origin, and names no relay.
-  const reach = await (await request.get(`${a.url}/api/reachability`)).json()
+  const reach = await (await request.get(`${a.url}/api/reachability`)).json() as ReachabilityResponse
   expect(reach.builtin_rendezvous_prefix,
     'a default deployment must advertise its own discovery surface').toBe(BUILTIN_PREFIX)
   expect(reach.rendezvous_url,
@@ -81,14 +87,17 @@ test('a bare standalone Diwan serves its own discovery surface and no host-box p
   // And the surface is really there.
   const health = await request.get(`${a.url}${BUILTIN_PREFIX}/healthz`)
   expect(health.status()).toBe(200)
-  expect((await health.json()).ok).toBe(true)
+  const healthBody = await health.json() as { ok: boolean }
+  expect(healthBody.ok).toBe(true)
 
   // The negative-control instance advertises NOTHING, honestly.
-  const off = await (await request.get(`${stack.localOnly.url}/api/reachability`)).json()
+  const localOnly = stack.localOnly
+  if (!localOnly) throw new Error('expected a localOnlyOffice instance')
+  const off = await (await request.get(`${localOnly.url}/api/reachability`)).json() as ReachabilityResponse
   expect(off.builtin_rendezvous_prefix,
     'a deployment with builtin_rendezvous:false must advertise no surface').toBe('')
   expect(off.rendezvous_url).toBe('')
-  expect((await request.get(`${stack.localOnly.url}${BUILTIN_PREFIX}/healthz`)).status(),
+  expect((await request.get(`${localOnly.url}${BUILTIN_PREFIX}/healthz`)).status(),
     'a disabled surface must not be mounted at all').toBe(404)
 })
 
@@ -136,7 +145,8 @@ test('THE PAYOFF — two browsers collaborate P2P through one bare Diwan binary'
     await openDoc(pageB, `${a.url}/docs/${doc}#${fragment}`)
 
     // Both sides must speak the rendezvous protocol to THIS server.
-    for (const [name, reqs] of [['A', reqA], ['B', reqB]]) {
+    const named: [string, RecordedRequest[]][] = [['A', reqA], ['B', reqB]]
+    for (const [name, reqs] of named) {
       await expect
         .poll(() => reqs.filter((r) => r.url.startsWith(rdvUrl)).length, {
           message: `peer ${name} never spoke the built-in rendezvous protocol`,
@@ -149,8 +159,8 @@ test('THE PAYOFF — two browsers collaborate P2P through one bare Diwan binary'
     // really in this server's presence store. A client cannot fabricate that.
     const announcedKeys = [...reqA, ...reqB]
       .filter((r) => r.url.startsWith(`${rdvUrl}announce`) && r.postData)
-      .map((r) => { try { return JSON.parse(r.postData).key } catch { return null } })
-      .filter(Boolean)
+      .map((r) => { try { return (JSON.parse(r.postData as string) as { key?: string }).key } catch { return null } })
+      .filter((k): k is string => Boolean(k))
     expect(announcedKeys.length, 'no signed announce was sent').toBeGreaterThan(0)
 
     await expect.poll(async () => {
@@ -209,7 +219,7 @@ test('THE PAYOFF — two browsers collaborate P2P through one bare Diwan binary'
 
     // No host-box peering anywhere: this really was the built-in surface and not
     // a fallback onto some /api/peering/* path.
-    for (const [name, reqs] of [['A', reqA], ['B', reqB]]) {
+    for (const [name, reqs] of named) {
       expect(reqs.filter((r) => r.url.includes('/api/peering/stream')),
         `peer ${name} used host-box peering signalling`).toHaveLength(0)
     }
@@ -249,9 +259,10 @@ test('NEGATIVE — with discovery disabled and no relay, Diwan is honestly local
   // "you can still edit, nobody can join", never to a broken editor and never to
   // a UI that claims a live session it does not have.
   const off = stack.localOnly
+  if (!off) throw new Error('expected a localOnlyOffice instance')
   const doc = await createDoc(off.url, 'Local Only')
 
-  const reach = await (await request.get(`${off.url}/api/reachability`)).json()
+  const reach = await (await request.get(`${off.url}/api/reachability`)).json() as ReachabilityResponse
   expect(reach.builtin_rendezvous_prefix).toBe('')
   expect(reach.rendezvous_url).toBe('')
 

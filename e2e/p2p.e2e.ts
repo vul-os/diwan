@@ -25,7 +25,7 @@ test.describe('P2P "Collaborate via link" (E2E)', () => {
 
     // Both invite links contain the #vp2p= capability fragment.
     const values = await page.locator('input[readonly]').evaluateAll(
-      (els) => els.map((e) => e.value).filter((v) => /#vp2p=/.test(v)),
+      (els) => (els as HTMLInputElement[]).map((e) => e.value).filter((v) => /#vp2p=/.test(v)),
     )
     expect(values.length).toBeGreaterThanOrEqual(2)
   })
@@ -40,7 +40,7 @@ test.describe('P2P "Collaborate via link" (E2E)', () => {
 
     const roLink = await page.locator('input[readonly]').evaluateAll((els) => {
       // The view-only row is the last link input in the modal.
-      const vals = els.map((e) => e.value).filter((v) => /#vp2p=/.test(v))
+      const vals = (els as HTMLInputElement[]).map((e) => e.value).filter((v) => /#vp2p=/.test(v))
       return vals[vals.length - 1]
     })
     expect(roLink).toMatch(/#vp2p=/)

@@ -20,10 +20,23 @@
  * text input, so the flow does not depend on the flaky canvas marquee.
  */
 
-import { test, expect } from './fixtures.js'
+import { test, expect, type OfficePage } from './fixtures.js'
 
-function makeSheetFile() {
-  const celldata = [
+interface SheetCell {
+  r: number
+  c: number
+  v: { v: string | number; m: string }
+}
+
+interface SheetFile {
+  id: string
+  name: string
+  type: string
+  content: [{ name: string; celldata: SheetCell[]; config: Record<string, never> }]
+}
+
+function makeSheetFile(): SheetFile {
+  const celldata: SheetCell[] = [
     { r: 0, c: 0, v: { v: 'Qtr', m: 'Qtr' } },
     { r: 0, c: 1, v: { v: 'Sales', m: 'Sales' } },
     { r: 1, c: 0, v: { v: 'Q1', m: 'Q1' } },
@@ -34,7 +47,7 @@ function makeSheetFile() {
   return { id: 'sh1', name: 'Budget', type: 'sheet', content: [{ name: 'Sheet1', celldata, config: {} }] }
 }
 
-async function openSheet(page) {
+async function openSheet(page: OfficePage): Promise<void> {
   const file = makeSheetFile()
   await page.route(/\/api\/files\/sh1$/, (route) => {
     if (route.request().method() !== 'GET') return route.fallback()
@@ -77,7 +90,7 @@ test.describe('Sheets chart wizard (wave-54) — real-browser insert flow', () =
       await openSheet(page)
 
       // Guard: a chart-render or descriptor bug that throws would surface here.
-      const pageErrors = []
+      const pageErrors: string[] = []
       page.on('pageerror', (e) => pageErrors.push(e.message))
 
       await page.getByRole('button', { name: 'Insert chart' }).click()
@@ -104,7 +117,7 @@ test.describe('Sheets chart wizard (wave-54) — real-browser insert flow', () =
   test('an inserted chart renders AND survives a subsequent cell edit (wave-61)', async ({ officePage: page }) => {
     await openSheet(page)
 
-    const pageErrors = []
+    const pageErrors: string[] = []
     page.on('pageerror', (e) => pageErrors.push(e.message))
 
     // Insert a chart over the seeded A1:B3 data range.

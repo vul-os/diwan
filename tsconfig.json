@@ -20,6 +20,6 @@
     "useDefineForClassFields": true,
     "types": ["vite/client", "vitest/globals"]
   },
-  "include": ["src", "vite.config.js", "vite.config.lib.js", "vite.config.office.js"],
-  "exclude": ["node_modules", "dist", "dist-lib", "dist-office", "e2e", "e2e-p2p", "scripts", "site"]
+  "include": ["src", "vite.config.js", "vite.config.lib.js", "vite.config.office.js", "e2e", "e2e-p2p"],
+  "exclude": ["node_modules", "dist", "dist-lib", "dist-office", "scripts", "site"]
 }

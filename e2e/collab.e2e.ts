@@ -41,7 +41,7 @@ test.describe('Version history + wave-14 restore gate (E2E)', () => {
 
 test.describe('Comments (E2E)', () => {
   test('add a comment, then resolve it', async ({ page }) => {
-    const state = await installBackend(page, { role: 'owner' })
+    await installBackend(page, { role: 'owner' })
     await page.goto('/docs/doc1')
     await expect(page.locator('.ProseMirror')).toBeVisible({ timeout: 15_000 })
 
@@ -77,7 +77,7 @@ test.describe('Serverless (P2P) collab (E2E smoke)', () => {
     await installBackend(page, { role: 'owner' })
 
     // Fail LOUDLY if the app ever calls a server-mediated collab endpoint.
-    const collabRequests = []
+    const collabRequests: string[] = []
     await page.route('**/v1/documents/*/collab/**', (route) => {
       collabRequests.push(route.request().url())
       // Answer 404 so, if a regression reintroduces the call, the app degrades
