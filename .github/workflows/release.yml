@@ -48,6 +48,7 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+          cache-dependency-path: web/package-lock.json
           registry-url: 'https://registry.npmjs.org'
 
       # ── Derive semver (strip leading 'v') ─────────────────────────────────────
@@ -61,7 +62,7 @@ jobs:
       # ── Verify tag == package.json version ────────────────────────────────────
       - name: Check tag/package version match
         run: |
-          PKG_VERSION=$(node -p "require('./package.json').version")
+          PKG_VERSION=$(node -p "require('./web/package.json').version")
           TAG_VERSION="${{ steps.version.outputs.semver }}"
           if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
             echo "ERROR: package.json version ($PKG_VERSION) != tag ($TAG_VERSION)"
@@ -82,13 +83,17 @@ jobs:
           echo "Binary version check passed: ${VERSION}"
 
       # ── Frontend: full build + library build ──────────────────────────────────
+      # The frontend project (package.json, node_modules) lives in web/.
       - name: Install npm dependencies
+        working-directory: web
         run: npm ci
 
       - name: Build frontend (all targets)
+        working-directory: web
         run: npm run build:all
 
       - name: Run frontend tests
+        working-directory: web
         run: npm test
 
       # ── Go backend: tests + cross-compile ─────────────────────────────────────
@@ -147,9 +152,12 @@ jobs:
             .
 
       # ── Archive dist-lib so the publish + release jobs can use it ─────────────
+      # dist-lib/ is now produced under web/ (build:all ran there); -C keeps the
+      # archive's internal layout as dist-lib/... rather than web/dist-lib/...,
+      # unchanged from before the move.
       - name: Archive dist-lib
         run: |
-          tar -czf office-client-${{ steps.version.outputs.tag }}-dist.tar.gz dist-lib/
+          tar -czf office-client-${{ steps.version.outputs.tag }}-dist.tar.gz -C web dist-lib/
 
       # ── Checksums ─────────────────────────────────────────────────────────────
       - name: Generate SHA-256 checksums
@@ -207,6 +215,9 @@ jobs:
     needs: check-npm-token
     runs-on: ubuntu-24.04
     if: needs.check-npm-token.outputs.has_token == 'true'
+    defaults:
+      run:
+        working-directory: web
     steps:
       - name: Checkout
         uses: actions/checkout@v4.2.2

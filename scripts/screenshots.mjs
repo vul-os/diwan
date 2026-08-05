@@ -122,10 +122,13 @@ async function startLocalServer() {
   seedStaticFiles()
   seedLocalDriveFiles()
 
-  // 2. Ensure the frontend is built (dist/ must exist with index.html)
+  // 2. Ensure the frontend is built (dist/ must exist with index.html).
+  //    dist/ itself stays at the repo root (go:embed requires it there), but
+  //    the frontend project (package.json, node_modules) lives in web/ now,
+  //    so `npm run build:frontend` has to run from there.
   if (!existsSync(path.join(ROOT, 'dist', 'index.html'))) {
     console.log('  building frontend (dist/) …')
-    execSync('npm run build:frontend', { cwd: ROOT, stdio: 'pipe' })
+    execSync('npm run build:frontend', { cwd: path.join(ROOT, 'web'), stdio: 'pipe' })
     console.log('  frontend built')
   }
 

@@ -92,9 +92,13 @@ jobs:
         run: go test ./backend/storage/... -v -count=1
 
   # ── Frontend ────────────────────────────────────────────────────────────────
+  # The frontend project lives in web/ (its own package.json/package-lock.json).
   frontend:
     name: Frontend build / test
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
 
     steps:
       - name: Checkout
@@ -105,6 +109,7 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+          cache-dependency-path: web/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -123,6 +128,9 @@ jobs:
     name: Frontend E2E (Playwright / chromium)
     runs-on: ubuntu-latest
     needs: frontend
+    defaults:
+      run:
+        working-directory: web
 
     steps:
       - name: Checkout
@@ -133,6 +141,7 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+          cache-dependency-path: web/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -153,7 +162,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: playwright-report/
+          path: web/playwright-report/
           retention-days: 7
 
   # ── Real P2P integration E2E (one bare binary, two browsers) ────────────────
@@ -177,6 +186,9 @@ jobs:
     name: Real P2P E2E (built-in rendezvous, no external deps)
     runs-on: ubuntu-latest
     needs: frontend
+    defaults:
+      run:
+        working-directory: web
 
     steps:
       - name: Checkout
@@ -193,6 +205,7 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+          cache-dependency-path: web/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -230,5 +243,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-p2p
-          path: playwright-report/
+          path: web/playwright-report/
           retention-days: 7

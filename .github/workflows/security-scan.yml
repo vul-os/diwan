@@ -142,6 +142,9 @@ jobs:
     runs-on: ubuntu-latest
     # Advisory gate: report findings without blocking the merge.
     continue-on-error: true
+    defaults:
+      run:
+        working-directory: web
 
     steps:
       - name: Checkout

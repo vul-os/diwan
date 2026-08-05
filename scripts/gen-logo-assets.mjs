@@ -24,7 +24,9 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const PUB = path.join(ROOT, 'public')
+// public/ lives under web/ (the frontend project root); brand/ stays at the
+// repo root alongside this script.
+const PUB = path.join(ROOT, 'web', 'public')
 const BRAND_LOGO = path.join(ROOT, 'brand', 'logo.svg')
 const b64 = (p) => readFileSync(p).toString('base64')
 
@@ -220,9 +222,12 @@ console.log('Open Graph banner:')
 await shotOG(page)
 await browser.close()
 // Keep a canonical rounded copy for the README header (transparent, 512).
+// PUB is now ROOT/web/public (one level deeper than before the frontend
+// moved into web/), so this needs an extra '../' to still land at the repo
+// root's docs/assets/, not a nonexistent web/docs/assets/.
 await (async () => {
   const b = await chromium.launch(); const p = await b.newPage()
-  await shotSVG(p, roundedSVG, 512, '../docs/assets/diwan-logo.png')
+  await shotSVG(p, roundedSVG, 512, '../../docs/assets/diwan-logo.png')
   await b.close()
 })()
 console.log('Done.')
