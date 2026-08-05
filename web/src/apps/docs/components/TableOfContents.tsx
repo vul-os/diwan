@@ -29,7 +29,10 @@ export function extractHeadings(editor: Editor | null | undefined): TocHeading[]
   editor.state.doc.descendants((node) => {
     if (node.type.name === 'heading') {
       const text = node.textContent
-      headings.push({ level: node.attrs.level, text, slug: slugify(text) })
+      // node.attrs is ProseMirror's own Attrs (`{[key: string]: any}`).
+      const rawLevel: unknown = node.attrs.level
+      const level = typeof rawLevel === 'number' && Number.isFinite(rawLevel) ? rawLevel : 1
+      headings.push({ level, text, slug: slugify(text) })
     }
   })
   return headings
