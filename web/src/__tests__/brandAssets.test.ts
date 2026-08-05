@@ -7,12 +7,17 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync, existsSync } from 'node:fs'
 import path from 'node:path'
 
-const ROOT = path.resolve(__dirname, '..', '..')
-const BRAND_LOGO = path.join(ROOT, 'brand', 'logo.svg')
-const PUBLIC_LOGO = path.join(ROOT, 'public', 'logo.svg')
-const PUBLIC_FAVICON = path.join(ROOT, 'public', 'favicon.svg')
-const SIDEBAR = path.join(ROOT, 'src', 'components', 'ui', 'Sidebar.tsx')
-const GENERATOR = path.join(ROOT, 'scripts', 'gen-logo-assets.mjs')
+// This test file lives in web/src/__tests__/. public/ and src/ moved into
+// web/ alongside it, but brand/ and scripts/ stayed at the repo root — so,
+// like web/e2e-p2p/stack.ts's WEB_ROOT/REPO_ROOT split, one shared ROOT can
+// no longer resolve both groups.
+const WEB_ROOT = path.resolve(__dirname, '..', '..')
+const REPO_ROOT = path.resolve(WEB_ROOT, '..')
+const BRAND_LOGO = path.join(REPO_ROOT, 'brand', 'logo.svg')
+const PUBLIC_LOGO = path.join(WEB_ROOT, 'public', 'logo.svg')
+const PUBLIC_FAVICON = path.join(WEB_ROOT, 'public', 'favicon.svg')
+const SIDEBAR = path.join(WEB_ROOT, 'src', 'components', 'ui', 'Sidebar.tsx')
+const GENERATOR = path.join(REPO_ROOT, 'scripts', 'gen-logo-assets.mjs')
 
 function readOrThrow(p: string, label: string): string {
   if (!existsSync(p)) throw new Error(`GUARD CANNOT RUN: ${label} is missing at ${p}`)
