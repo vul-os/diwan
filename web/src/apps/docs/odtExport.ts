@@ -72,7 +72,8 @@ function tableXml(node: JSONContent): string {
 function blockXml(node: JSONContent): string {
   switch (node.type) {
     case 'heading': {
-      const lvl = Math.min(Math.max(node.attrs?.level || 1, 1), 6)
+      const rawLevel: unknown = node.attrs?.level
+      const lvl = Math.min(Math.max(typeof rawLevel === 'number' ? rawLevel : 1, 1), 6)
       return `<text:h text:style-name="${HEADING_STYLE[lvl]}" text:outline-level="${lvl}">${inlineXml(node.content || [])}</text:h>`
     }
     case 'paragraph':
