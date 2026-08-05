@@ -197,7 +197,7 @@ function inflateEntryBounded(
       }
       if (!discard) chunks.push(chunk)
     })
-    stream.on('error', (e: unknown) => fail(`entry "${name}" could not be decompressed: ${(e as Error)?.message || e}`))
+    stream.on('error', (e: unknown) => fail(`entry "${name}" could not be decompressed: ${e instanceof Error ? e.message : String(e)}`))
     stream.on('end', () => {
       if (settled) return
       settled = true
