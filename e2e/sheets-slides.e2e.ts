@@ -6,7 +6,7 @@
  * Slides: open, add a slide, presenter view toggle, presence.
  */
 
-import { test, expect } from './fixtures.js'
+import { test, expect, type OfficePage } from './fixtures.js'
 
 // A sheet + a slide deck. The editors deep-linked directly (no AppHome to run
 // fetchFiles) load their file via api.getFile(id) → GET /api/files/:id, so we
@@ -14,12 +14,13 @@ import { test, expect } from './fixtures.js'
 const SHEET = { id: 'sh1', name: 'Budget', type: 'sheet', content: [{ name: 'Sheet1', celldata: [{ r: 0, c: 0, v: { v: 'Item', m: 'Item' } }], config: {} }] }
 const DECK = { id: 'deck1', name: 'Pitch', type: 'slide', content: { themeId: 'obsidian', theme: 'black', transition: 'slide', slides: [{ id: 's1', title: 'Intro', content: '<p>Intro</p>', notes: '' }], masters: null, customTheme: null } }
 
-async function seedFiles(page) {
-  const byId = { sh1: SHEET, deck1: DECK }
+async function seedFiles(page: OfficePage): Promise<void> {
+  const byId: Record<string, typeof SHEET | typeof DECK> = { sh1: SHEET, deck1: DECK }
   // Per-id GET (what the editor actually fetches on a deep link).
   await page.route(/\/api\/files\/(sh1|deck1)$/, (route) => {
     if (route.request().method() !== 'GET') return route.fallback()
     const id = new URL(route.request().url()).pathname.split('/').pop()
+    if (!id || !(id in byId)) return route.fallback()
     return route.fulfill({ contentType: 'application/json', body: JSON.stringify(byId[id]) })
   })
   // List endpoint (used if any list view mounts).
