@@ -18,12 +18,6 @@ import {
   type DVSheet,
 } from './dataValidation.js'
 
-// parseRange (ConditionalFormatPanel.jsx, not yet converted) infers a `number[]`
-// row/column shape rather than the `[number, number]` tuple applyValidation's
-// signature declares — a local, typed adapter over the same runtime contract.
-const parseRangeTyped = (text: string): { row: [number, number]; column: [number, number] }[] | undefined =>
-  parseRange(text) as { row: [number, number]; column: [number, number] }[] | undefined
-
 describe('validationRange — the dropdown source-range gate', () => {
   it('accepts A1 ranges, $-anchors and a sheet qualifier', () => {
     expect(validationRange('A1:A10')).toBe('A1:A10')
@@ -236,15 +230,15 @@ describe('clampDataValidation — the load gate', () => {
   })
   it('a clamped workbook still lists its rules', () => {
     const reg = buildRegulation({ kind: 'date', condition: 'earlierThan', value1: '2026-07-14' })
-    const data = applyValidation([{ name: 'Sheet1', celldata: [], config: {} }], 'A1:A3', reg, parseRangeTyped)
+    const data = applyValidation([{ name: 'Sheet1', celldata: [], config: {} }], 'A1:A3', reg, parseRange)
     const rules = listValidationRules(clampDataValidation(data)[0])
     expect(rules).toHaveLength(1)
     expect(rules[0].count).toBe(3)
     expect(rules[0].summary).toBe('Date is before 2026-07-14')
   })
   it('a checkbox and a plain dropdown over the same values stay distinct rules', () => {
-    let data = applyValidation([{ name: 'Sheet1', celldata: [], config: {} }], 'A1', buildRegulation({ kind: 'checkbox' }), parseRangeTyped)
-    data = applyValidation(data, 'B1', buildRegulation({ kind: 'dropdown', items: 'TRUE,FALSE' }), parseRangeTyped)
+    let data = applyValidation([{ name: 'Sheet1', celldata: [], config: {} }], 'A1', buildRegulation({ kind: 'checkbox' }), parseRange)
+    data = applyValidation(data, 'B1', buildRegulation({ kind: 'dropdown', items: 'TRUE,FALSE' }), parseRange)
     const rules = listValidationRules(clampDataValidation(data)[0])
     expect(rules).toHaveLength(2)
     expect(rules.map((r) => r.summary).sort()).toEqual(['Checkbox · TRUE / FALSE', 'Dropdown · 2 items'])

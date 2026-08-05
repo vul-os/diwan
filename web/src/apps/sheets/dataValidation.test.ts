@@ -14,12 +14,6 @@ import {
   type DVSheet,
 } from './dataValidation.js'
 
-// parseRange (ConditionalFormatPanel.jsx, not yet converted) infers a `number[]`
-// row/column shape rather than the `[number, number]` tuple applyValidation's
-// signature declares — a local, typed adapter over the same runtime contract.
-const parseRangeTyped = (text: string): { row: [number, number]; column: [number, number] }[] | undefined =>
-  parseRange(text) as { row: [number, number]; column: [number, number] }[] | undefined
-
 describe('dropdownItems', () => {
   it('splits, trims, and drops empties', () => {
     expect(dropdownItems('Low, Medium , High')).toEqual(['Low', 'Medium', 'High'])
@@ -106,7 +100,7 @@ describe('applyValidation / listValidationRules', () => {
 
   it('writes a rule across every cell in the range', () => {
     const reg = buildRegulation({ kind: 'dropdown', items: 'a,b' })
-    const next = applyValidation(base, 'A1:A3', reg, parseRangeTyped)
+    const next = applyValidation(base, 'A1:A3', reg, parseRange)
     const dv = next[0].dataVerification!
     expect(Object.keys(dv).sort()).toEqual(['0_0', '1_0', '2_0'])
     expect((dv['0_0'] as { type: string }).type).toBe('dropdown')
@@ -114,21 +108,21 @@ describe('applyValidation / listValidationRules', () => {
 
   it('is immutable — original sheet untouched', () => {
     const reg = buildRegulation({ kind: 'number', condition: 'equal', value1: '1' })
-    applyValidation(base, 'A1', reg, parseRangeTyped)
+    applyValidation(base, 'A1', reg, parseRange)
     expect(base[0].dataVerification).toBeUndefined()
   })
 
   it('null regulation clears keys', () => {
     const reg = buildRegulation({ kind: 'dropdown', items: 'a,b' })
-    const withRule = applyValidation(base, 'A1:A2', reg, parseRangeTyped)
-    const cleared  = applyValidation(withRule, 'A1', null, parseRangeTyped)
+    const withRule = applyValidation(base, 'A1:A2', reg, parseRange)
+    const cleared  = applyValidation(withRule, 'A1', null, parseRange)
     expect(cleared[0].dataVerification!['0_0']).toBeUndefined()
     expect(cleared[0].dataVerification!['1_0']).toBeDefined()
   })
 
   it('listValidationRules groups identical rules into one entry', () => {
     const reg = buildRegulation({ kind: 'dropdown', items: 'a,b' })
-    const next = applyValidation(base, 'A1:A5', reg, parseRangeTyped)
+    const next = applyValidation(base, 'A1:A5', reg, parseRange)
     const rules = listValidationRules(next[0])
     expect(rules.length).toBe(1)
     expect(rules[0].count).toBe(5)
@@ -136,8 +130,8 @@ describe('applyValidation / listValidationRules', () => {
   })
 
   it('listValidationRules separates distinct rules', () => {
-    let d = applyValidation(base, 'A1', buildRegulation({ kind: 'dropdown', items: 'a' }), parseRangeTyped)
-    d = applyValidation(d, 'B1', buildRegulation({ kind: 'number', condition: 'equal', value1: '3' }), parseRangeTyped)
+    let d = applyValidation(base, 'A1', buildRegulation({ kind: 'dropdown', items: 'a' }), parseRange)
+    d = applyValidation(d, 'B1', buildRegulation({ kind: 'number', condition: 'equal', value1: '3' }), parseRange)
     expect(listValidationRules(d[0]).length).toBe(2)
   })
 })
