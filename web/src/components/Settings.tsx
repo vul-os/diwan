@@ -241,8 +241,8 @@ export default function Settings() {
   }
   const readIdentity = (): Identity => {
     try {
-      const p = JSON.parse(localStorage.getItem('presence_identity') || '{}')
-      if (p?.displayName) return p
+      const p = JSON.parse(localStorage.getItem('presence_identity') || '{}') as Partial<Identity>
+      if (p?.displayName) return p as Identity
     } catch { /* ignore */ }
     return { displayName: 'You', accountId: '' }
   }
@@ -296,7 +296,7 @@ export default function Settings() {
       {/* ── Topbar ── */}
       <div className="sticky top-0 z-10 flex items-center gap-3 px-5 h-11 bg-paper border-b border-line">
         <Tooltip label="Back" side="bottom">
-          <IconButton size="sm" onClick={() => navigate(-1)}><ArrowLeft size={15} /></IconButton>
+          <IconButton size="sm" onClick={() => void navigate(-1)}><ArrowLeft size={15} /></IconButton>
         </Tooltip>
         <h1 className="text-sm font-semibold text-ink tracking-tightish flex-1">Settings</h1>
         <ThemePicker />
@@ -351,7 +351,7 @@ export default function Settings() {
               </div>
               {status?.enabled && (
                 <div className="border-t border-line px-5 py-3 flex justify-end bg-bg-elev2">
-                  <Button variant="destructive" size="sm" onClick={() => { logout() }}>
+                  <Button variant="destructive" size="sm" onClick={() => { void logout() }}>
                     <LogOut size={13} /> Sign out
                   </Button>
                 </div>
@@ -447,7 +447,7 @@ export default function Settings() {
                       onChange={e => setConfirmPw(e.target.value)} placeholder="Confirm new password" size="sm"
                     />
                     <div className="flex justify-end pt-1">
-                      <Button variant="primary" size="sm" onClick={changePassword}
+                      <Button variant="primary" size="sm" onClick={() => void changePassword()}
                         disabled={!curPw || !newPw || savingPw}>
                         {savingPw ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
                         Update password
