@@ -125,14 +125,19 @@ export class YP2PCollabSession extends EventTarget {
   }: YP2PCollabSessionOptions) {
     super()
     if (!room || !room.encKey) throw new Error('YP2PCollabSession: missing room keys')
-    if (cap !== CAP_RW && cap !== CAP_RO) throw new Error(`YP2PCollabSession: bad cap "${cap}"`)
+    // TS's declared type for `cap` (typeof CAP_RW | typeof CAP_RO) makes this
+    // branch provably unreachable statically, narrowing `cap` to `never` —
+    // but this is a runtime defense against an actually-untyped caller (a
+    // plain-JS call site, or deserialized data), so the guard stays; String()
+    // just satisfies the checker for the error message's own display.
+    if (cap !== CAP_RW && cap !== CAP_RO) throw new Error(`YP2PCollabSession: bad cap "${String(cap)}"`)
     // A context must carry a Y.Doc AND a way to validate an untrusted peer's
     // update fail-closed: either a ProseMirror `schema` (the default document
     // path, validated by applyRemoteUpdate) OR its own `applyUpdate` validator
     // (e.g. the whiteboard's Excalidraw-scene validator — see boardYdoc.js).
     // This is what lets the SAME encrypted P2P transport carry either a text
     // document or a whiteboard without a second collab stack.
-    if (!ctx || !ctx.ydoc || (!('schema' in ctx) && typeof (ctx as BoardYContext).applyUpdate !== 'function')) {
+    if (!ctx || !ctx.ydoc || (!('schema' in ctx) && typeof ctx.applyUpdate !== 'function')) {
       throw new Error('YP2PCollabSession: missing Y context')
     }
 
@@ -290,7 +295,7 @@ export class YP2PCollabSession extends EventTarget {
   // ── inbound ───────────────────────────────────────────────────────────────
 
   private async _onPeerFrame({ from, data }: { from: string, data: string | ArrayBuffer | Uint8Array }): Promise<void> {
-    const frameB64 = typeof data === 'string' ? data : new TextDecoder().decode(data as ArrayBuffer)
+    const frameB64 = typeof data === 'string' ? data : new TextDecoder().decode(data)
     // openFrame throws on wrong-key / tamper (AEAD): the relay and any uninvited
     // peer can never reach past this line. `authoritative` is true iff a valid
     // RW-MAC was present AND we hold macKeyRw to verify it (i.e. we are rw).
