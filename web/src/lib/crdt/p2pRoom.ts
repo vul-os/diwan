@@ -176,7 +176,10 @@ export type GenerateInviteOptions = {
  * The relay/host therefore never sees the roomKey.
  */
 export async function generateInvite({ cap = CAP_RW, baseUrl, roomKey }: GenerateInviteOptions = {}): Promise<Invite> {
-  if (cap !== CAP_RW && cap !== CAP_RO) throw new Error(`p2pRoom: bad cap "${cap}"`)
+  // See yP2PSession.ts's identical guard: TS narrows `cap` to `never` here
+  // (its declared type only allows CAP_RW/CAP_RO), but this is real defense
+  // against an untyped caller — String() just satisfies the checker.
+  if (cap !== CAP_RW && cap !== CAP_RO) throw new Error(`p2pRoom: bad cap "${String(cap)}"`)
   const key = roomKey instanceof Uint8Array && roomKey.length === 32 ? roomKey : randomBytes(32)
   const { roomId } = await deriveRoomKeys(key)
 
@@ -222,7 +225,7 @@ export async function parseInvite(linkOrFragment: string): Promise<ParsedInvite>
 
   let payload: { v?: number; r?: string; c?: string; k?: string }
   try {
-    payload = JSON.parse(td.decode(b64urlToBytes(b64)))
+    payload = JSON.parse(td.decode(b64urlToBytes(b64))) as { v?: number; r?: string; c?: string; k?: string }
   } catch {
     throw new Error('p2pRoom: malformed invite payload')
   }
