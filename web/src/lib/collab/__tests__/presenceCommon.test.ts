@@ -118,7 +118,7 @@ describe('getCollabIdentity', () => {
       clear: () => { m.clear() },
       key: (i: number) => [...m.keys()][i] ?? null,
       get length() { return m.size },
-    } as Storage
+    }
   }
 
   beforeEach(() => {
