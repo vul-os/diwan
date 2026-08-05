@@ -33,7 +33,7 @@ export function getCollabIdentity(fallbackPeerId?: string): CollabIdentity {
 
   try {
     const raw = ls?.getItem('presence_identity')
-    const parsed = raw ? JSON.parse(raw) : null
+    const parsed = raw ? (JSON.parse(raw) as Partial<CollabIdentity> | null) : null
     if (parsed && parsed.accountId) {
       return {
         accountId: parsed.accountId,
