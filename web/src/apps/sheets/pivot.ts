@@ -188,7 +188,10 @@ const AGG_FN: Record<string, (vals: unknown[]) => number> = {
     const seen = new Set<string>()
     for (const v of vals) {
       if (v === '' || v === null || v === undefined) continue
-      seen.add(String(v))
+      // A real cell value is string/number/boolean; treat anything else as
+      // its own single bucket rather than the misleading "[object Object]"
+      // a blind String() would collapse every such value into.
+      seen.add(typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' ? String(v) : JSON.stringify(v))
     }
     return seen.size
   },
@@ -211,7 +214,9 @@ export function newPivotId(): string {
 /** Coerce an untrusted cell/label value to a safe, length-capped string. */
 export function pivotText(v: unknown, max = 200): string {
   if (v === null || v === undefined) return ''
-  let s = typeof v === 'string' ? v : String(v)
+  // Real cell values are string/number/boolean; anything else has no
+  // meaningful text form — empty rather than the literal "[object Object]".
+  let s = typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' ? String(v) : ''
   // eslint-disable-next-line no-control-regex -- deliberately stripping C0/DEL control chars
   s = s.replace(/[\t\n\r]+/g, ' ').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
   if (/^[=+\-@]/.test(s)) s = "'" + s
@@ -443,9 +448,13 @@ const SEP = ''
  * so a text row can never be silently swallowed into a wrong date bucket.
  */
 export function dateBucket(value: unknown, mode: string): string {
-  if (mode === 'none' || !PIVOT_GROUPING_SET.has(mode)) return String(value ?? '')
+  // Reuses pivotText's own untrusted-value coercion (string/number/boolean
+  // only — a non-primitive would otherwise collapse into the same
+  // "[object Object]" group as every other one, silently merging rows this
+  // function's own contract says must stay distinct).
+  if (mode === 'none' || !PIVOT_GROUPING_SET.has(mode)) return pivotText(value)
   const d = toDate(value)
-  if (!d) return String(value ?? '')
+  if (!d) return pivotText(value)
   const y = d.getUTCFullYear()
   const m = d.getUTCMonth() + 1
   const pad = (n: number) => String(n).padStart(2, '0')
@@ -454,7 +463,7 @@ export function dateBucket(value: unknown, mode: string): string {
     case 'quarter': return `${y}-Q${Math.floor((m - 1) / 3) + 1}`
     case 'month':   return `${y}-${pad(m)}`
     case 'day':     return `${y}-${pad(m)}-${pad(d.getUTCDate())}`
-    default:        return String(value ?? '')
+    default:        return pivotText(value)
   }
 }
 
