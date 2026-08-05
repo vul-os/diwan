@@ -150,8 +150,11 @@ describe('table insert + edit ops (live editor)', () => {
     let spanned = false
     ed.state.doc.descendants((n) => {
       if ((n.type.name === 'tableCell' || n.type.name === 'tableHeader')) {
-        const cs = n.attrs?.colspan || 1
-        const rs = n.attrs?.rowspan || 1
+        // n.attrs is ProseMirror's own Attrs (`{[key: string]: any}`).
+        const rawCs: unknown = n.attrs?.colspan
+        const rawRs: unknown = n.attrs?.rowspan
+        const cs = typeof rawCs === 'number' ? rawCs : 1
+        const rs = typeof rawRs === 'number' ? rawRs : 1
         if (cs > 1 || rs > 1) spanned = true
       }
     })
@@ -223,7 +226,7 @@ describe('sanitizer keeps tables but strips injection (wave-14 allow-list)', () 
 // fetch-capable CSS image()/src() functions through. Replaced with a property
 // allow-list. These tests lock the fail-closed contract in place.
 describe('WAVE-53: style allow-list blocks non-url exfil + clickjacking, keeps legit styles', () => {
-  const styleOf = (out: string): string => (out.match(/style="([^"]*)"/) || [undefined, ''])[1] as string
+  const styleOf = (out: string): string => (out.match(/style="([^"]*)"/) || [undefined, ''])[1]
 
   it('drops position:fixed / position:absolute (clickjacking overlay)', () => {
     for (const pos of ['fixed', 'absolute']) {
