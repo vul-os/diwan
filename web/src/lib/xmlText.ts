@@ -24,7 +24,8 @@ const XML10_INVALID = /[\x00-\x08\x0B\x0C\x0E-\x1F￾￿]/g
 
 /** Remove characters illegal in XML 1.0 text (keeps TAB/LF/CR + all valid text). */
 export function stripXmlInvalidChars(s: unknown): string {
-  return String(s ?? '').replace(XML10_INVALID, '')
+  const str = typeof s === 'string' || typeof s === 'number' || typeof s === 'boolean' ? String(s) : ''
+  return str.replace(XML10_INVALID, '')
 }
 
 /** Strip XML-invalid chars, then escape the five XML metacharacters for text/attr. */
