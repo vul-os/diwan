@@ -88,7 +88,9 @@ export function useCollabFabric({ sessionId, peerId, enabled = true }: UseCollab
 
     const wsBase = window.location.origin.replace(/^http/, 'ws') + '/api/peering/stream'
 
-    ;(async () => {
+    // Never rejects: selectCollabTransport fail-safes internally, FabricClient
+    // construction is try/catch'd, and client.join() below has its own .catch.
+    void (async () => {
       // Resolve the three-way transport choice BEFORE constructing anything —
       // see the HONESTY GUARD note above. On `local-only` we never touch
       // FabricClient at all: configured/joined stay false, giving an honest,
