@@ -182,7 +182,9 @@ describe('xlsx chart ROUND TRIP (export → import restores the charts)', () => 
     const book = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['A'], [1]]), 'Sheet1')
     XLSX.utils.book_append_sheet(book, meta, CHART_META_SHEET)
-    const buf = XLSX.write(book, { bookType: 'xlsx', type: 'array' })
+    // XLSX.write()'s return is any in the library's own types — cast to
+    // ArrayBuffer, documented as type: 'array''s real return.
+    const buf = XLSX.write(book, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
 
     const sheets = workbookToSheets(buf, 'hostile.xlsx')
     const [c] = getCharts(cast<ChartSheet[]>(sheets))
@@ -198,7 +200,7 @@ describe('xlsx chart ROUND TRIP (export → import restores the charts)', () => 
     const book = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['A'], [1]]), 'Sheet1')
     XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet([['hello', 'world'], [1, 2]]), CHART_META_SHEET)
-    const buf = XLSX.write(book, { bookType: 'xlsx', type: 'array' })
+    const buf = XLSX.write(book, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
     const sheets = workbookToSheets(buf, 'other.xlsx')
     expect(getCharts(cast<ChartSheet[]>(sheets))).toHaveLength(0)
     // Not our schema → it stays a normal worksheet rather than vanishing.
