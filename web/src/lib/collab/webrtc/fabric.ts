@@ -83,6 +83,14 @@ export type FabricData = string | Blob | ArrayBuffer | ArrayBufferView<ArrayBuff
 /** Peer connection lifecycle states dispatched on the 'state' event. */
 export type PeerConnState = 'connecting' | 'connected' | 'relay' | 'disconnected'
 
+/** Detail of the 'message' CustomEvent (see the class doc comment above).
+ * `data` is deliberately `unknown`, not `FabricData`: on the direct
+ * RTCDataChannel path it is literally DOM's MessageEvent.data (typed `any`
+ * upstream); on the relay-fallback path it is a JSON field this class never
+ * interprets. Every caller layers its own op/frame shape on top — same
+ * "any-returning boundary" as the CRDT remoteOp events (see grid.ts). */
+export type FabricMessageDetail = { from: string; data: unknown }
+
 /**
  * The signaling-transport surface FabricClient depends on — implemented by
  * both SignalingClient (host-box WebSocket) and RendezvousSignalingClient
@@ -374,12 +382,17 @@ export class FabricClient extends EventTarget {
       })
     }
     this._signaling.addEventListener('signal', (ev) => {
-      this._onSignal((ev as CustomEvent<{ from: string, payload: SignalPayload }>).detail)
+      // _onSignal wraps every awaited call in its own try/catch
+      // (console.error on failure) for the 'offer'/'answer'/'ice' branches —
+      // the only branch that isn't is 'join' -> _initiatePeer, which is
+      // itself fully try/catch'd. Void is documentation, not concealment.
+      void this._onSignal((ev as CustomEvent<{ from: string, payload: SignalPayload }>).detail)
     })
     this._signaling.addEventListener('signaling-open', () => {
       // Re-offer to any existing peers after a reconnect.
       for (const [id, ps] of this._peers) {
-        if (ps.state === 'disconnected') this._initiatePeer(id)
+        // _initiatePeer catches its own errors (console.error) past _buildPC.
+        if (ps.state === 'disconnected') void this._initiatePeer(id)
       }
     })
     this._signaling.addEventListener('signaling-close', () => {
@@ -389,7 +402,12 @@ export class FabricClient extends EventTarget {
 
   // ─── Public API ────────────────────────────────────────────────────────────
 
-  /** Connect to the fabric session.  Resolves once signaling is up. */
+  /** Connect to the fabric session. Resolves once ICE + key setup is done and
+   * the signaling connect has been KICKED OFF — not once signaling is actually
+   * up (see useCollabFabric.ts's doc comment: this is deliberate fire-and-
+   * forget so a deployment with no peering backend still resolves join() and
+   * lets the caller derive its own connected-state from the 'state' event /
+   * 'signaling-open', rather than join() itself hanging or rejecting). */
   async join(): Promise<void> {
     this._iceServers = await this._fetchICE()
     // Generate the deposit signing key up front so its public key is available
@@ -401,7 +419,10 @@ export class FabricClient extends EventTarget {
     // Publish the one-time-prekey pool so peers can CLAIM a per-sender OPK for
     // full forward secrecy (best-effort; v2 still works signed-prekey-only).
     this._publishPreKeys().catch(() => { /* server may not host the endpoint */ })
-    this._signaling.connect()
+    // Fire-and-forget by design (see the doc comment above) — connect() is
+    // void on the host-box WebSocket transport and Promise<void> on the
+    // rendezvous transport; either way this function does not wait for it.
+    void this._signaling.connect()
   }
 
   /** Broadcast a message to all connected peers. */
@@ -591,7 +612,7 @@ export class FabricClient extends EventTarget {
         console.warn('[fabric] oversized data-channel payload from', remoteId, '— dropped')
         return
       }
-      this.dispatchEvent(new CustomEvent('message', { detail: { from: remoteId, data } }))
+      this.dispatchEvent(new CustomEvent<FabricMessageDetail>('message', { detail: { from: remoteId, data } }))
     })
 
     dc.addEventListener('close', () => {
@@ -750,7 +771,8 @@ export class FabricClient extends EventTarget {
   /** Start polling the relay pickup endpoint for any peers in relay mode. */
   private _startRelayPolling(): void {
     if (this._relayPollTimer) return
-    this._relayPollTimer = setInterval(() => this._relayPoll(), RELAY_POLL_MS)
+    // _relayPoll catches its own errors (console.warn) — see its try/catch.
+    this._relayPollTimer = setInterval(() => { void this._relayPoll() }, RELAY_POLL_MS)
   }
 
   private async _relayPoll(): Promise<void> {
@@ -1252,7 +1274,7 @@ export class FabricClient extends EventTarget {
         body: JSON.stringify({ identity_vula_id: toPeerId }),
       })
       if (!res || !res.ok) return null
-      return await res.json()
+      return (await res.json()) as PreKeyClaimResult
     } catch {
       return null
     }
@@ -1275,8 +1297,9 @@ export class FabricClient extends EventTarget {
       else if (data instanceof ArrayBuffer) ps.dc.send(data)
       else ps.dc.send(data)
     } else if (ps.state === 'relay') {
-      // Relay path: encode and deposit.
-      this._relayDeposit(ps.id, data)
+      // Relay path: encode and deposit. _relayDeposit catches its own errors
+      // (console.warn) — see its try/catch.
+      void this._relayDeposit(ps.id, data)
     }
     // 'connecting' / 'disconnected' → silently drop (caller should buffer).
   }
