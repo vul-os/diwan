@@ -260,7 +260,7 @@ export default function Verify() {
 
         {/* Upload form */}
         {!result && (
-          <form onSubmit={handleVerify} className="animate-fade-in">
+          <form onSubmit={(e) => void handleVerify(e)} className="animate-fade-in">
             <Card variant="raised" className="p-6 space-y-5">
 
               {/* Drop zone — warm paper, single accent on hover */}
