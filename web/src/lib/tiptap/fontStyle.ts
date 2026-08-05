@@ -30,6 +30,7 @@ const SIZE_UNIT_RE = /^\d+(\.\d+)?(pt|px|em|rem|%)$/
  */
 export function normalizeFontSize(value: unknown): string | null {
   if (value == null) return null
+  if (typeof value !== 'string' && typeof value !== 'number') return null
   const v = String(value).trim()
   if (!v) return null
   if (SIZE_UNIT_RE.test(v)) return v
@@ -45,6 +46,7 @@ export function normalizeFontSize(value: unknown): string | null {
  */
 export function sanitizeFontFamily(value: unknown): string | null {
   if (value == null) return null
+  if (typeof value !== 'string' && typeof value !== 'number') return null
   const v = String(value).trim()
   if (!v) return null
   if (/[;<>{}]/.test(v)) return null
