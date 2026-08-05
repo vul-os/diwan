@@ -128,7 +128,14 @@ export class ExcalidrawYBinding {
     this.onRemoteFiles = this.onRemoteFiles.bind(this)
     this.handleChange = this.handleChange.bind(this)
 
+    // VERIFIED SAFE: unbound-method flags these as method-typed references,
+    // but the two lines above already rebound them onto the instance — the
+    // rule's static analysis doesn't track that same-property reassignment,
+    // it only sees "a method's type used as a value". Passing the (already
+    // bound) instance property is exactly the fix this rule asks for.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     this.yElements.observeDeep(this.onRemoteElements)
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     this.yFiles.observe(this.onRemoteFiles)
   }
 
@@ -212,7 +219,12 @@ export class ExcalidrawYBinding {
 
   destroy(): void {
     this.disposed = true
+    // Same VERIFIED SAFE reasoning as the constructor above — these are the
+    // already-bound instance properties, unobserving the exact function
+    // references that were passed to observe()/observeDeep() above.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     this.yElements.unobserveDeep(this.onRemoteElements)
+    // eslint-disable-next-line @typescript-eslint/unbound-method
     this.yFiles.unobserve(this.onRemoteFiles)
   }
 }
