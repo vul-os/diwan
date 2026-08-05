@@ -24,6 +24,14 @@
 import { test, expect } from './fixtures.js'
 import { installBackend } from './fixtures.js'
 
+// The hostile-import test below sets this from injected markup IF the sanitiser
+// fails closed; the assertion is that it never fires.
+declare global {
+  interface Window {
+    __pwned?: number
+  }
+}
+
 // A 1×1 transparent PNG — an allow-listed raster image (wave-57 embed path).
 // Base64 body (no data: prefix) so we can both build a File to feed the picker
 // and reason about the resulting data: URI.
