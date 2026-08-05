@@ -20,6 +20,15 @@ async function reload(log: UpdateLogTransport): Promise<Y.Doc> {
   return ydoc
 }
 
+// VERIFIED TOOL DISAGREEMENT: yjs's Y.Text really does override toString() to
+// return its plain-text content (confirmed in dist/yjs.cjs) — the effect
+// SharedType text editing depends on — but the hand-written YText.d.ts (built
+// from JSDoc, not the source class) never declares that override, so its
+// apparent type inherits Object's. no-base-to-string can't see the runtime
+// override; centralised here instead of disabling per call site.
+// eslint-disable-next-line @typescript-eslint/no-base-to-string
+const ytext = (doc: Y.Doc, name: string): string => doc.getText(name).toString()
+
 describe('UpdateLogSync convergence', () => {
   it('two clients diverge offline → both append → reload converges byte-identical', async () => {
     const log = createMemoryUpdateLog()
@@ -62,7 +71,7 @@ describe('UpdateLogSync convergence', () => {
 
     // And nothing was discarded — both edits survive on both reloads.
     for (const doc of [a2, b2]) {
-      const text = doc.getText('t').toString()
+      const text = ytext(doc, 't')
       expect(text).toContain('AAA')
       expect(text).toContain('BBB')
       expect(doc.getMap('m').get('a')).toBe(1)
@@ -96,7 +105,7 @@ describe('UpdateLogSync convergence', () => {
 
     // A brand-new client reconstructs the document from snapshot + tail.
     const fresh = await reload(log)
-    expect(fresh.getText('t').toString()).toBe('hello world')
+    expect(ytext(fresh, 't')).toBe('hello world')
     expect(Array.from(Y.encodeStateAsUpdate(fresh)))
       .toEqual(Array.from(Y.encodeStateAsUpdate(docA)))
   })
@@ -124,13 +133,16 @@ describe('UpdateLogSync convergence', () => {
     await syncB.stop()
 
     const fresh = await reload(log)
-    expect(fresh.getText('t').toString()).toBe('base+more')
+    expect(ytext(fresh, 't')).toBe('base+more')
   })
 
   it('hydrate disables cleanly when the server has no update log (404)', async () => {
     const failing: UpdateLogTransport = {
-      load: async () => { const e: UpdateLogTransportError = Object.assign(new Error('not found'), { status: 404 }); throw e },
-      append: async () => { throw new Error('should not be called') },
+      // No await: both throw synchronously; UpdateLogSync's own await'd calls
+      // to load/append are already inside a try/catch, so a sync throw lands
+      // in the same place a rejected Promise would.
+      load: () => { const e: UpdateLogTransportError = Object.assign(new Error('not found'), { status: 404 }); throw e },
+      append: () => { throw new Error('should not be called') },
     }
     const ydoc = new Y.Doc()
     const sync = new UpdateLogSync({ ydoc, transport: failing })
