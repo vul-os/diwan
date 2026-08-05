@@ -102,7 +102,9 @@ export function playAnimationsOn(
   anims: readonly SlideAnimation[] | null | undefined,
 ): () => void {
   const targets = Array.isArray(els) ? els.filter((e): e is HTMLElement => Boolean(e)) : []
-  const list = Array.isArray(anims) ? [...anims].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)) : []
+  // Array.isArray narrows a `readonly T[]` to `any[]`, not `T[]` — name the
+  // real element type explicitly.
+  const list = Array.isArray(anims) ? [...(anims as SlideAnimation[])].sort((a, b) => (a.order ?? 0) - (b.order ?? 0)) : []
   if (targets.length === 0 || list.length === 0) return () => {}
 
   const reduced = prefersReducedMotion()
