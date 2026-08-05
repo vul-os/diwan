@@ -310,12 +310,14 @@ export default function PDFEditor(_props: PDFEditorProps) {
       sessionStorage.removeItem('pendingPDF')
       try {
         const { name, url, data } = JSON.parse(pending) as { name?: string; url?: string; data?: string }
+        // loadPDF/loadPDFFromUrl each wrap their whole body in try/catch/finally
+        // and toast on failure — never reject.
         if (url) {
-          loadPDFFromUrl(url, name)
+          void loadPDFFromUrl(url, name)
         } else if (data) {
           const bytes = Uint8Array.from(atob(data), c => c.charCodeAt(0))
           const file = new File([bytes], name as string, { type: 'application/pdf' })
-          loadPDF(file)
+          void loadPDF(file)
         }
       } catch (e) {
         console.error('Failed to load pending PDF', e)
@@ -323,18 +325,18 @@ export default function PDFEditor(_props: PDFEditorProps) {
       return
     }
     const { localFileUrl, localFileName } = (location.state as { localFileUrl?: string; localFileName?: string } | null) || {}
-    if (localFileUrl) loadPDFFromUrl(localFileUrl, localFileName)
+    if (localFileUrl) void loadPDFFromUrl(localFileUrl, localFileName)
   }, [])
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files![0]) loadPDF(e.target.files![0])
+    if (e.target.files![0]) void loadPDF(e.target.files![0])
   }
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     setDragOver(false)
     const file = e.dataTransfer.files[0]
-    if (file) loadPDF(file)
+    if (file) void loadPDF(file)
   }
 
   // ─── Render Page ──────────────────────────────────────────
@@ -347,31 +349,45 @@ export default function PDFEditor(_props: PDFEditorProps) {
     const origPageNum = pageOrder.length > 0 ? pageOrder[displaySlot - 1] : displaySlot
     if (!origPageNum || origPageNum < 1) return
 
-    const page = await pdfJsDoc.getPage(origPageNum)
-    const extraRot = pageRotations[displaySlot] || 0
-    const viewport = page.getViewport({ scale, rotation: (page.rotate + extraRot) % 360 })
+    try {
+      const page = await pdfJsDoc.getPage(origPageNum)
+      const extraRot = pageRotations[displaySlot] || 0
+      const viewport = page.getViewport({ scale, rotation: (page.rotate + extraRot) % 360 })
 
-    canvas.width = viewport.width
-    canvas.height = viewport.height
-    if (drawCanvas) {
-      drawCanvas.width = viewport.width
-      drawCanvas.height = viewport.height
+      canvas.width = viewport.width
+      canvas.height = viewport.height
+      if (drawCanvas) {
+        drawCanvas.width = viewport.width
+        drawCanvas.height = viewport.height
+      }
+
+      const ctx = canvas.getContext('2d')!
+      await page.render({ canvasContext: ctx, viewport }).promise
+
+      redrawPaths(displaySlot, drawCanvas)
+    } catch (err) {
+      // BUG FIX: this had no try/catch at all. pdf.js's render().promise
+      // REJECTS with a RenderingCancelledException whenever a newer render
+      // call supersedes this one on the same canvas — which a fast page-flip
+      // or zoom drag does routinely (this effect re-fires on every
+      // currentPage/zoom change) — so this was an unhandled promise rejection
+      // on ordinary interaction, not just a theoretical failure. The
+      // superseding call already redraws the canvas correctly, so silently
+      // dropping the stale one is correct; only log anything unexpected.
+      if (!(err instanceof Error) || err.name !== 'RenderingCancelledException') {
+        console.warn('[pdf] page render failed:', err)
+      }
     }
-
-    const ctx = canvas.getContext('2d')!
-    await page.render({ canvasContext: ctx, viewport }).promise
-
-    redrawPaths(displaySlot, drawCanvas)
   }, [pdfJsDoc, pageOrder, pageRotations])
 
   useEffect(() => {
-    if (pdfJsDoc) renderPage(currentPage, zoom)
+    if (pdfJsDoc) void renderPage(currentPage, zoom)
   }, [pdfJsDoc, currentPage, zoom, renderPage])
 
   useEffect(() => {
     if (!pdfJsDoc || pageOrder.length === 0) return
     for (let i = 1; i <= pageOrder.length; i++) {
-      renderThumbnail(i)
+      void renderThumbnail(i) // catches its own errors
     }
   }, [pdfJsDoc, pageOrder, pageRotations])
 
@@ -383,7 +399,8 @@ export default function PDFEditor(_props: PDFEditorProps) {
   useEffect(() => {
     if (!pdfJsDoc || pageOrder.length === 0) { setFormFieldsByPage({}); return }
     let cancelled = false
-    ;(async () => {
+    // Each page's own try/catch (below) means this never rejects.
+    void (async () => {
       const byPage: Record<string, FormField[]> = {}
       for (let slot = 1; slot <= pageOrder.length; slot++) {
         const orig = pageOrder[slot - 1]
@@ -566,6 +583,15 @@ export default function PDFEditor(_props: PDFEditorProps) {
     }))
   }
 
+  // BUG FIX: this had no error handling at all (unlike its sibling
+  // insertPDFPage right below, which does) — a pdf-lib failure while building
+  // the blank page would have been an unhandled rejection with no feedback on
+  // a direct button click. Caught at the call site (not with an internal
+  // try/catch) rather than restructuring the body: wrapping this function's
+  // own statements in a try/catch made react-hooks/purity misidentify the
+  // Date.now() call below as render-phase impurity — verified by removing
+  // just the try/catch, which cleared it — even though this function only
+  // ever runs from an event handler, never during render.
   const insertBlankPage = async (afterSlot: number) => {
     if (!pdfJsDoc) return
     const blankId = -(Date.now())
@@ -774,7 +800,7 @@ export default function PDFEditor(_props: PDFEditorProps) {
     setAnnotations(prev => {
       const next = { ...prev }
       for (const key of Object.keys(next)) {
-        next[key] = next[key].map(a => a.id === id ? ({ ...a, ...changes } as Annotation) : a)
+        next[key] = next[key].map(a => a.id === id ? { ...a, ...changes } : a)
       }
       return next
     })
@@ -923,15 +949,23 @@ export default function PDFEditor(_props: PDFEditorProps) {
 
   const applySig = async () => {
     let imageData: string | null = null
-    if (sigTab === 'draw') {
-      if (!sigPadRef.current || sigPadRef.current.isEmpty()) {
-        showToast('Please draw your signature first')
-        return
+    try {
+      if (sigTab === 'draw') {
+        if (!sigPadRef.current || sigPadRef.current.isEmpty()) {
+          showToast('Please draw your signature first')
+          return
+        }
+        imageData = sigPadRef.current.toDataURL('image/png')
+      } else {
+        if (!typedName.trim()) { showToast('Please type your name'); return }
+        imageData = await renderTypedSig(typedName.trim(), sigFont)
       }
-      imageData = sigPadRef.current.toDataURL('image/png')
-    } else {
-      if (!typedName.trim()) { showToast('Please type your name'); return }
-      imageData = await renderTypedSig(typedName.trim(), sigFont)
+    } catch (e) {
+      // renderTypedSig can reject if a 2D canvas context is unavailable —
+      // this had no handling, so that would have been an unhandled rejection
+      // on a direct "Apply signature" click.
+      showToast('Could not render signature: ' + (e as Error).message)
+      return
     }
 
     if (saveToLib) {
@@ -968,11 +1002,18 @@ export default function PDFEditor(_props: PDFEditorProps) {
   const fitPage = async () => {
     if (!pdfJsDoc) return
     const area = canvasAreaRef.current!
-    const page = await pdfJsDoc.getPage(currentPage)
-    const vp = page.getViewport({ scale: 1 })
-    const sw = (area.clientWidth - 80) / vp.width
-    const sh = (area.clientHeight - 80) / vp.height
-    setZoom(Math.round(Math.min(sw, sh, 2) * 10) / 10)
+    try {
+      const page = await pdfJsDoc.getPage(currentPage)
+      const vp = page.getViewport({ scale: 1 })
+      const sw = (area.clientWidth - 80) / vp.width
+      const sh = (area.clientHeight - 80) / vp.height
+      setZoom(Math.round(Math.min(sw, sh, 2) * 10) / 10)
+    } catch (err) {
+      // BUG FIX: getPage() can reject (same as renderPage above) and this had
+      // no handling at all — a direct button click, so a failure here used
+      // to be a silent no-op with an unhandled rejection in the console.
+      console.warn('[pdf] fit page failed:', err)
+    }
   }
 
   // ─── Navigate pages ───────────────────────────────────────
@@ -1138,7 +1179,7 @@ export default function PDFEditor(_props: PDFEditorProps) {
         leading={
           <>
             <Tooltip label="Back">
-              <IconButton size="sm" onClick={() => navigate(-1)}>
+              <IconButton size="sm" onClick={() => void navigate(-1)}>
                 <ArrowLeft size={15} />
               </IconButton>
             </Tooltip>
@@ -1179,7 +1220,7 @@ export default function PDFEditor(_props: PDFEditorProps) {
                   </IconButton>
                 </Tooltip>
                 <Tooltip label="Fit page">
-                  <IconButton size="sm" onClick={fitPage}>
+                  <IconButton size="sm" onClick={() => void fitPage()}>
                     <Maximize2 size={13} />
                   </IconButton>
                 </Tooltip>
@@ -1198,7 +1239,7 @@ export default function PDFEditor(_props: PDFEditorProps) {
               <Button
                 variant="primary"
                 size="sm"
-                onClick={() => navigate('/signing-setup', { state: { localFileUrl: filename ? undefined : null, pdfReady: true } })}
+                onClick={() => void navigate('/signing-setup', { state: { localFileUrl: filename ? undefined : null, pdfReady: true } })}
               >
                 <FileSignature size={13} /> Prepare to Sign
               </Button>
@@ -1207,7 +1248,7 @@ export default function PDFEditor(_props: PDFEditorProps) {
               <Button
                 variant="secondary"
                 size="sm"
-                onClick={savePDF}
+                onClick={() => void savePDF()}
               >
                 <Download size={13} /> Download
               </Button>
@@ -1246,7 +1287,7 @@ export default function PDFEditor(_props: PDFEditorProps) {
               <Button
                 variant={filledPages[currentPage] ? 'secondary' : 'primary'}
                 size="sm"
-                onClick={fillCurrentPageFields}
+                onClick={() => void fillCurrentPageFields()}
                 disabled={!!filledPages[currentPage]}
               >
                 <FileSignature size={13} />
@@ -1374,7 +1415,11 @@ export default function PDFEditor(_props: PDFEditorProps) {
                   variant="secondary"
                   size="sm"
                   className="flex-1"
-                  onClick={() => insertBlankPage(currentPage)}
+                  onClick={() => {
+                    insertBlankPage(currentPage).catch((e: unknown) => {
+                      showToast('Could not insert blank page: ' + (e as Error).message)
+                    })
+                  }}
                   title="Insert blank page after current"
                 >
                   <FilePlus size={12} /> Blank
@@ -1850,7 +1895,7 @@ export default function PDFEditor(_props: PDFEditorProps) {
 
             <div className="px-5 py-3 border-t border-line bg-bg-elev2 flex items-center justify-end gap-2">
               <Button variant="secondary" size="sm" onClick={closeSigModal}>Cancel</Button>
-              <Button variant="primary" size="sm" onClick={applySig}>Apply signature</Button>
+              <Button variant="primary" size="sm" onClick={() => void applySig()}>Apply signature</Button>
             </div>
           </div>
         </div>
@@ -1871,7 +1916,7 @@ export default function PDFEditor(_props: PDFEditorProps) {
         className="hidden"
         onChange={e => {
           const f = e.target.files![0]
-          if (f) insertPDFPage(f, currentPage)
+          if (f) void insertPDFPage(f, currentPage)
           e.target.value = ''
         }}
       />
