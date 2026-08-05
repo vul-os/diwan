@@ -152,10 +152,12 @@ export default function AccountShareModal({ open, onClose, file, me = '', onSwit
     }
   }, [fileId])
 
-  useEffect(() => { if (open) refresh() }, [open, refresh])
+  useEffect(() => { if (open) void refresh() }, [open, refresh])
   // Warm the reachable-base cache so shareLinkUrl() (a sync render path) can
   // prefer Office's public origin over a LAN-only window.location.origin.
-  useEffect(() => { if (open) resolveReachableBase() }, [open])
+  // resolveReachableBase never rejects (reachableBase.ts falls back to
+  // window.location.origin on any failure).
+  useEffect(() => { if (open) void resolveReachableBase() }, [open])
 
   // Ownership drives whether the mutating controls are shown. When the roster
   // records no owner (legacy/local single-user file), treat the caller as the
@@ -248,7 +250,7 @@ export default function AccountShareModal({ open, onClose, file, me = '', onSwit
 
         {/* Add a collaborator (owner only) */}
         {isOwner && (
-          <form className="flex items-stretch gap-2" onSubmit={addCollaborator}>
+          <form className="flex items-stretch gap-2" onSubmit={(e) => void addCollaborator(e)}>
             <div className="flex-1 min-w-0">
               <Input
                 value={email}
@@ -314,8 +316,8 @@ export default function AccountShareModal({ open, onClose, file, me = '', onSwit
                   role={c.role}
                   isMe={c.account_id === me}
                   editable={isOwner && !busy}
-                  onChangeRole={(r: string) => changeRole(c.account_id, r)}
-                  onRevoke={() => revoke(c.account_id)}
+                  onChangeRole={(r: string) => void changeRole(c.account_id, r)}
+                  onRevoke={() => void revoke(c.account_id)}
                 />
               ))
             )}
@@ -456,7 +458,7 @@ function ShareLinksSection({ fileId, onError, showToast }: ShareLinksSectionProp
     }
   }, [fileId, onError])
 
-  useEffect(() => { refresh() }, [refresh])
+  useEffect(() => { void refresh() }, [refresh])
 
   const mint = async () => {
     setMinting(true)
@@ -537,7 +539,7 @@ function ShareLinksSection({ fileId, onError, showToast }: ShareLinksSectionProp
             <option key={o.seconds} value={o.seconds}>{o.label}</option>
           ))}
         </select>
-        <Button variant="secondary" size="sm" onClick={mint} disabled={minting}>
+        <Button variant="secondary" size="sm" onClick={() => void mint()} disabled={minting}>
           {minting ? <Loader2 size={13} className="animate-spin" /> : <Link2 size={13} />}
           Create link
         </Button>
@@ -574,7 +576,7 @@ function ShareLinksSection({ fileId, onError, showToast }: ShareLinksSectionProp
               </div>
               {mintedUrls[l.id] && (
                 <button
-                  onClick={() => copy(l)}
+                  onClick={() => void copy(l)}
                   aria-label="Copy link URL"
                   title="Copy link"
                   className="p-1 rounded-sm text-ink-faint hover:text-accent hover:bg-accent-tint focus:outline-none focus-visible:shadow-focus"
@@ -583,7 +585,7 @@ function ShareLinksSection({ fileId, onError, showToast }: ShareLinksSectionProp
                 </button>
               )}
               <button
-                onClick={() => revoke(l.id)}
+                onClick={() => void revoke(l.id)}
                 aria-label="Revoke link"
                 title="Revoke link"
                 className="p-1 rounded-sm text-ink-faint hover:text-danger hover:bg-danger-bg focus:outline-none focus-visible:shadow-focus"
@@ -662,7 +664,7 @@ function TransferOwnershipSection({ collaborators, onTransfer, busy }: TransferO
         </Modal.Body>
         <Modal.Footer>
           <Button variant="secondary" size="md" onClick={() => setConfirming(false)}>Cancel</Button>
-          <Button variant="primary" size="md" onClick={doTransfer}>
+          <Button variant="primary" size="md" onClick={() => void doTransfer()}>
             <ArrowRightLeft size={13} /> Transfer ownership
           </Button>
         </Modal.Footer>
