@@ -25,7 +25,7 @@ function openDB(): Promise<IDBDatabase> {
       }
     }
     req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error)
+    req.onerror = () => reject(req.error ?? new Error('draftStore: indexedDB.open failed'))
   })
 }
 
@@ -33,14 +33,22 @@ function openDB(): Promise<IDBDatabase> {
 export async function writeDraft(id: string, name: string, content: unknown): Promise<void> {
   try {
     const db = await openDB()
-    return new Promise((resolve, reject) => {
+    // MUST `await` the inner Promise here, not just `return` it: a bare
+    // `return new Promise(...)` hands the (still-pending) promise back to the
+    // caller and this function's own execution — and its enclosing try —
+    // completes immediately. A later `tx.onerror` rejection then fires with no
+    // frame left to catch it, so it propagates to the CALLER uncaught, exactly
+    // contradicting this catch block's "silently ignore" comment. Awaiting
+    // keeps the rejection inside this function's own try/catch.
+    await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite')
       tx.objectStore(STORE_NAME).put({ id, name, content, ts: Date.now() })
       tx.oncomplete = () => resolve()
-      tx.onerror = () => reject(tx.error)
+      tx.onerror = () => reject(tx.error ?? new Error('draftStore: writeDraft transaction failed'))
     })
   } catch {
-    // IndexedDB unavailable — silently ignore so we don't block saves
+    // IndexedDB unavailable (or the transaction itself failed) — silently
+    // ignore so we don't block saves.
   }
 }
 
@@ -48,11 +56,12 @@ export async function writeDraft(id: string, name: string, content: unknown): Pr
 export async function clearDraft(id: string): Promise<void> {
   try {
     const db = await openDB()
-    return new Promise((resolve, reject) => {
+    // See writeDraft's comment: must await, or tx.onerror rejects uncaught.
+    await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite')
       tx.objectStore(STORE_NAME).delete(id)
       tx.oncomplete = () => resolve()
-      tx.onerror = () => reject(tx.error)
+      tx.onerror = () => reject(tx.error ?? new Error('draftStore: clearDraft transaction failed'))
     })
   } catch {
     // ignore
@@ -63,11 +72,12 @@ export async function clearDraft(id: string): Promise<void> {
 export async function readDraft(id: string): Promise<Draft | null> {
   try {
     const db = await openDB()
-    return new Promise((resolve, reject) => {
+    // See writeDraft's comment: must await, or req.onerror rejects uncaught.
+    return await new Promise<Draft | null>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readonly')
       const req = tx.objectStore(STORE_NAME).get(id)
-      req.onsuccess = () => resolve(req.result || null)
-      req.onerror = () => reject(req.error)
+      req.onsuccess = () => resolve((req.result as Draft | undefined) || null)
+      req.onerror = () => reject(req.error ?? new Error('draftStore: readDraft transaction failed'))
     })
   } catch {
     return null
