@@ -124,10 +124,12 @@ export function importCSVFile(file: File, delimiter = ','): Promise<CsvSheet> {
     reader.onload = (e) => {
       try {
         const result = e.target?.result
-        const sheet = csvToSheet(String(result ?? ''), file.name.replace(/\.csv$/i, ''), delimiter)
+        // readAsText always yields a string result (never ArrayBuffer).
+        const text = typeof result === 'string' ? result : ''
+        const sheet = csvToSheet(text, file.name.replace(/\.csv$/i, ''), delimiter)
         resolve(sheet)
       } catch (err) {
-        reject(err)
+        reject(err instanceof Error ? err : new Error(String(err)))
       }
     }
     reader.onerror = () => reject(new Error('Failed to read file'))
@@ -145,7 +147,7 @@ export function sheetsToCSV(sheet: CsvSourceSheet): string {
     if (r > maxR) maxR = r
     if (c > maxC) maxC = c
   }
-  const grid: string[][] = Array.from({ length: maxR + 1 }, () => new Array(maxC + 1).fill(''))
+  const grid: string[][] = Array.from({ length: maxR + 1 }, () => new Array<string>(maxC + 1).fill(''))
   for (const { r, c, v } of cells) {
     if (!v) continue
     const val = typeof v === 'object' ? (v.v !== undefined ? v.v : (v.m ?? '')) : v
