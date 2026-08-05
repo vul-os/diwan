@@ -176,7 +176,7 @@ export default function WhiteboardEditor() {
       if (origin === SEED_ORIGIN) return
       markDirty(id as string)
       clearTimeout(saveTimer.current)
-      saveTimer.current = setTimeout(() => doSave(), AUTOSAVE_DELAY_MS)
+      saveTimer.current = setTimeout(() => { void doSave() }, AUTOSAVE_DELAY_MS)
     }
     ctx.ydoc.on('update', onUpdate)
     return () => { ctx.ydoc.off('update', onUpdate); clearTimeout(saveTimer.current) }
@@ -214,7 +214,7 @@ export default function WhiteboardEditor() {
     setTitle(v)
     markDirty(id as string)
     clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => doSave(), AUTOSAVE_DELAY_MS)
+    saveTimer.current = setTimeout(() => { void doSave() }, AUTOSAVE_DELAY_MS)
   }
 
   const startShare = async () => {
@@ -240,7 +240,7 @@ export default function WhiteboardEditor() {
       <Topbar
         leading={
           <Tooltip label="Back to Whiteboards">
-            <IconButton size="sm" onClick={() => navigate('/whiteboards')}>
+            <IconButton size="sm" onClick={() => void navigate('/whiteboards')}>
               <ArrowLeft size={15} />
             </IconButton>
           </Tooltip>
@@ -321,7 +321,7 @@ export default function WhiteboardEditor() {
             </Tooltip>
             {collabEnabled && !p2p.readOnly && (
               <Tooltip label="Collaborate via end-to-end-encrypted link">
-                <IconButton size="sm" active={showShare} onClick={startShare}>
+                <IconButton size="sm" active={showShare} onClick={() => void startShare()}>
                   <Share2 size={14} />
                 </IconButton>
               </Tooltip>
@@ -351,7 +351,16 @@ export default function WhiteboardEditor() {
         links={p2p.links}
         roomId={p2p.roomId}
         unavailable={p2p.peeringUnavailable}
-        onRotate={p2p.rotate}
+        onRotate={() => {
+          // BUG FIX (same class as DocsEditor's onRotate — see its commit):
+          // p2p.rotate() (== startShare()) genuinely rejects (collab
+          // disabled, document not ready, no reachable peering transport).
+          // This call site had no catch at all — an unhandled rejection with
+          // no feedback on a transient failure.
+          p2p.rotate().catch((err: unknown) => {
+            console.warn('[p2p] rotate failed:', (err as Error)?.message)
+          })
+        }}
       />
 
       {/* MIT attribution — the whiteboard is built on the Excalidraw editor. */}
