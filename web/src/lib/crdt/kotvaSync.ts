@@ -104,8 +104,14 @@ async function wasmBytes(): Promise<ArrayBuffer | Buffer> {
   if (isNode()) {
     const nodeModule = 'node:module'
     const nodeFs = 'node:fs/promises'
-    const { createRequire } = await import(/* @vite-ignore */ nodeModule)
-    const { readFile } = await import(/* @vite-ignore */ nodeFs)
+    // A variable module specifier (needed so bundlers targeting the browser
+    // never see these Node built-ins at all) can't be statically resolved by
+    // TS either, so both dynamic imports come back `any` — name the two
+    // functions this code actually calls instead of letting that propagate.
+    const { createRequire } = await import(/* @vite-ignore */ nodeModule) as
+      { createRequire: (path: string) => { resolve: (id: string) => string } }
+    const { readFile } = await import(/* @vite-ignore */ nodeFs) as
+      { readFile: (path: string) => Promise<Buffer> }
     const require = createRequire(import.meta.url)
     return readFile(require.resolve('@vul-os/kotva-sync/kotva_sync_bg.wasm'))
   }
