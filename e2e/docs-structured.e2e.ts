@@ -25,10 +25,14 @@ import { test, expect } from './fixtures.js'
 import { installBackend } from './fixtures.js'
 
 // The hostile-import test below sets this from injected markup IF the sanitiser
-// fails closed; the assertion is that it never fires.
+// fails closed; the assertion is that it never fires. Typed as `number | boolean`
+// because different e2e specs' hostile fixtures set it differently (this file
+// increments a counter; e2e/import-open.e2e.ts sets a bare `true`) — it's one
+// ambient Window property shared across the whole tsc program, so every
+// `declare global` augmentation of it must agree on the same type.
 declare global {
   interface Window {
-    __pwned?: number
+    __pwned?: number | boolean
   }
 }
 
