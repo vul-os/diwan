@@ -12,8 +12,8 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { OpLogSync, type OpLogSyncOptions } from '../opLogSync.js'
 import { createMemoryUpdateLog, type UpdateLogTransportError } from '../updateLog.js'
-import { GridSession } from '../../crdt/grid.js'
-import { TreeSession, ordKeyBetween } from '../../crdt/tree.js'
+import { GridSession, type GridLocalOpDetail } from '../../crdt/grid.js'
+import { TreeSession, ordKeyBetween, type TreeLocalOpDetail } from '../../crdt/tree.js'
 
 // A fresh, unique session/replica id per call so localStorage (jsdom) and LWW
 // opIds never collide across sessions or tests.
@@ -29,7 +29,7 @@ type LogAdapter = Pick<OpLogSyncOptions, 'subscribeLocal' | 'applyOp' | 'applySn
 function gridAdapter(session: GridSession): LogAdapter {
   return {
     subscribeLocal: (cb) => {
-      const h = (e: Event) => cb((e as CustomEvent).detail.op)
+      const h = (e: Event) => cb((e as CustomEvent<GridLocalOpDetail>).detail.op)
       session.addEventListener('localOp', h)
       return () => session.removeEventListener('localOp', h)
     },
@@ -42,7 +42,7 @@ function gridAdapter(session: GridSession): LogAdapter {
 function treeAdapter(session: TreeSession): LogAdapter {
   return {
     subscribeLocal: (cb) => {
-      const h = (e: Event) => cb((e as CustomEvent).detail.op)
+      const h = (e: Event) => cb((e as CustomEvent<TreeLocalOpDetail>).detail.op)
       session.addEventListener('localOp', h)
       return () => session.removeEventListener('localOp', h)
     },
@@ -219,8 +219,12 @@ describe('OpLogSync tree convergence (Slides)', () => {
 
   it('hydrate disables cleanly when the server has no update log (404)', async () => {
     const failing: OpLogSyncOptions['transport'] = {
-      load: async () => { const e: UpdateLogTransportError = new Error('not found'); e.status = 404; throw e },
-      append: async () => { throw new Error('should not be called') },
+      // No await needed: both throw synchronously, and opLogSync.ts's own
+      // `await this._t.load(0)` / `await this._t.append(...)` call sites are
+      // already inside a try/catch, so the exception lands in the same place
+      // whether it arrives via a rejected Promise or a synchronous throw.
+      load: () => { const e: UpdateLogTransportError = new Error('not found'); e.status = 404; throw e },
+      append: () => { throw new Error('should not be called') },
     }
     const s = new GridSession({ sessionId: uid('grid'), replicaId: uid('rep'), fabricClient: null })
     const sync = new OpLogSync({ transport: failing, ...gridAdapter(s), debounceMs: 0 })
