@@ -34,7 +34,7 @@ import REVEAL_JS_URL from 'reveal.js/dist/reveal.js?url'
 const PRESENTER_REVEAL_THEMES = import.meta.glob(
   '/node_modules/reveal.js/dist/theme/*.css',
   { query: '?url', import: 'default', eager: true },
-) as Record<string, string>
+)
 
 function presenterThemeUrl(name: string | undefined): string {
   const key = `/node_modules/reveal.js/dist/theme/${name || 'black'}.css`
