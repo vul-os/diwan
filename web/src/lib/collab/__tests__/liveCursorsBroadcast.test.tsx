@@ -13,7 +13,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
 import { useLiveCursors } from '../webrtc/useLiveCursors.js'
-import type { FabricLike, FabricMessageEvent, LocalIdentity } from '../webrtc/useLiveCursors.js'
+import type { FabricLike, LocalIdentity, CursorPayload } from '../webrtc/useLiveCursors.js'
 
 // FakeFabric is a DOM EventTarget — structurally the same shape as FabricLike,
 // but TS's class-implements check doesn't reconcile EventTarget's generic
@@ -24,7 +24,7 @@ class FakeFabric extends EventTarget {
   sent: string[] = []
   send(frame: string) { this.sent.push(frame) }
   emitMessage(payload: unknown) {
-    this.dispatchEvent(new CustomEvent('message', { detail: { data: JSON.stringify(payload) } }) as FabricMessageEvent)
+    this.dispatchEvent(new CustomEvent('message', { detail: { data: JSON.stringify(payload) } }))
   }
 }
 const asFabric = (f: FakeFabric): FabricLike => f as unknown as FabricLike
@@ -34,8 +34,11 @@ const ME: LocalIdentity = { accountId: 'me', displayName: 'Me' }
 beforeEach(() => { vi.useFakeTimers() })
 afterEach(() => { vi.useRealTimers() })
 
-function parseSent(fabric: FakeFabric) {
-  return fabric.sent.map((f) => JSON.parse(f))
+// The wire shape useLiveCursors.js's own comment documents: { channel, payload }.
+type CursorFrame = { channel: string; payload: CursorPayload }
+
+function parseSent(fabric: FakeFabric): CursorFrame[] {
+  return fabric.sent.map((f) => JSON.parse(f) as CursorFrame)
 }
 
 describe('useLiveCursors — sheet cursor broadcast', () => {
