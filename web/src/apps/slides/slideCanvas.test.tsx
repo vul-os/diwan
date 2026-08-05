@@ -196,8 +196,13 @@ describe('animation playback (P1)', () => {
     // matchMedia is a WebIDL platform-object method (same class as
     // registerProtocolHandler/RTCDataChannel.send elsewhere in this fleet) —
     // bind it to window before holding it bare, so the restored reference
-    // below is never a detached, receiver-less call.
-    const prior = window.matchMedia.bind(window)
+    // below is never a detached, receiver-less call. jsdom itself does not
+    // implement matchMedia (slideAnimations.ts's own prefersReducedMotion
+    // guards with `typeof window.matchMedia === 'function'` for exactly this
+    // reason), so window.matchMedia is undefined here outside of the stub
+    // this test installs below — optional-chain the bind so that undefined
+    // case round-trips through the finally block instead of throwing.
+    const prior = window.matchMedia?.bind(window)
     window.matchMedia = (q: string) => ({
       matches: q.includes('reduce'), media: q, onchange: null, addListener() {}, removeListener() {},
       addEventListener() {}, removeEventListener() {}, dispatchEvent() { return false },
