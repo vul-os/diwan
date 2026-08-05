@@ -162,7 +162,8 @@ function HeadingSelector({ editor }: EditorProp) {
 // FontFamilySelector
 // ---------------------------------------------------------------------------
 function FontFamilySelector({ editor }: EditorProp) {
-  const currentFamily = editor.getAttributes('textStyle').fontFamily || ''
+  const currentFamilyRaw: unknown = editor.getAttributes('textStyle').fontFamily
+  const currentFamily = typeof currentFamilyRaw === 'string' ? currentFamilyRaw : ''
   const currentLabel = FONT_FAMILIES.find((f) => f.value === currentFamily)?.label || 'Font'
 
   return (
@@ -203,7 +204,8 @@ function FontFamilySelector({ editor }: EditorProp) {
 // FontSizeSelector
 // ---------------------------------------------------------------------------
 function FontSizeSelector({ editor }: EditorProp) {
-  const currentSize = editor.getAttributes('textStyle').fontSize || ''
+  const currentSizeRaw: unknown = editor.getAttributes('textStyle').fontSize
+  const currentSize = typeof currentSizeRaw === 'string' ? currentSizeRaw : ''
   const numericSize = currentSize ? parseInt(currentSize) : ''
   const [customVal, setCustomVal] = useState('')
 
@@ -742,7 +744,10 @@ export default function DocsToolbar({
             <UrlPopover
               label="Link URL"
               submitLabel="Apply"
-              initialValue={editor.getAttributes('link').href || ''}
+              initialValue={(() => {
+                const href: unknown = editor.getAttributes('link').href
+                return typeof href === 'string' ? href : ''
+              })()}
               onSubmit={(url) => {
                 editor.chain().focus().extendMarkRange('link').setLink({ href: url, target: '_blank' }).run()
                 setLinkOpen(false)
@@ -920,11 +925,24 @@ export default function DocsToolbar({
             }
             wide
           >
-            <MenuItem onClick={() => exportToDocx(editor, title, { pageSetup, headerFooter })}>
+            <MenuItem onClick={() => {
+              // BUG FIX: neither exportToDocx nor exportToOdt has any error
+              // handling of its own (no try/catch, and this file has no
+              // toast/error-surface infra) — a docx/odt-library failure on
+              // malformed content was an unhandled rejection with the Export
+              // menu just silently doing nothing. Minimal safety net.
+              exportToDocx(editor, title, { pageSetup, headerFooter }).catch((err: unknown) => {
+                console.error('[docs] DOCX export failed:', err)
+              })
+            }}>
               <span className="text-2xs font-bold tracking-eyebrow text-accent w-9">DOCX</span>
               Word document
             </MenuItem>
-            <MenuItem onClick={() => exportToOdt(editor, title)}>
+            <MenuItem onClick={() => {
+              exportToOdt(editor, title).catch((err: unknown) => {
+                console.error('[docs] ODT export failed:', err)
+              })
+            }}>
               <span className="text-2xs font-bold tracking-eyebrow text-success w-9">ODT</span>
               OpenDocument text
             </MenuItem>
@@ -954,7 +972,7 @@ export default function DocsToolbar({
           accept="image/png,image/jpeg,image/gif,image/webp"
           className="hidden"
           aria-hidden="true"
-          onChange={handleImageUpload}
+          onChange={(e) => void handleImageUpload(e)}
         />
       </div>
 
@@ -987,7 +1005,8 @@ export default function DocsToolbar({
 function ImageSubMenu({ editor }: EditorProp) {
   const attrs = editor.getAttributes('image')
   const setAttr = (patch: Record<string, unknown>) => editor.chain().focus().updateAttributes('image', patch).run()
-  const align = attrs.align || 'left'
+  const align = typeof attrs.align === 'string' ? attrs.align : 'left'
+  const alt = typeof attrs.alt === 'string' ? attrs.alt : ''
   return (
     <div className="flex items-center gap-1 px-3 py-1.5 border-t border-line bg-bg-elev2 text-xs animate-slide-in-left">
       <span className="mono-label mr-1.5">Image</span>
@@ -1032,7 +1051,7 @@ function ImageSubMenu({ editor }: EditorProp) {
           type="text"
           className="h-6 px-2 w-40 rounded border border-line bg-paper text-xs"
           placeholder="Describe image"
-          value={attrs.alt || ''}
+          value={alt}
           onChange={(e) => setAttr({ alt: e.target.value })}
           aria-label="Image alt text"
         />
