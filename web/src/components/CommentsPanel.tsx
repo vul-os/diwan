@@ -96,6 +96,13 @@ function ReplyItem({ reply, fileId, commentId, authorId, collaborators = [], onD
       const store = getCommentStore(fileId)
       store.editReply(commentId, reply.id, draft.trim())
       setEditing(false)
+    } catch (err) {
+      // BUG FIX: try/finally with no catch — a network failure here (and in
+      // every sibling action below: delete reply, add reply, resolve/reopen,
+      // delete comment, save comment edit, assign) rejected uncaught and left
+      // the user with no idea the edit never saved (busy just cleared via
+      // finally, editing stayed open, nothing else changed).
+      console.error('updateReply failed', err)
     } finally {
       setBusy(false)
     }
@@ -108,6 +115,8 @@ function ReplyItem({ reply, fileId, commentId, authorId, collaborators = [], onD
       const store = getCommentStore(fileId)
       store.deleteReply(commentId, reply.id)
       onDeleted(reply.id)
+    } catch (err) {
+      console.error('deleteReply failed', err)
     } finally {
       setBusy(false)
     }
@@ -139,7 +148,7 @@ function ReplyItem({ reply, fileId, commentId, authorId, collaborators = [], onD
           />
           <div className="flex gap-1">
             <button
-              onClick={handleSave}
+              onClick={() => void handleSave()}
               disabled={busy}
               className="px-2 py-0.5 text-2xs bg-accent text-white rounded-xs hover:bg-accent-hover disabled:opacity-60 transition-colors focus-visible:outline-none focus-visible:shadow-focus"
             >
@@ -159,7 +168,7 @@ function ReplyItem({ reply, fileId, commentId, authorId, collaborators = [], onD
       {isOwn && !editing && (
         <div className="flex gap-2">
           <button onClick={() => setEditing(true)} className="text-2xs text-accent hover:underline rounded-sm focus-visible:outline-none focus-visible:shadow-focus">Edit</button>
-          <button onClick={handleDelete} disabled={busy} className="text-2xs text-danger/80 hover:text-danger rounded-sm focus-visible:outline-none focus-visible:shadow-focus">Delete</button>
+          <button onClick={() => void handleDelete()} disabled={busy} className="text-2xs text-danger/80 hover:text-danger rounded-sm focus-visible:outline-none focus-visible:shadow-focus">Delete</button>
         </div>
       )}
     </div>
@@ -210,6 +219,8 @@ function CommentItem({ item, fileId, authorId, collaborators = [], onUpdated, on
       store.addReply(item.id, authorId, body)
       setReplies((prev) => [...prev, r])
       setReplyDraft('')
+    } catch (err) {
+      console.error('createReply failed', err)
     } finally {
       setBusy(false)
     }
@@ -223,6 +234,8 @@ function CommentItem({ item, fileId, authorId, collaborators = [], onUpdated, on
       store.resolve(item.id)
       onUpdated({ ...item, ...updated })
       onChange?.()
+    } catch (err) {
+      console.error('resolve comment failed', err)
     } finally {
       setBusy(false)
     }
@@ -236,6 +249,8 @@ function CommentItem({ item, fileId, authorId, collaborators = [], onUpdated, on
       store.reopen(item.id)
       onUpdated({ ...item, ...updated })
       onChange?.()
+    } catch (err) {
+      console.error('reopen comment failed', err)
     } finally {
       setBusy(false)
     }
@@ -248,6 +263,8 @@ function CommentItem({ item, fileId, authorId, collaborators = [], onUpdated, on
       await api.deleteComment(fileId, item.id)
       onDeleted(item.id)
       onChange?.()
+    } catch (err) {
+      console.error('deleteComment failed', err)
     } finally {
       setBusy(false)
     }
@@ -264,6 +281,8 @@ function CommentItem({ item, fileId, authorId, collaborators = [], onUpdated, on
       onUpdated({ ...item, ...updated })
       onChange?.()
       setEditing(false)
+    } catch (err) {
+      console.error('updateComment (edit) failed', err)
     } finally {
       setBusy(false)
     }
@@ -280,6 +299,8 @@ function CommentItem({ item, fileId, authorId, collaborators = [], onUpdated, on
       const updated = await api.updateComment(fileId, item.id, { assignee: acct }) as Partial<PanelComment>
       onUpdated({ ...item, ...updated })
       onChange?.()
+    } catch (err) {
+      console.error('assign comment failed', err)
     } finally {
       setBusy(false)
     }
@@ -363,7 +384,7 @@ function CommentItem({ item, fileId, authorId, collaborators = [], onUpdated, on
               />
               <div className="flex gap-1.5">
                 <button
-                  onClick={handleSaveEdit}
+                  onClick={() => void handleSaveEdit()}
                   disabled={busy}
                   className="px-2.5 py-1 text-xs bg-accent text-white rounded-sm hover:bg-accent-hover disabled:opacity-60 transition-colors focus-visible:outline-none focus-visible:shadow-focus"
                 >
@@ -404,7 +425,7 @@ function CommentItem({ item, fileId, authorId, collaborators = [], onUpdated, on
               <MentionInput
                 value={replyDraft}
                 onChange={setReplyDraft}
-                onEnter={handleReply}
+                onEnter={() => void handleReply()}
                 collaborators={collaborators}
                 rows={1}
                 placeholder="Reply…"
@@ -412,7 +433,7 @@ function CommentItem({ item, fileId, authorId, collaborators = [], onUpdated, on
                 className="w-full text-xs bg-paper border border-line rounded-sm px-2 py-1 resize-none outline-none focus:border-accent focus:shadow-focus transition-colors min-h-[28px]"
               />
               <button
-                onClick={handleReply}
+                onClick={() => void handleReply()}
                 disabled={!replyDraft.trim() || busy}
                 aria-label="Post reply"
                 className="p-1.5 bg-accent text-white rounded-sm hover:bg-accent-hover disabled:opacity-40 flex-shrink-0 transition-colors focus-visible:outline-none focus-visible:shadow-focus"
@@ -426,7 +447,7 @@ function CommentItem({ item, fileId, authorId, collaborators = [], onUpdated, on
           <div className="flex items-center gap-3 pt-0.5 flex-wrap">
             {isResolved ? (
               <button
-                onClick={handleReopen}
+                onClick={() => void handleReopen()}
                 disabled={busy}
                 className="flex items-center gap-1 text-2xs text-ink-faint hover:text-accent transition-colors rounded-sm focus-visible:outline-none focus-visible:shadow-focus"
               >
@@ -434,7 +455,7 @@ function CommentItem({ item, fileId, authorId, collaborators = [], onUpdated, on
               </button>
             ) : (
               <button
-                onClick={handleResolve}
+                onClick={() => void handleResolve()}
                 disabled={busy}
                 className="flex items-center gap-1 text-2xs text-success hover:text-accent-press transition-colors rounded-sm focus-visible:outline-none focus-visible:shadow-focus"
               >
@@ -460,7 +481,7 @@ function CommentItem({ item, fileId, authorId, collaborators = [], onUpdated, on
                     {item.assignee && (
                       <li>
                         <button
-                          onClick={() => handleAssign('')}
+                          onClick={() => void handleAssign('')}
                           className="w-full text-left px-2.5 py-1 text-ink-muted hover:bg-bg-elev2 rounded-sm"
                         >
                           Unassign
@@ -473,7 +494,7 @@ function CommentItem({ item, fileId, authorId, collaborators = [], onUpdated, on
                     {collaborators.map((p) => (
                       <li key={p.account_id}>
                         <button
-                          onClick={() => handleAssign(p.account_id)}
+                          onClick={() => void handleAssign(p.account_id)}
                           className={[
                             'w-full text-left px-2.5 py-1 hover:bg-bg-elev2 rounded-sm truncate',
                             item.assignee === p.account_id ? 'text-accent font-medium' : 'text-ink',
@@ -496,7 +517,7 @@ function CommentItem({ item, fileId, authorId, collaborators = [], onUpdated, on
                   Edit
                 </button>
                 <button
-                  onClick={handleDelete}
+                  onClick={() => void handleDelete()}
                   disabled={busy}
                   className="flex items-center gap-0.5 text-2xs text-danger/80 hover:text-danger transition-colors rounded-sm focus-visible:outline-none focus-visible:shadow-focus"
                 >
@@ -542,7 +563,7 @@ export default function CommentsPanel({ fileId, anchorCtx, authorId = 'You', onC
       .then((items) => {
         const store = getCommentStore(fileId)
         store.loadFromServer(items as Parameters<typeof store.loadFromServer>[0])
-        setComments(store.list() as PanelComment[])
+        setComments(store.list())
       })
       .catch(console.error)
       .finally(() => setLoading(false))
@@ -569,7 +590,7 @@ export default function CommentsPanel({ fileId, anchorCtx, authorId = 'You', onC
       await api.createComment(fileId, anchor, authorId, body, mentions)
       const store = getCommentStore(fileId)
       store.addComment(anchor, authorId, body)
-      setComments(store.list() as PanelComment[])
+      setComments(store.list())
       setNewBody('')
       onChange?.()
     } catch (err) {
@@ -656,14 +677,14 @@ export default function CommentsPanel({ fileId, anchorCtx, authorId = 'You', onC
           textareaRef={textareaRef}
           value={newBody}
           onChange={setNewBody}
-          onEnter={handleAdd}
+          onEnter={() => void handleAdd()}
           collaborators={collaborators}
           rows={2}
           placeholder="Add a comment…"
           className="w-full text-sm bg-bg-elev2 border border-line rounded-sm px-2 py-1.5 resize-none outline-none focus:border-accent focus:shadow-focus focus:bg-paper transition-colors"
         />
         <button
-          onClick={handleAdd}
+          onClick={() => void handleAdd()}
           disabled={!newBody.trim() || busy}
           className="w-full h-7 text-xs font-medium bg-accent text-white rounded-sm hover:bg-accent-hover disabled:opacity-50 transition-colors tracking-tightish focus-visible:outline-none focus-visible:shadow-focus"
         >
