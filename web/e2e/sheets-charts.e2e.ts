@@ -167,9 +167,17 @@ test.describe('Sheets chart wizard (wave-54) — real-browser insert flow', () =
 
     // The title was a form string → stored as plain data. No markup was parsed,
     // no handler fired, and the editor is still live.
+    //
+    // The real signal is the closure-scoped `pwned` flag above, flipped only if
+    // the exposed `__pwn()` bridge is actually invoked from the page. (A prior
+    // revision of this test also asserted `window.__pwned` here, but the
+    // injected payload calls `window.__pwn()`, not a `window.__pwned` property
+    // assignment — nothing ever sets `window.__pwned`, so that expectation was
+    // always vacuously true regardless of whether the injection fired. Removed
+    // rather than re-added: do not restore a `window.__pwned` check in this
+    // test without first exposing/assigning that exact property from the page.)
     await page.waitForTimeout(300)
     expect(pwned).toBe(false)
-    expect(await page.evaluate(() => window.__pwned)).toBeFalsy()
     await expect(page.getByRole('status').first()).toBeVisible()
   })
 })
