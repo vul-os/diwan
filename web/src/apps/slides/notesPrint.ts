@@ -11,7 +11,8 @@
 
 export function escapeNotesHtml(s: unknown): string {
   const map: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
-  return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => map[c])
+  const str = typeof s === 'string' || typeof s === 'number' || typeof s === 'boolean' ? String(s) : ''
+  return str.replace(/[&<>"']/g, (c) => map[c])
 }
 
 interface NotesPrintSlide {
