@@ -199,7 +199,8 @@ export class RendezvousSignalingClient extends EventTarget {
     })
     // Surface the core's verified `signal` events to FabricClient unchanged.
     this._core.addEventListener('signal', (ev) => {
-      this.dispatchEvent(new CustomEvent('signal', { detail: (ev as CustomEvent).detail }))
+      const detail = (ev as CustomEvent<{ from: string, payload: SignalPayload }>).detail
+      this.dispatchEvent(new CustomEvent('signal', { detail }))
     })
 
     this._peerRdvKey = new Map()
@@ -236,8 +237,10 @@ export class RendezvousSignalingClient extends EventTarget {
       await this._announceAndJoin()
       this._markOpen()
       if (this._pollLoop) {
-        this._loopBoard()
-        this._loopInbox()
+        // Each loop's own try/catch means it never rejects (it runs until
+        // this._stopped, handling its own errors per-iteration).
+        void this._loopBoard()
+        void this._loopInbox()
         this._heartbeatTimer = setInterval(() => {
           this._announceAndJoin().catch(() => { /* retried next tick */ })
         }, HEARTBEAT_MS)
@@ -315,9 +318,9 @@ export class RendezvousSignalingClient extends EventTarget {
   /** Parse a deposited blob's opaque bytes back into { from, rdvKey, payload }. */
   private _unwrap(bytes: Uint8Array): WrappedEnvelope | null {
     try {
-      const obj = JSON.parse(utf8dec.decode(bytes))
+      const obj = JSON.parse(utf8dec.decode(bytes)) as Partial<WrappedEnvelope> | null
       if (!obj || typeof obj !== 'object' || !obj.from || !obj.payload) return null
-      return obj
+      return obj as WrappedEnvelope
     } catch { return null }
   }
 
@@ -346,7 +349,7 @@ export class RendezvousSignalingClient extends EventTarget {
       this.dispatchEvent(new CustomEvent('offline', { detail: { attempts: this._reconnectAttempts } }))
     }
     const delay = Math.min(RECONNECT_BASE_MS * 2 ** (this._reconnectAttempts - 1), RECONNECT_MAX_MS)
-    setTimeout(() => { if (!this._stopped) this.connect() }, delay)
+    setTimeout(() => { if (!this._stopped) void this.connect() }, delay)
   }
 
   /** One board poll → discover joins/leaves. Returns the number of blobs seen. */
