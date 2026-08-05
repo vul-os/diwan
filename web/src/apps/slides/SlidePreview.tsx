@@ -8,7 +8,7 @@ import 'reveal.js/dist/reveal.css'
 // All reveal themes bundled as local asset URLs; picked by name below.
 const REVEAL_THEMES = import.meta.glob('/node_modules/reveal.js/dist/theme/*.css', {
   query: '?url', import: 'default', eager: true,
-}) as Record<string, string>
+})
 function revealThemeUrl(name: string | null | undefined): string {
   const key = `/node_modules/reveal.js/dist/theme/${name || 'black'}.css`
   return REVEAL_THEMES[key] || REVEAL_THEMES['/node_modules/reveal.js/dist/theme/black.css']
@@ -71,7 +71,12 @@ export default function SlidePreview({ data, onClose }: { data: PreviewData; onC
       animCleanupRef.current = playAnimationsOn(els, slide.animations || [])
     }
 
-    import('reveal.js').then(({ default: RevealCtor }) => {
+    // BUG FIX: neither the dynamic import nor deck.initialize() had any
+    // error handling — a chunk-load failure (offline, a stale cached index
+    // after a deploy) or a reveal.js init error would leave the full-screen
+    // overlay showing nothing, with no console trace and no way to tell
+    // what went wrong beyond "the presentation didn't start".
+    void import('reveal.js').then(({ default: RevealCtor }) => {
       deck = new RevealCtor(containerRef.current as HTMLElement, {
         embedded: true,
         transition: (data.transition || 'slide') as NonNullable<Reveal.Options['transition']>,
@@ -84,12 +89,14 @@ export default function SlidePreview({ data, onClose }: { data: PreviewData; onC
         overview: true,
         center: true,
       })
-      deck.initialize().then(() => {
+      return deck.initialize().then(() => {
         deckRef.current = deck
         // First slide.
         playForSection(deck!.getCurrentSlide?.())
         deck!.on('slidechanged', (ev) => playForSection((ev as Event & { currentSlide?: HTMLElement }).currentSlide))
       })
+    }).catch((err: unknown) => {
+      console.error('[slides] presentation failed to start:', err)
     })
 
     return () => {
