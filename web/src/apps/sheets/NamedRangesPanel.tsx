@@ -58,7 +58,13 @@ export default function NamedRangesPanel({ data, onClose, onChange }: NamedRange
 
   function copyRef(i: number) {
     const ref = refFor(ranges[i])
-    try { navigator.clipboard?.writeText(ref) } catch { /* clipboard blocked — ignore */ }
+    // BUG FIX: writeText() returns a Promise (rejects on permission denial);
+    // the try/catch here only ever caught a synchronous throw from accessing
+    // `navigator.clipboard` itself — the returned promise's rejection was
+    // never awaited or caught, so a denial was an unhandled rejection while
+    // the UI still showed "Copied" regardless (same class of bug as
+    // draftStore.ts's/InstallPrompt.tsx's earlier fixes).
+    try { navigator.clipboard?.writeText(ref).catch(() => { /* clipboard blocked — ignore */ }) } catch { /* clipboard blocked — ignore */ }
     setCopiedIdx(i)
     setTimeout(() => setCopiedIdx((c) => (c === i ? null : c)), 1200)
   }
