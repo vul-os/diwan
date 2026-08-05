@@ -242,8 +242,8 @@ export default function SuggestionPanel({
             key={item.id}
             item={item}
             authorId={authorId}
-            onAccept={handleAccept}
-            onReject={handleReject}
+            onAccept={(item) => void handleAccept(item)}
+            onReject={(item) => void handleReject(item)}
             busy={busy}
           />
         ))}
