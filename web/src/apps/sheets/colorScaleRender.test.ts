@@ -43,8 +43,14 @@ const SHEET: FlowSheet = {
   ],
 }
 const withRules = (...rules: ColorScaleRule[]): FlowSheet => ({ ...SHEET, colorScales: rules })
-const paint = (sheet: FlowSheet, ctx: unknown = {}) =>
-  compute(cast<Context>(ctx), buildNativeConditionFormat(sheet, undefined), flowdata(sheet))
+
+// FS's compute() is declared `(ctx: Context, ruleArr: any, d: CellMatrix): any`
+// in the library's own types — the return is untyped at the source, not by any
+// looseness here. It's documented to return a sparse `"r_c" -> paint` map; cast
+// once at this one call site so every test below reads a typed result.
+type PaintResult = Record<string, { cellColor: string; textColor?: string }>
+const paint = (sheet: FlowSheet, ctx: unknown = {}): PaintResult =>
+  cast<PaintResult>(compute(cast<Context>(ctx), buildNativeConditionFormat(sheet, undefined), flowdata(sheet)))
 
 describe('FS compute() — single-colour rules paint exactly the matched cells', () => {
   it('greaterThan paints only the cell that beats the operand', () => {
