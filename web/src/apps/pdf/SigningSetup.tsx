@@ -233,16 +233,17 @@ export default function SigningSetup() {
           name?: string; url?: string; data?: string; fileId?: string
         }
         if (fid) setFileId(fid)
-        if (url) loadPDFFromUrl(url, name)
+        // loadPDF/loadPDFFromUrl each catch their own errors (toast).
+        if (url) void loadPDFFromUrl(url, name)
         else if (data) {
           const bytes = Uint8Array.from(atob(data), c => c.charCodeAt(0))
-          loadPDF(new File([bytes], name || 'document.pdf', { type: 'application/pdf' }))
+          void loadPDF(new File([bytes], name || 'document.pdf', { type: 'application/pdf' }))
         }
       } catch {}
       return
     }
     const { localFileUrl, localFileName } = state
-    if (localFileUrl) loadPDFFromUrl(localFileUrl, localFileName)
+    if (localFileUrl) void loadPDFFromUrl(localFileUrl, localFileName)
   }, [])
 
   // ── Render page ─────────────────────────────────────────────
@@ -261,13 +262,13 @@ export default function SigningSetup() {
   }, [pdfJsDoc])
 
   useEffect(() => {
-    if (pdfJsDoc) renderPage(currentPage, zoom)
+    if (pdfJsDoc) void renderPage(currentPage, zoom) // catches its own errors
   }, [pdfJsDoc, currentPage, zoom, renderPage])
 
   // Thumbnails
   useEffect(() => {
     if (!pdfJsDoc) return
-    for (let i = 1; i <= totalPages; i++) renderThumbnail(i)
+    for (let i = 1; i <= totalPages; i++) void renderThumbnail(i)
   }, [pdfJsDoc, totalPages])
 
   const renderThumbnail = async (pageNum: number) => {
@@ -431,7 +432,7 @@ export default function SigningSetup() {
         leading={
           <>
             <Tooltip label="Back">
-              <IconButton size="sm" onClick={() => navigate(-1)}>
+              <IconButton size="sm" onClick={() => void navigate(-1)}>
                 <ArrowLeft size={15} />
               </IconButton>
             </Tooltip>
@@ -472,7 +473,7 @@ export default function SigningSetup() {
             <Button
               variant="primary"
               size="sm"
-              onClick={saveEnvelope}
+              onClick={() => void saveEnvelope()}
               disabled={saving || !pdfJsDoc}
             >
               <Save size={13} /> {saving ? 'Saving…' : 'Save envelope'}
@@ -606,7 +607,7 @@ export default function SigningSetup() {
           className="flex-1 overflow-auto bg-bg paper-grain flex flex-col items-center px-8 py-8 relative"
           onDragOver={e => { e.preventDefault(); setDragOver(true) }}
           onDragLeave={() => setDragOver(false)}
-          onDrop={e => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) loadPDF(f) }}
+          onDrop={e => { e.preventDefault(); setDragOver(false); const f = e.dataTransfer.files[0]; if (f) void loadPDF(f) }}
         >
           {!pdfJsDoc ? (
             <div
@@ -887,7 +888,7 @@ export default function SigningSetup() {
                       <input
                         type="number"
                         value={Math.round(selectedField[key])}
-                        onChange={e => updateField(selectedField.id, { [key]: parseFloat(e.target.value) || 0 } as Partial<SigningField>)}
+                        onChange={e => updateField(selectedField.id, { [key]: parseFloat(e.target.value) || 0 })}
                         className="w-full bg-paper border border-line rounded-sm px-2 py-1 text-2xs text-ink outline-none focus:border-accent focus:shadow-focus"
                       />
                     </div>
@@ -994,7 +995,7 @@ export default function SigningSetup() {
         type="file"
         accept=".pdf"
         className="hidden"
-        onChange={e => { if (e.target.files?.[0]) loadPDF(e.target.files[0]); e.target.value = '' }}
+        onChange={e => { if (e.target.files?.[0]) void loadPDF(e.target.files[0]); e.target.value = '' }}
       />
     </div>
   )
