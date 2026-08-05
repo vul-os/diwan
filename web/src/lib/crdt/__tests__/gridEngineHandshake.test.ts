@@ -16,7 +16,7 @@
  */
 
 import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest'
-import { GridSession } from '../grid.js'
+import { GridSession, type GridLocalOpDetail } from '../grid.js'
 import { SubstrateGridSession, initSubstrateSync } from '../substrateGrid.js'
 import {
   GridEngineGuard, ENGINE_LOCAL_LWW, ENGINE_KOTVA_SYNC, HELLO_TYPE,
@@ -234,11 +234,11 @@ describe('a MIXED room: grid.js meets substrateGrid.js', () => {
     const subEvents: EngineMismatch[] = []
 
     const legacy = new GridSession({ sessionId: 'mix', replicaId: 'L', fabricClient: asFabricClient(fLegacy) })
-    legacy.addEventListener('engineMismatch', (e) => legacyEvents.push((e as CustomEvent).detail))
+    legacy.addEventListener('engineMismatch', (e) => legacyEvents.push((e as CustomEvent<EngineMismatch>).detail))
 
     // Constructing the second session sends its hello, which the first sees.
     const sub = new SubstrateGridSession({ sessionId: 'mix', replicaId: 'S', fabricClient: asFabricClient(fSub) })
-    sub.addEventListener('engineMismatch', (e) => subEvents.push((e as CustomEvent).detail))
+    sub.addEventListener('engineMismatch', (e) => subEvents.push((e as CustomEvent<EngineMismatch>).detail))
 
     // Both latched. The legacy peer learned from the substrate peer's opening
     // hello; the substrate peer learned from the legacy peer's reply.
@@ -278,7 +278,7 @@ describe('a MIXED room: grid.js meets substrateGrid.js', () => {
       sessionId: 'log', replicaId: 'S', fabricClient: asFabricClient(new FakeFabric(bus, 'S')),
     })
     const localOps: unknown[] = []
-    sub.addEventListener('localOp', (e) => localOps.push((e as CustomEvent).detail.op))
+    sub.addEventListener('localOp', (e) => localOps.push((e as CustomEvent<GridLocalOpDetail>).detail.op))
 
     sub.setCell(0, 0, 'before')
     expect(localOps).toHaveLength(1)
@@ -295,7 +295,7 @@ describe('a MIXED room: grid.js meets substrateGrid.js', () => {
   it('the legacy peer does the same on its log path', () => {
     const legacy = new GridSession({ sessionId: 'log2', replicaId: 'L', fabricClient: null })
     const localOps: unknown[] = []
-    legacy.addEventListener('localOp', (e) => localOps.push((e as CustomEvent).detail.op))
+    legacy.addEventListener('localOp', (e) => localOps.push((e as CustomEvent<GridLocalOpDetail>).detail.op))
 
     legacy.setCell(0, 0, 'before')
     expect(localOps).toHaveLength(1)
@@ -323,7 +323,7 @@ describe('a peer on a bundle that predates the handshake (sends no hello at all)
     const fSub = new FakeFabric(bus, 'S')
     const sub = new SubstrateGridSession({ sessionId: 'old', replicaId: 'S', fabricClient: asFabricClient(fSub) })
     const events: EngineMismatch[] = []
-    sub.addEventListener('engineMismatch', (e) => events.push((e as CustomEvent).detail))
+    sub.addEventListener('engineMismatch', (e) => events.push((e as CustomEvent<EngineMismatch>).detail))
 
     // A raw old-bundle frame: correct type, correct session, no hello ever sent.
     const oldPeer = new FakeFabric(bus, 'OLD')
