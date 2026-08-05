@@ -76,7 +76,7 @@ export function nextFootnoteId(): string {
  * @returns {Map<string, number>}  id → 1-based number
  */
 export function computeFootnoteOrder(refIds: string[]): Map<string, number> {
-  const map = new Map()
+  const map = new Map<string, number>()
   let n = 0
   for (const id of refIds) {
     if (map.has(id)) continue // a duplicated id keeps its first number
@@ -123,8 +123,8 @@ export function collectFootnoteRefIds(json: unknown): string[] {
     if (!node || typeof node !== 'object') return
     if (Array.isArray(node)) { node.forEach(walk); return }
     const n = node as { type?: unknown; attrs?: { id?: unknown }; content?: unknown }
-    if (n.type === 'footnoteRef' && n.attrs && n.attrs.id) {
-      ids.push(String(n.attrs.id))
+    if (n.type === 'footnoteRef' && n.attrs && typeof n.attrs.id === 'string' && n.attrs.id) {
+      ids.push(n.attrs.id)
     }
     if (Array.isArray(n.content)) n.content.forEach(walk)
   }
@@ -301,13 +301,16 @@ export function scanFootnotes(doc: PMNode): FootnoteScan {
   let listNode: PMNode | null = null
   const itemIds: string[] = []
   doc.descendants((node, pos) => {
-    if (node.type.name === 'footnoteRef' && node.attrs.id) {
-      bodyRefIds.push(node.attrs.id)
+    // node.attrs is ProseMirror's own `{[key: string]: any}` (Attrs) — only
+    // trust a real string id.
+    const id: unknown = node.attrs.id
+    if (node.type.name === 'footnoteRef' && typeof id === 'string' && id) {
+      bodyRefIds.push(id)
     } else if (node.type.name === 'footnotesList') {
       listPos = pos
       listNode = node
-    } else if (node.type.name === 'footnoteItem' && node.attrs.id) {
-      itemIds.push(node.attrs.id)
+    } else if (node.type.name === 'footnoteItem' && typeof id === 'string' && id) {
+      itemIds.push(id)
     }
     return true
   })
@@ -348,21 +351,22 @@ export function ensureFootnoteItem(state: EditorState, tr: Transaction, id: stri
 // inline refs and the list items renumber automatically on any edit.
 // ---------------------------------------------------------------------------
 
-const FN_NUMBER_KEY = new PluginKey('footnoteNumbering')
+const FN_NUMBER_KEY = new PluginKey<DecorationSet>('footnoteNumbering')
 
 function buildNumberDecorations(doc: PMNode) {
   const { bodyRefIds } = scanFootnotes(doc)
   const order = computeFootnoteOrder(bodyRefIds)
   const decos: Decoration[] = []
   doc.descendants((node, pos) => {
-    if (node.type.name === 'footnoteRef' && node.attrs.id) {
-      const num = order.get(node.attrs.id)
+    const id: unknown = node.attrs.id
+    if (node.type.name === 'footnoteRef' && typeof id === 'string' && id) {
+      const num = order.get(id)
       if (num) {
         // Node decoration adds the number as a data attribute the CSS renders.
         decos.push(Decoration.node(pos, pos + node.nodeSize, { 'data-fn-num': String(num) }))
       }
-    } else if (node.type.name === 'footnoteItem' && node.attrs.id) {
-      const num = order.get(node.attrs.id)
+    } else if (node.type.name === 'footnoteItem' && typeof id === 'string' && id) {
+      const num = order.get(id)
       if (num) {
         decos.push(Decoration.node(pos, pos + node.nodeSize, { 'data-fn-num': String(num) }))
       }
@@ -410,7 +414,8 @@ export function createFootnoteSyncPlugin() {
       // Delete orphaned items from the end backwards so positions stay valid.
       const positions: { from: number; to: number }[] = []
       newState.doc.descendants((node, pos) => {
-        if (node.type.name === 'footnoteItem' && toRemove.includes(node.attrs.id)) {
+        const id: unknown = node.attrs.id
+        if (node.type.name === 'footnoteItem' && typeof id === 'string' && toRemove.includes(id)) {
           positions.push({ from: pos, to: pos + node.nodeSize })
         }
         return true
