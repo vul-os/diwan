@@ -126,9 +126,12 @@ function latexAttribute() {
  */
 function makeMathNodeView(displayMode: boolean, tag: string) {
   return ({ node, HTMLAttributes }: NodeViewRendererProps) => {
+    // node.attrs is tiptap's own Record<string, any> — narrow the one field
+    // this view reads before handing it to a string-typed DOM API.
+    const latexStr = (n: PMNode): string => (typeof n.attrs.latex === 'string' ? n.attrs.latex : '')
     const dom = document.createElement(tag)
     dom.className = displayMode ? 'math-block' : 'math-inline'
-    dom.setAttribute('data-latex', node.attrs.latex || '')
+    dom.setAttribute('data-latex', latexStr(node))
     dom.setAttribute('contenteditable', 'false')
     // Copy through merged (safe) HTML attributes so classes/data survive.
     for (const [k, v] of Object.entries(mergeAttributes(HTMLAttributes))) {
@@ -140,7 +143,7 @@ function makeMathNodeView(displayMode: boolean, tag: string) {
       dom,
       update(updatedNode: PMNode) {
         if (updatedNode.type.name !== node.type.name) return false
-        dom.setAttribute('data-latex', updatedNode.attrs.latex || '')
+        dom.setAttribute('data-latex', latexStr(updatedNode))
         paintMath(dom, updatedNode.attrs.latex, displayMode)
         return true
       },
