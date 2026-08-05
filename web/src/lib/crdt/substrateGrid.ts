@@ -148,6 +148,9 @@ function parseCellTarget(target: unknown): { r: number; c: number } | null {
 
 export type SubstrateWireOp = { dsync: 1; b: string }
 
+/** The `localOp` CustomEvent's detail — same naming convention as grid.ts's GridLocalOpDetail. */
+export type SubstrateLocalOpDetail = { op: SubstrateWireOp }
+
 /**
  * The wire form of a substrate op inside an existing Diwan frame.
  *

@@ -20,7 +20,7 @@
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest'
 import { OpLogSync } from '../../collab/opLogSync.js'
 import { createMemoryUpdateLog } from '../../collab/updateLog.js'
-import { SubstrateGridSession, initSubstrateSync } from '../substrateGrid.js'
+import { SubstrateGridSession, initSubstrateSync, type SubstrateLocalOpDetail } from '../substrateGrid.js'
 import type { UpdateLogTransport, UpdateLogFrame } from '../../collab/updateLog.js'
 
 type MemoryLog = UpdateLogTransport & {
@@ -41,7 +41,7 @@ beforeEach(() => {
 function gridAdapter(session: SubstrateGridSession) {
   return {
     subscribeLocal: (cb: (op: unknown) => void) => {
-      const h = (e: Event) => cb((e as CustomEvent).detail.op)
+      const h = (e: Event) => cb((e as CustomEvent<SubstrateLocalOpDetail>).detail.op)
       session.addEventListener('localOp', h)
       return () => session.removeEventListener('localOp', h)
     },
@@ -172,7 +172,7 @@ describe('substrate grid convergence (Sheets on the shared engine)', () => {
 })
 
 describe('substrate grid semantics match the grid.js path', () => {
-  it('clear hides a cell, and a LATER write revives it (LWW, not remove-wins)', async () => {
+  it('clear hides a cell, and a LATER write revives it (LWW, not remove-wins)', () => {
     // This is the reason clearCell maps to an lww-set of a tombstone tag and
     // NOT to the substrate's death certificate (SYNC.md §4.5). A death
     // certificate DOMINATES a later ordinary write, so the second edit below
@@ -190,7 +190,7 @@ describe('substrate grid semantics match the grid.js path', () => {
     expect(cellMap(s)['2,3']).toBe('again')
   })
 
-  it('an empty-string value is distinct from a cleared cell', async () => {
+  it('an empty-string value is distinct from a cleared cell', () => {
     const s = new SubstrateGridSession({
       sessionId: uid('sgrid'), replicaId: uid('rep'), fabricClient: null,
     })
@@ -205,12 +205,12 @@ describe('substrate grid semantics match the grid.js path', () => {
     expect(Object.prototype.hasOwnProperty.call(cellMap(s), '0,1')).toBe(false)
   })
 
-  it('replaying the same op twice is idempotent (dedup by op-id)', async () => {
+  it('replaying the same op twice is idempotent (dedup by op-id)', () => {
     const s = new SubstrateGridSession({
       sessionId: uid('sgrid'), replicaId: uid('rep'), fabricClient: null,
     })
     const ops: unknown[] = []
-    s.addEventListener('localOp', (e) => ops.push((e as CustomEvent).detail.op))
+    s.addEventListener('localOp', (e) => ops.push((e as CustomEvent<SubstrateLocalOpDetail>).detail.op))
     s.setCell(1, 1, 'once')
 
     const before = hex(s.stateRoot())
@@ -236,7 +236,7 @@ describe('substrate grid semantics match the grid.js path', () => {
     expect(cellMap(B.s)['4,4']).toBe('joiner-value')
   })
 
-  it('two replicas that exchange every op reach an identical state root', async () => {
+  it('two replicas that exchange every op reach an identical state root', () => {
     const a = new SubstrateGridSession({
       sessionId: uid('sgrid'), replicaId: uid('repA'), fabricClient: null,
     })
@@ -244,8 +244,8 @@ describe('substrate grid semantics match the grid.js path', () => {
       sessionId: uid('sgrid'), replicaId: uid('repB'), fabricClient: null,
     })
     const aOps: unknown[] = []; const bOps: unknown[] = []
-    a.addEventListener('localOp', (e) => aOps.push((e as CustomEvent).detail.op))
-    b.addEventListener('localOp', (e) => bOps.push((e as CustomEvent).detail.op))
+    a.addEventListener('localOp', (e) => aOps.push((e as CustomEvent<SubstrateLocalOpDetail>).detail.op))
+    b.addEventListener('localOp', (e) => bOps.push((e as CustomEvent<SubstrateLocalOpDetail>).detail.op))
 
     a.setCell(0, 0, 'a1'); a.setCell(0, 1, 'a2'); a.clearCell(0, 1)
     b.setCell(0, 0, 'b1'); b.setCell(1, 1, 'b2')
