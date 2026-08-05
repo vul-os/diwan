@@ -726,7 +726,7 @@ function formatTick(v: number): string {
 }
 
 function truncate(s: unknown, n: number): string {
-  const str = String(s ?? '')
+  const str = typeof s === 'string' || typeof s === 'number' || typeof s === 'boolean' ? String(s) : ''
   return str.length > n ? str.slice(0, n - 1) + '…' : str
 }
 
