@@ -57,7 +57,7 @@ describe('Suggestions (MSW integration)', () => {
     return store.addInsert(3, 3, 'inserted text', 'author')
   }
 
-  it('shows a pending insert suggestion with its change preview', async () => {
+  it('shows a pending insert suggestion with its change preview', () => {
     seedInsert()
     render(<Harness fileId="doc1" />)
     expect(screen.getByText('inserted text')).toBeInTheDocument()
