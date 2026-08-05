@@ -45,7 +45,7 @@ const DOMAIN = {
 export function b64urlEncode(bytes: Uint8Array | ArrayBufferLike): string {
   let bin = ''
   const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes)
-  for (let i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i]!)
+  for (let i = 0; i < arr.length; i++) bin += String.fromCharCode(arr[i])
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
@@ -454,7 +454,8 @@ export class RendezvousClient {
         const b = (await res.json()) as { error?: unknown } | null
         if (b && b.error) reason = b.error
       } catch { /* non-JSON body */ }
-      throw new RelayDepositError(`rendezvous ${op} failed: ${res.status} ${reason}`, {
+      const reasonStr = typeof reason === 'string' ? reason : JSON.stringify(reason)
+      throw new RelayDepositError(`rendezvous ${op} failed: ${res.status} ${reasonStr}`, {
         code: 'RENDEZVOUS_' + op.toUpperCase(),
         status: res.status,
       })
