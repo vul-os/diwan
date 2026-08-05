@@ -10,7 +10,7 @@ import { test, expect } from './fixtures.js'
 
 test.describe('Slides import honesty E2E', () => {
   test('shows the import-loss banner and restates it in the export menu', async ({ officePage: page }) => {
-    const pageErrors = []
+    const pageErrors: string[] = []
     page.on('pageerror', (e) => pageErrors.push(e.message))
 
     await page.goto('/slides/deck1')
