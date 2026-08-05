@@ -15,13 +15,14 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import SheetsFindReplace, { collectCells, findMatches, applyReplace } from '../../apps/sheets/SheetsFindReplace.jsx'
+import SheetsFindReplace, { collectCells, findMatches, applyReplace, type FRSheet } from '../../apps/sheets/SheetsFindReplace.jsx'
 import ConnectionPill from '../../components/ConnectionPill.jsx'
 import { deriveStatusPill, countLivePeers } from '../../lib/collab/presenceCommon.js'
 
-// FortuneSheet cell shape as this test reads it back — SheetsFindReplace.jsx
-// (apps/sheets, not yet converted) has no declared types, so TS can't always
-// carry a concrete element type through its collectCells/applyReplace helpers.
+// FortuneSheet cell shape as this test reads it back — FRSheet's own
+// FRCellEntry.v is a wide union (FRCellValue | string | number | boolean |
+// null | undefined) that doesn't guarantee the object shape this fixture
+// always uses, so a local, narrower type is cast at the two read sites below.
 interface Cell {
   r: number
   c: number
@@ -60,10 +61,11 @@ describe('Sheets cell edit via Find/Replace (real component + model)', () => {
 
   it('drives an edit through the SheetsFindReplace UI, calling onChange with new data', async () => {
     const data = makeData()
-    let current = data
-    const onChange = (updater: unknown) => {
-      current = typeof updater === 'function' ? updater(current) : updater
-    }
+    let current: FRSheet[] = data
+    // SheetsFindReplace's real onChange type is (data: FRSheet[]) => void — it
+    // only ever calls onChange(newData) directly, never a setState-style
+    // updater function.
+    const onChange = (newData: FRSheet[]) => { current = newData }
     render(<SheetsFindReplace data={data} onChange={onChange} onClose={() => {}} />)
 
     // Reveal the replace row (toggle button carries aria-pressed).
