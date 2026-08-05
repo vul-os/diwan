@@ -942,7 +942,7 @@ export default function SlidesEditor(_props: SlidesEditorProps) {
       <Topbar
         leading={
           <Tooltip label="Back to Slides">
-            <IconButton size="sm" onClick={() => navigate('/slides')}>
+            <IconButton size="sm" onClick={() => void navigate('/slides')}>
               <ArrowLeft size={15} />
             </IconButton>
           </Tooltip>
@@ -1046,11 +1046,21 @@ export default function SlidesEditor(_props: SlidesEditorProps) {
                 </button>
               }
             >
-              <Menu.Item onClick={handleServerPdfExport}>
+              <Menu.Item onClick={() => void handleServerPdfExport()}>
                 <span className="text-2xs font-bold tracking-eyebrow text-danger w-10">PDF</span>
                 Export as PDF
               </Menu.Item>
-              <Menu.Item onClick={() => exportSlidesToPptx(slidesData, title)}>
+              <Menu.Item onClick={() => {
+                // BUG FIX: exportSlidesToPptx had no error handling at its call
+                // site at all (pptxgenjs's stream()/save() can fail on
+                // malformed slide data) — this file has no toast/error-surface
+                // infra to hook a full user-visible message into, so this is a
+                // minimal safety net (no silent unhandled rejection) rather
+                // than a complete fix; console.error at least leaves a trail.
+                exportSlidesToPptx(slidesData, title).catch((err: unknown) => {
+                  console.error('[slides] PPTX export failed:', err)
+                })
+              }}>
                 <span className="text-2xs font-bold tracking-eyebrow text-accent w-10">PPTX</span>
                 Export as PowerPoint
               </Menu.Item>
@@ -1537,8 +1547,8 @@ export default function SlidesEditor(_props: SlidesEditorProps) {
                     >
                       <span className="flex-1 text-center tabular-nums">
                         {(() => {
-                          const fs = fmtEditor.getAttributes('textStyle').fontSize
-                          return fs ? parseInt(fs) : '—'
+                          const fs: unknown = fmtEditor.getAttributes('textStyle').fontSize
+                          return typeof fs === 'string' && fs ? parseInt(fs) : '—'
                         })()}
                       </span>
                       <ChevronDownIcon size={10} aria-hidden="true" />
@@ -1591,7 +1601,10 @@ export default function SlidesEditor(_props: SlidesEditorProps) {
                   <input
                     type="color"
                     className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
-                    value={fmtEditor.getAttributes('textStyle').color || '#000000'}
+                    value={(() => {
+                      const c: unknown = fmtEditor.getAttributes('textStyle').color
+                      return typeof c === 'string' ? c : '#000000'
+                    })()}
                     onChange={(e) => fmtEditor.chain().focus().setColor(e.target.value).run()}
                     aria-label="Choose text color"
                   />
@@ -1609,7 +1622,10 @@ export default function SlidesEditor(_props: SlidesEditorProps) {
                   <input
                     type="color"
                     className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
-                    value={fmtEditor.getAttributes('highlight').color || '#fef08a'}
+                    value={(() => {
+                      const c: unknown = fmtEditor.getAttributes('highlight').color
+                      return typeof c === 'string' ? c : '#fef08a'
+                    })()}
                     onChange={(e) => fmtEditor.chain().focus().toggleHighlight({ color: e.target.value }).run()}
                     aria-label="Choose highlight color"
                   />
@@ -1669,16 +1685,27 @@ export default function SlidesEditor(_props: SlidesEditorProps) {
                   type="file"
                   accept="image/*"
                   className="hidden"
-                  onChange={async (e) => {
-                    const f = e.target.files?.[0]; if (!f) return
-                    try {
-                      const { url } = await api.uploadImage(f) as { url: string }
-                      insertImageObject(url)
-                    } catch {
-                      const reader = new FileReader()
-                      reader.onload = (ev) => { if (ev.target?.result) insertImageObject(String(ev.target.result)) }
-                      reader.readAsDataURL(f)
-                    }
+                  onChange={(e) => {
+                    const f = e.target.files?.[0]; if (!f) { return }
+                    void (async () => {
+                      try {
+                        const { url } = await api.uploadImage(f) as { url: string }
+                        insertImageObject(url)
+                      } catch {
+                        const reader = new FileReader()
+                        // readAsDataURL always yields a string result (never
+                        // ArrayBuffer — that's readAsArrayBuffer's contract),
+                        // but DOM types result as string | ArrayBuffer | null;
+                        // a typeof check instead of String() means a genuine
+                        // ArrayBuffer would be dropped rather than turned into
+                        // the literal text "[object ArrayBuffer]".
+                        reader.onload = (ev) => {
+                          const result = ev.target?.result
+                          if (typeof result === 'string') insertImageObject(result)
+                        }
+                        reader.readAsDataURL(f)
+                      }
+                    })()
                     e.target.value = ''
                   }}
                 />
