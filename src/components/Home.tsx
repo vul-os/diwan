@@ -118,7 +118,7 @@ export default function Home() {
         <section>
           <p className="mono-label mb-3.5">Start something new</p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {quickStarts.map(({ label, shortLabel, icon: Icon, type }) => {
+            {quickStarts.map(({ label: _label, shortLabel, icon: Icon, type }) => {
               const info = typeInfo[type]
               return (
                 <button

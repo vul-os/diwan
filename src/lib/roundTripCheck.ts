@@ -261,7 +261,7 @@ function checkImageNodeMapping() {
       const buffer = Uint8Array.from(atob(b64), c => c.charCodeAt(0))
       mapped = buffer.length > 0 && ext === 'png'
     }
-  } catch (e) {
+  } catch {
     errored = true
   }
 

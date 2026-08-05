@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import HistoryPanel from '../../components/HistoryPanel'
 import AccountShareModal from '../../components/AccountShareModal.jsx'

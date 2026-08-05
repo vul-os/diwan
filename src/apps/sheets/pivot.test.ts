@@ -5,7 +5,7 @@
  */
 import { describe, it, expect } from 'vitest'
 import {
-  makePivot, getPivots, setPivots, insertPivot, updatePivot, deletePivot,
+  makePivot, getPivots, insertPivot, updatePivot, deletePivot,
   clampPivots, computePivot, sourceTable, pivotHeaders, pivotValuesSignature,
   pivotText, PIVOT_AGGS,
   computePivotModel, pivotPercentColumns, pivotToSheet, dateBucket,

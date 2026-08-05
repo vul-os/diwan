@@ -62,7 +62,7 @@
 // does not trust. Use unguessable session ids for private rooms.
 
 import { SignalingClient, type SignFrameFn, type SignedPreKeyClaim, type SignalPayload } from './signaling.js'
-import { RendezvousClient, RendezvousIdentity, b64urlEncode } from './rendezvous.js'
+import { RendezvousClient, RendezvousIdentity } from './rendezvous.js'
 import { sha256 } from '@noble/hashes/sha2.js'
 
 // Domain-separated seed for the deterministic per-session room identity. Bump the

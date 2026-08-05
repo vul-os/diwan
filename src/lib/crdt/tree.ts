@@ -435,7 +435,7 @@ class TreeCRDT {
         break
       }
       case TREE_OP_MOVE: {
-        let n = this._nodes.get(op.target)
+        const n = this._nodes.get(op.target)
         if (!n) {
           // Buffer node for late-arriving Insert.
           this._nodes.set(op.target, this._newNode({
@@ -482,7 +482,7 @@ class TreeCRDT {
         break
       }
       case TREE_OP_DELETE: {
-        let n = this._nodes.get(op.target)
+        const n = this._nodes.get(op.target)
         if (!n) {
           this._nodes.set(op.target, this._newNode({ id: op.target, deleted: true }))
           return

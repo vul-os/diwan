@@ -14,7 +14,7 @@
  *  10. theme custom override
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import { PRESET_THEMES, getTheme, DECK_TEMPLATES, MASTER_LAYOUTS } from './themes'
 import type { PresenterSlidesData } from './PresenterView.jsx'
@@ -144,7 +144,7 @@ describe('transitions', () => {
   })
 
   it('TransitionPanel calls onChange with updated transition', async () => {
-    const { default: TransitionPanel, SLIDE_TRANSITIONS } = await import('./TransitionPanel.jsx')
+    const { default: TransitionPanel } = await import('./TransitionPanel.jsx')
     const slide = { id: '1', transition: 'none', animations: [] }
     const onChange = vi.fn()
 

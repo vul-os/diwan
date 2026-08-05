@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest'
 import {
   generateInvite, parseInvite, deriveRoomKeys,
   sealFrame, openFrame, bytesToB64url, b64urlToBytes,
-  CAP_RW, CAP_RO,
   type RoomKeys,
 } from '../p2pRoom.js'
 

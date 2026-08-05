@@ -207,7 +207,7 @@ describe('WAVE-61 chart persistence merge', () => {
   })
 
   it('mergeCharts matches by position when the sheet id changed (index #0 fallback)', () => {
-    let prev = insertChart(wb(), { id: 'c1', range: 'A1:B2' })  // no id → positional
+    const prev = insertChart(wb(), { id: 'c1', range: 'A1:B2' })  // no id → positional
     const payload = normalised({}, undefined) // id undefined
     const merged = mergeCharts(payload, chartsBySheetId(prev))
     expect(getCharts(merged)).toHaveLength(1)
@@ -224,7 +224,7 @@ describe('WAVE-61 chart persistence merge', () => {
     let prev = insertChart(wb(), { id: 'old', range: 'A1:B2' })
     prev = prev.map((s, i) => (i === 0 ? { ...s, id: 'sheet_1' } : s))
     // A chart-authoritative payload (e.g. a delete leaving a different set).
-    let payload = insertChart(normalised({}, 'sheet_1'), { id: 'new', range: 'C1:D2' })
+    const payload = insertChart(normalised({}, 'sheet_1'), { id: 'new', range: 'C1:D2' })
     const merged = mergeCharts(payload, chartsBySheetId(prev))
     // The payload's own charts win — the previous 'old' chart is NOT re-added.
     expect(getCharts(merged).map((c) => c.id)).toEqual(['new'])

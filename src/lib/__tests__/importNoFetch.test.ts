@@ -41,7 +41,6 @@ afterEach(() => {
   Object.assign(globalThis, savedGlobals)
 })
 
-const RASTER = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])
 const ODF_NS = [
   'xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0"',
   'xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0"',

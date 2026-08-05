@@ -223,7 +223,7 @@ describe('sanitizer keeps tables but strips injection (wave-14 allow-list)', () 
 // fetch-capable CSS image()/src() functions through. Replaced with a property
 // allow-list. These tests lock the fail-closed contract in place.
 describe('WAVE-53: style allow-list blocks non-url exfil + clickjacking, keeps legit styles', () => {
-  const styleOf = (out: string): string => (out.match(/style="([^"]*)"/) || [, ''])[1] as string
+  const styleOf = (out: string): string => (out.match(/style="([^"]*)"/) || [undefined, ''])[1] as string
 
   it('drops position:fixed / position:absolute (clickjacking overlay)', () => {
     for (const pos of ['fixed', 'absolute']) {

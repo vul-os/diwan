@@ -212,6 +212,7 @@ export function newPivotId(): string {
 export function pivotText(v: unknown, max = 200): string {
   if (v === null || v === undefined) return ''
   let s = typeof v === 'string' ? v : String(v)
+  // eslint-disable-next-line no-control-regex -- deliberately stripping C0/DEL control chars
   s = s.replace(/[\t\n\r]+/g, ' ').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
   if (/^[=+\-@]/.test(s)) s = "'" + s
   if (s.length > max) s = s.slice(0, max - 1) + '…'
@@ -637,7 +638,7 @@ export function computePivotModel(pivot: Pivot, sheet: PivotSheet | null | undef
         : present(raw, spec, si, null, cv))
     })
   }
-  specs.forEach((spec, si) => {
+  specs.forEach((spec, _si) => {
     const raw = aggOf(rowsFor(rowArr, allCvs), spec)
     totRow.push(spec.display === 'raw' ? round(raw) : round(raw ? 100 : 0))
   })

@@ -8,7 +8,7 @@
  * the editor uses, minus TipTap's document mutation.
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { useState } from 'react'
 import SuggestionPanel from '../../components/SuggestionPanel.jsx'

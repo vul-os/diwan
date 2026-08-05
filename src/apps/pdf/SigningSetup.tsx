@@ -4,12 +4,12 @@ import * as pdfjsLib from 'pdfjs-dist'
 import type { PDFDocumentProxy } from 'pdfjs-dist'
 import {
   ArrowLeft, Plus, Trash2, X, Save, ChevronLeft, ChevronRight,
-  User, FileSignature, Type as TypeIcon, Calendar, Pen, AlignLeft,
-  CheckSquare, Square, Upload,
+  User, FileSignature, Calendar, Pen, AlignLeft,
+  CheckSquare, Upload,
   type LucideIcon,
 } from 'lucide-react'
 import { api, type JsonRecord } from '../../lib/api'
-import { Button, IconButton, Input, Card, Tabs, Topbar, Tooltip } from '../../components/ui'
+import { Button, IconButton, Card, Tabs, Topbar, Tooltip } from '../../components/ui'
 
 type FieldKind = 'signature' | 'initial' | 'date' | 'name' | 'text'
 
@@ -109,8 +109,8 @@ export default function SigningSetup() {
   const [pdfJsDoc, setPdfJsDoc]       = useState<PDFDocumentProxy | null>(null)
   const [totalPages, setTotalPages]    = useState(0)
   const [currentPage, setCurrentPage] = useState(1)
-  const [zoom, setZoom]               = useState(1.0)
-  const [filename, setFilename]       = useState('')
+  const [zoom, _setZoom]               = useState(1.0)
+  const [_filename, setFilename]       = useState('')
   const [fileId, setFileId]           = useState<string | null>(null)
   const [envelopeId, setEnvelopeId]   = useState<string | null>(null) // null = new, string = editing
   const [loadingPdf, setLoadingPdf]   = useState(false)
@@ -136,7 +136,7 @@ export default function SigningSetup() {
   const [toast, setToast]           = useState<string | null>(null)
   const [saving, setSaving]         = useState(false)
   const [dragOver, setDragOver]     = useState(false)
-  const [pdfArrayBuffer, setPdfArrayBuffer] = useState<ArrayBuffer | null>(null)
+  const [_pdfArrayBuffer, setPdfArrayBuffer] = useState<ArrayBuffer | null>(null)
 
   const showToast = useCallback((msg: string) => {
     setToast(msg)

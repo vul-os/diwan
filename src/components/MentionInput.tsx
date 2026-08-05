@@ -20,7 +20,7 @@ export interface MentionCollaborator {
 
 // A mention token is @ followed by name chars. We match a trailing partial at
 // the caret to drive the autocomplete popup.
-const TRAILING_MENTION = /(^|\s)@([\w.\-]*)$/
+const TRAILING_MENTION = /(^|\s)@([\w.-]*)$/
 
 // buildMentionRegex escapes a display label so it can be matched literally in
 // the body when resolving which account ids were actually typed.

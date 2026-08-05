@@ -3,7 +3,7 @@
  * Pure-function tests for the custom formula library: correct results, error
  * cases, and the parser-integration seam (install + live evaluate + recalc).
  */
-import { describe, it, expect, beforeAll } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import {
   TEXTJOIN, IFS, SWITCH, XLOOKUP, XMATCH, LET, FILTER, SORT, UNIQUE,
   TEXTBEFORE, TEXTAFTER, TEXTSPLIT, SEQUENCE, SORTBY,

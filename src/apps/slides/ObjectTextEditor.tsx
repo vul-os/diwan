@@ -57,7 +57,7 @@ export default function ObjectTextEditor({ obj, onCommit, onClose, onEditorReady
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }) // eslint-disable-line
+  })
 
   const commit = () => {
     if (!editor) return

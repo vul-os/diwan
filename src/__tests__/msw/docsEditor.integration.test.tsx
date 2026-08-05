@@ -17,9 +17,8 @@
  */
 
 import type { FC } from 'react'
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { renderHook, act } from '@testing-library/react'
 import { useEditor, type Editor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'

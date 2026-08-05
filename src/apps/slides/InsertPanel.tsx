@@ -13,7 +13,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
-import { Image as ImageIcon, Video, Square, Circle as CircleIcon, ArrowRight, X, Upload } from 'lucide-react'
+import { Image as ImageIcon, Video, Square, Circle as CircleIcon, ArrowRight, X } from 'lucide-react'
 import type { Editor } from '@tiptap/react'
 
 interface ShapeDef {

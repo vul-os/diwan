@@ -258,6 +258,7 @@ export function escapeChartText(v: unknown, max = 200): string {
   // Collapse tab/newline to a single space, then drop the remaining C0/DEL
   // control chars so a hostile cell can't smuggle terminal/format sequences.
   s = s.replace(/[\t\n\r]+/g, ' ')
+       // eslint-disable-next-line no-control-regex -- deliberately stripping C0/DEL control chars
        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '')
   // Neutralise a leading formula/command trigger (CSV-injection style guard).
   if (/^[=+\-@]/.test(s)) s = "'" + s

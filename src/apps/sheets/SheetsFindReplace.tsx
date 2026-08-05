@@ -128,7 +128,7 @@ export default function SheetsFindReplace({ data, onChange, onClose }: SheetsFin
   const [matchCase, setMatchCase] = useState(false)
   const [showReplace, setShowReplace] = useState(false)
   const [matchIdx, setMatchIdx]   = useState(0)  // current match index (into matchIndices)
-  const [highlighted, setHighlighted] = useState<{ sheetIdx: number; r: number; c: number } | null>(null)
+  const [_highlighted, setHighlighted] = useState<{ sheetIdx: number; r: number; c: number } | null>(null)
 
   const inputRef = useRef<HTMLInputElement>(null)
 

@@ -45,7 +45,6 @@ interface JSZipEntryWithPrivateData extends JSZip.JSZipObject {
   _data?: { uncompressedSize?: number }
 }
 
-const CHART_MIME = 'application/vnd.oasis.opendocument.chart'
 // A single part larger than this (uncompressed) is not scanned — a belt against a
 // zip-bomb hiding behind the package-level size gate. content.xml for a normal
 // spreadsheet is far smaller.

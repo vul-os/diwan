@@ -21,7 +21,6 @@ import TableHeader from '@tiptap/extension-table-header'
 import { YP2PCollabSession, type SessionFabric } from '../yP2PSession.js'
 import { YCollab } from '../../../apps/docs/collabExtension.js'
 import { createYContext, Y, Y_FRAGMENT, bytesToB64 } from '../ydoc.js'
-import { parseInvite, deriveRoomKeys, openFrame } from '../p2pRoom.js'
 import type { YContext } from '../ydoc.js'
 import type { BoardYContext } from '../boardYdoc.js'
 

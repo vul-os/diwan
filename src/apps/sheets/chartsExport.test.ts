@@ -83,7 +83,7 @@ describe('chart export metadata', () => {
   // into the exported worksheet, or Excel would evaluate it as a live formula
   // (CSV/formula injection). escapeChartText prefixes a quote.
   it('neutralises formula-injection in exported title / axis labels', () => {
-    let data = insertChart(wb(), {
+    const data = insertChart(wb(), {
       id: 'c1', type: 'column', range: 'A1:B3',
       title: '=HYPERLINK("http://evil","click")',
       options: { xAxisLabel: '+SUM(1)', yAxisLabel: '@cmd', legend: true, headerRow: true, headerCol: true },
