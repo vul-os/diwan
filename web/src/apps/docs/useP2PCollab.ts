@@ -217,7 +217,11 @@ export function useP2PCollab({
     const peerId = getOrCreatePeerId()
     const inviteLink = window.location.href
 
-    ;(async () => {
+    // Never rejects: selectCollabTransport and waitForCtx both fail-safe
+    // internally (resolve false/local-only rather than throw), and the one
+    // call that can throw (YP2PCollabSession.fromInvite/.join) has its own
+    // try/catch below.
+    void (async () => {
       // Resolve the three-way transport BEFORE touching the fabric: a
       // standalone server never mounts /api/peering/*, but a configured
       // rendezvous URL still gets a real session — only true local-only fails.
