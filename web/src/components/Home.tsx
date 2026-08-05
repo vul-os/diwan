@@ -11,7 +11,6 @@ import { useLocalFilesStore } from '../store/localFilesStore'
 import type { LocalFileEntry } from '../store/localFilesStore'
 import { importFromUrl } from '../lib/importFile'
 import { timeAgo, formatBytes } from '../lib/format'
-import type { DateInput } from '../lib/format'
 import NewFileModal from './NewFileModal'
 import { Card, Button, Tooltip, useToast, Skeleton, DocThumb } from './ui'
 
@@ -91,8 +90,8 @@ export default function Home() {
   const [showNew, setShowNew] = useState(false)
   const [newType, setNewType] = useState<string | null>(null)
 
-  useEffect(() => { fetchFiles() }, [])
-  useEffect(() => { if (!scanned) scan() }, [scanned])
+  useEffect(() => { void fetchFiles() }, [])
+  useEffect(() => { if (!scanned) void scan() }, [scanned])
 
   const recentFiles = files.filter(f => typeInfo[f.type]).slice(0, 12)
   const visibleLocal = (showLocalAll ? localFiles : localFiles.slice(0, 8)) as HomeLocalFile[]
@@ -176,7 +175,7 @@ export default function Home() {
                 return (
                   <button
                     key={file.id}
-                    onClick={() => navigate(`/${info.route}/${file.id}`)}
+                    onClick={() => void navigate(`/${info.route}/${file.id}`)}
                     className={[
                       'w-full flex items-center gap-3 px-4 py-2.5 text-left group',
                       'hover:bg-bg-hover transition-colors duration-fast ease-out',
@@ -243,7 +242,7 @@ export default function Home() {
             </div>
             <Tooltip label={localLoading ? 'Scanning…' : 'Rescan files'} side="left">
               <button
-                onClick={() => scan()}
+                onClick={() => void scan()}
                 className="flex items-center gap-1.5 font-mono text-2xs uppercase tracking-wide text-ink-faint hover:text-ink-muted transition-colors rounded-sm px-1 -mx-1 focus:outline-none focus-visible:shadow-focus focus-visible:text-ink-muted"
               >
                 <RefreshCw size={12} className={localLoading ? 'animate-spin' : ''} />
@@ -276,7 +275,7 @@ export default function Home() {
                   return (
                     <button
                       key={file.path}
-                      onClick={() => openLocalFile(file, navigate, setImporting, showToast)}
+                      onClick={() => void openLocalFile(file, navigate, setImporting, showToast)}
                       disabled={importing === file.path}
                       className={[
                         'w-full flex items-center gap-3 px-4 py-2.5 text-left group',
@@ -297,7 +296,7 @@ export default function Home() {
                       </div>
                       <div className="flex items-center gap-3 flex-shrink-0 font-mono text-2xs text-ink-faint">
                         <span>{formatBytes(file.size)}</span>
-                        <span>{timeAgo(file.modified as DateInput)}</span>
+                        <span>{timeAgo(file.modified)}</span>
                         <span className={`px-1.5 py-0.5 rounded-sm ${info.bgCn} ${info.iconCn} border border-line font-semibold uppercase text-[9px]`}>
                           {file.ext.slice(1)}
                         </span>
