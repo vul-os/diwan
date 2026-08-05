@@ -164,7 +164,7 @@ function EnvelopeRow({ envelope, onRemind, onCancel, onRefresh }: EnvelopeRowPro
   }, [envelope.id, expanded])
 
   useEffect(() => {
-    if (expanded && !status) loadStatus()
+    if (expanded && !status) void loadStatus()
   }, [expanded, status, loadStatus])
 
   const active = envelope.status !== 'completed'
@@ -255,7 +255,7 @@ function EnvelopeRow({ envelope, onRemind, onCancel, onRefresh }: EnvelopeRowPro
               <Tooltip label="Verify document integrity">
                 <IconButton
                   size="sm"
-                  onClick={onVerify}
+                  onClick={() => void onVerify()}
                   className="hover:bg-accent-tint hover:text-accent"
                 >
                   <ShieldCheck size={13} />
@@ -266,7 +266,7 @@ function EnvelopeRow({ envelope, onRemind, onCancel, onRefresh }: EnvelopeRowPro
           <Tooltip label="Refresh">
             <IconButton
               size="sm"
-              onClick={() => { loadStatus(); onRefresh() }}
+              onClick={() => { void loadStatus(); onRefresh() }}
             >
               <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
             </IconButton>
@@ -377,7 +377,7 @@ export default function EnvelopeDashboard() {
     }
   }, [])
 
-  useEffect(() => { loadEnvelopes() }, [loadEnvelopes])
+  useEffect(() => { void loadEnvelopes() }, [loadEnvelopes])
 
   const handleRemind = useCallback(async (envelopeId: string) => {
     try {
@@ -394,7 +394,7 @@ export default function EnvelopeDashboard() {
     try {
       await api.envelopeCancel(envelopeId)
       showToast('Envelope voided.', 'success')
-      loadEnvelopes()
+      void loadEnvelopes()
     } catch (e) {
       showToast(e instanceof Error ? e.message : 'Failed to cancel envelope', 'error')
     }
@@ -427,7 +427,7 @@ export default function EnvelopeDashboard() {
           <Button
             variant="secondary"
             size="sm"
-            onClick={loadEnvelopes}
+            onClick={() => void loadEnvelopes()}
           >
             <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
             Refresh
@@ -461,9 +461,9 @@ export default function EnvelopeDashboard() {
             <EnvelopeRow
               key={env.id}
               envelope={env}
-              onRemind={handleRemind}
-              onCancel={handleCancel}
-              onRefresh={loadEnvelopes}
+              onRemind={(id) => void handleRemind(id)}
+              onCancel={(id) => void handleCancel(id)}
+              onRefresh={() => void loadEnvelopes()}
             />
           ))}
         </div>
