@@ -116,7 +116,7 @@ export default function AnonDocView() {
     }
   }, [token])
 
-  useEffect(() => { loadMeta() }, [loadMeta])
+  useEffect(() => { void loadMeta() }, [loadMeta])
 
   const submitPassword = async (e?: FormEvent) => {
     e?.preventDefault?.()
@@ -151,13 +151,13 @@ export default function AnonDocView() {
             </div>
             <p className="text-sm text-danger max-w-sm">{error}</p>
             {requiresPassword && (
-              <Button variant="secondary" size="sm" onClick={loadMeta}>Try again</Button>
+              <Button variant="secondary" size="sm" onClick={() => void loadMeta()}>Try again</Button>
             )}
           </div>
         )}
 
         {!loading && requiresPassword && !file && (
-          <form onSubmit={submitPassword} className="max-w-sm mx-auto mt-10 space-y-3 text-center">
+          <form onSubmit={(e) => void submitPassword(e)} className="max-w-sm mx-auto mt-10 space-y-3 text-center">
             <div className="w-12 h-12 rounded-full bg-accent-tint flex items-center justify-center mx-auto">
               <Lock size={20} className="text-accent" />
             </div>
