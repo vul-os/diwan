@@ -77,7 +77,7 @@ test.describe('Serverless (P2P) collab (E2E smoke)', () => {
     await installBackend(page, { role: 'owner' })
 
     // Fail LOUDLY if the app ever calls a server-mediated collab endpoint.
-    const collabRequests = []
+    const collabRequests: string[] = []
     await page.route('**/v1/documents/*/collab/**', (route) => {
       collabRequests.push(route.request().url())
       // Answer 404 so, if a regression reintroduces the call, the app degrades
