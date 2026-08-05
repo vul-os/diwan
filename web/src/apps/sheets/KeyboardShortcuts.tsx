@@ -141,6 +141,10 @@ export function useSheetKeyboardShortcuts({ containerRef, data, onChange, onShow
       e.preventDefault()
       e.stopPropagation()
       if (!navigator.clipboard?.readText) return
+      // BUG FIX: readText() can reject (permission denied, insecure
+      // context) — this had no handling at all, so a denial silently did
+      // nothing with an unhandled rejection in the console. console.warn is
+      // a minimal safety net; this handler has no toast/error-surface infra.
       navigator.clipboard.readText().then(text => {
         if (!text) return
         const addr = getFocusedCellAddress()
@@ -182,6 +186,8 @@ export function useSheetKeyboardShortcuts({ containerRef, data, onChange, onShow
           }
         }
         if (nextData !== data) onChange(nextData)
+      }).catch((err: unknown) => {
+        console.warn('[sheets] paste-values-only failed:', err)
       })
       return
     }
