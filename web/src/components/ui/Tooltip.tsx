@@ -10,7 +10,7 @@
  */
 
 import { cloneElement, isValidElement, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { ReactNode, ReactElement } from 'react'
 import { createPortal } from 'react-dom'
 
 const GAP = 6
@@ -42,16 +42,25 @@ export default function Tooltip({ label, children, side = 'bottom', className = 
   // do NOT touch a child that already has a name via aria-label/-labelledby,
   // a title, or visible text content (overriding visible text would violate
   // WCAG 2.5.3 "Label in Name").
+  // React.ReactElement's `props` is typed `any` upstream — narrow to just
+  // the fields this accessibility check reads.
+  type ChildProps = {
+    children?: unknown
+    'aria-label'?: unknown
+    'aria-labelledby'?: unknown
+    title?: unknown
+  }
+  const childProps = isValidElement(children) ? (children.props as ChildProps) : null
   const hasTextContent =
-    isValidElement(children) &&
-    ['string', 'number'].includes(typeof children.props.children)
+    childProps !== null &&
+    ['string', 'number'].includes(typeof childProps.children)
   const labelledChildren =
-    isValidElement(children) &&
-    !children.props['aria-label'] &&
-    !children.props['aria-labelledby'] &&
-    !children.props.title &&
+    childProps !== null &&
+    !childProps['aria-label'] &&
+    !childProps['aria-labelledby'] &&
+    !childProps.title &&
     !hasTextContent
-      ? cloneElement(children, { 'aria-label': label })
+      ? cloneElement(children as ReactElement, { 'aria-label': label })
       : children
 
   const show = () => {
