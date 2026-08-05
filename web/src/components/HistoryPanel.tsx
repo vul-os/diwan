@@ -261,7 +261,7 @@ export default function HistoryPanel({ fileId, onRestore, onClose }: HistoryPane
     }
   }, [fileId])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { void load() }, [load])
 
   const doRestore = async (v: Version | null) => {
     if (!v) return
@@ -302,7 +302,7 @@ export default function HistoryPanel({ fileId, onRestore, onClose }: HistoryPane
           )}
 
           {error && !loading && (
-            <ErrorState size="sm" message={error} onRetry={load} />
+            <ErrorState size="sm" message={error} onRetry={() => void load()} />
           )}
 
           {!loading && !error && versions.length === 0 && (
@@ -374,7 +374,7 @@ export default function HistoryPanel({ fileId, onRestore, onClose }: HistoryPane
           <Button
             variant="primary"
             size="md"
-            onClick={() => doRestore(confirmVersion)}
+            onClick={() => void doRestore(confirmVersion)}
           >
             <RotateCcw size={13} /> Restore
           </Button>
