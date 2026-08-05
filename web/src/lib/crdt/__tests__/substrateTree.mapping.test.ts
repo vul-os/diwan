@@ -49,6 +49,11 @@ let sync: Awaited<ReturnType<typeof loadSync>>
 
 beforeAll(async () => { sync = await loadSync() })
 
+// The engine only ever round-trips this opaque HLC through JSON.stringify
+// (never reads a field off it directly here), so it stays `unknown` — same
+// convention as substrateGrid.ts's DecodedHlc.
+type DecodedHlc = unknown
+
 const NS = 'slides'
 const ROOT = 'root'
 
@@ -64,7 +69,7 @@ function moveOp(clock: HlcClock, node: string, ordKey: string, parent = ROOT): U
     target: node,
     field: ordKey,
     reference: { target: parent },
-    hlc: JSON.parse(clock.tick(Date.now())),
+    hlc: JSON.parse(clock.tick(Date.now())) as DecodedHlc,
   }))
 }
 
@@ -75,7 +80,7 @@ function deleteOp(clock: HlcClock, node: string): Uint8Array {
     ns: NS,
     target: node,
     field: 'redact',
-    hlc: JSON.parse(clock.tick(Date.now())),
+    hlc: JSON.parse(clock.tick(Date.now())) as DecodedHlc,
   }))
 }
 
@@ -87,7 +92,7 @@ function contentOp(clock: HlcClock, node: string, field: string, jsonValue: unkn
     target: `slide:${node}`,
     field,
     value: { tstr: JSON.stringify(jsonValue) },
-    hlc: JSON.parse(clock.tick(Date.now())),
+    hlc: JSON.parse(clock.tick(Date.now())) as DecodedHlc,
   }))
 }
 
@@ -109,6 +114,15 @@ function orderedSlides(engine: SyncEngine): string[] {
 
 function hex(bytes: Uint8Array): string {
   return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('')
+}
+
+/** lww_cell()'s JSON shape: the LWW register wrapper around a content op's tstr. */
+type LwwCell = { value: { tstr: string } }
+
+/** Read back a contentOp() value: unwrap lww_cell()'s tstr, then the JSON it carries. */
+function lwwCellValue<T>(engine: SyncEngine, target: string, field: string): T {
+  const cell = JSON.parse(engine.lww_cell(target, field)) as LwwCell
+  return JSON.parse(cell.value.tstr) as T
 }
 
 describe('Slides structure maps onto SYNC.md §4.8 tree-move', () => {
@@ -189,12 +203,11 @@ describe('Slides content: expressible, but only as opaque JSON values', () => {
       contentOp(ca, 's1', 's:title', 'Quarterly review'),
     ])
 
-    const a = JSON.parse(JSON.parse(e.lww_cell('slide:s1', 'obj:shape-a')).value.tstr)
-    const b = JSON.parse(JSON.parse(e.lww_cell('slide:s1', 'obj:shape-b')).value.tstr)
+    const a = lwwCellValue<{ x: number }>(e, 'slide:s1', 'obj:shape-a')
+    const b = lwwCellValue<{ x: number }>(e, 'slide:s1', 'obj:shape-b')
     expect(a.x).toBe(10)
     expect(b.x).toBe(90) // neither clobbered the other
-    expect(JSON.parse(JSON.parse(e.lww_cell('slide:s1', 's:title')).value.tstr))
-      .toBe('Quarterly review')
+    expect(lwwCellValue<string>(e, 'slide:s1', 's:title')).toBe('Quarterly review')
   })
 
   it('THE CONSTRAINT: a nested slide object cannot be a substrate value', () => {
