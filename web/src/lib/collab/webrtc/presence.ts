@@ -256,7 +256,7 @@ export class PresenceManager extends EventTarget {
       text = typeof data === 'string' ? data : new TextDecoder().decode(data)
     } catch { return }
     let frame: { channel?: string, payload?: PresenceFramePayload }
-    try { frame = JSON.parse(text) } catch { return }
+    try { frame = JSON.parse(text) as { channel?: string, payload?: PresenceFramePayload } } catch { return }
     if (frame.channel !== PRESENCE_CHANNEL) return
     const p = frame.payload
     if (!p || !p.accountId || p.accountId === this._local.accountId) return
