@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { FileText, Table2, Presentation, PenTool, Loader2, Check } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useFilesStore } from '../store/filesStore'
-import { Button, Input, Modal, DocThumb } from './ui'
+import { Button, Input, Modal, DocThumb, useToast } from './ui'
 import { templatesFor } from '../lib/templates'
 
 type NewFileType = 'doc' | 'sheet' | 'slide' | 'whiteboard'
@@ -98,6 +98,7 @@ export default function NewFileModal({ onClose, defaultType, lockType, parentId 
   const [templateId, setTemplateId] = useState('blank')
   const { createFile } = useFilesStore()
   const navigate = useNavigate()
+  const { showToast } = useToast()
 
   const selected = TYPES.find(t => t.type === selectedType)
   const templates = templatesFor(selectedType) // null for slides (own gallery)
@@ -118,7 +119,14 @@ export default function NewFileModal({ onClose, defaultType, lockType, parentId 
         parentId,
       }) as CreatedFile
       onClose()
-      navigate(`/${ROUTE[selectedType]}/${file.id}`)
+      void navigate(`/${ROUTE[selectedType]}/${file.id}`)
+    } catch (err) {
+      // BUG FIX: this had try/finally with no catch. createFile
+      // (filesStore.ts) genuinely rejects on a network failure — the
+      // rejection propagated uncaught, and the modal was left open with the
+      // Create button simply re-enabled and no indication anything had gone
+      // wrong (the user just sees their click appear to do nothing).
+      showToast(err instanceof Error ? err.message : 'Could not create file', 'error')
     } finally {
       setCreating(false)
     }
@@ -131,7 +139,7 @@ export default function NewFileModal({ onClose, defaultType, lockType, parentId 
       title={lockType ? `New ${selected?.label}` : 'New file'}
       size="sm"
     >
-      <form onSubmit={handleCreate}>
+      <form onSubmit={(e) => void handleCreate(e)}>
         <Modal.Body className="space-y-5">
           {/* ── Type grid — only shown when not locked ── */}
           {!lockType && (
