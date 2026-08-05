@@ -83,6 +83,12 @@ describe('ChartWizard — every new type is reachable and configurable', () => {
     render(<ChartWizard data={wbFrom(GRID)} onClose={() => {}} onChange={onChange} />)
     fireEvent.click(screen.getByRole('radio', { name: /^combo$/i }))
 
+    // VERIFIED TOOL DISAGREEMENT: getByLabelText<T extends HTMLElement =
+    // HTMLElement>() can't infer T from the later .checked access, so tsc
+    // needs this cast — removing it fails `tsc --noEmit` with "Property
+    // 'checked' does not exist on type 'HTMLElement'". Confirmed by direct
+    // removal.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
     const secondary = screen.getByLabelText(/secondary \(right\) axis/i) as HTMLInputElement
     expect(secondary.checked).toBe(true)                 // the reason to pick combo at all
     fireEvent.change(screen.getByLabelText(/secondary axis label/i), { target: { value: 'Margin %' } })
