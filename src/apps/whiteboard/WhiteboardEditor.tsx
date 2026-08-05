@@ -88,7 +88,7 @@ export default function WhiteboardEditor() {
   const ctx = useMemo(() => (ydoc ? createBoardYContext(ydoc) : null), [ydoc])
 
   // ── P2P collab (invite-link, E2E, ro-enforced) — the SAME hook Docs uses ────
-  const p2p = useP2PCollab({ fileId: id as string, ctx: ctx as object, enabled: collabEnabled })
+  const p2p = useP2PCollab({ fileId: id as string, ctx, enabled: collabEnabled })
 
   // Subscribe to this file's save state.
   useEffect(() => {

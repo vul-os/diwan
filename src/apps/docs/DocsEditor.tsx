@@ -60,7 +60,7 @@ import HistoryPanel from '../../components/HistoryPanel'
 import CommentsPanel from '../../components/CommentsPanel'
 import SuggestionPanel, { type Suggestion as PanelSuggestion } from '../../components/SuggestionPanel'
 import ActivityFeed from '../../components/ActivityFeed'
-import { useP2PCollab } from './useP2PCollab.js'
+import { useP2PCollab, type DocsYContext } from './useP2PCollab.js'
 import { docsCollabEnabled, DOCS_COLLAB_OFF_NOTICE, updateLogEnabled } from '../../lib/flags.js'
 import {
   Y, createYContext, Y_FRAGMENT,
@@ -105,15 +105,12 @@ import { normalizePageSetup, pageDimensions, type PageSetup } from './pageSetup.
 import { normalizeHeaderFooter, bandsForPage, type HeaderFooterConfig } from './headerFooter.js'
 import { measurePageBreaks, createDebouncedMeasure } from './pagination.js'
 
-/**
- * The Y context this component builds via `createYContext(null, ydoc)` and
- * mutates IN PLACE once the ProseMirror editor mounts (`yctx.schema =
- * editor.schema`) — the same DocsYContext shape useP2PCollab.ts documents
- * (this is the file that actually builds and hands it to that hook). ydoc.ts's
- * own `YContext` requires a non-null `schema`, which is why this file needs
- * its own, structurally-compatible type for the transitional state.
- */
-type DocsYContext = { ydoc: InstanceType<typeof Y.Doc>; shadow: InstanceType<typeof Y.Doc>; schema: Schema | null }
+// `DocsYContext` — the { ydoc, shadow, schema } shape this component builds via
+// `createYContext(null, ydoc)` and mutates IN PLACE once the ProseMirror editor
+// mounts (`yctx.schema = editor.schema` below) — is defined once, in
+// useP2PCollab.ts (the hook this context is built for), and imported here
+// rather than redeclared. ydoc.ts's own `YContext` requires a non-null
+// `schema`, which is why that shared type exists instead of reusing it.
 
 // Imported files may carry _html; use that as editor content.
 // WAVE-52: _html is user/peer-supplied markup (imported .html/.docx, restored
@@ -1742,7 +1739,7 @@ export default function DocsEditor() {
           open={showP2PShare}
           onClose={() => setShowP2PShare(false)}
           links={p2p.links}
-          roomId={p2p.roomId ?? undefined}
+          roomId={p2p.roomId}
           onRotate={() => p2p.rotate()}
           unavailable={p2p.peeringUnavailable}
         />

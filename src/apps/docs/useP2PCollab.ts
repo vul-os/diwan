@@ -42,6 +42,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import type * as Y from 'yjs'
 import type { Schema } from '@tiptap/pm/model'
 import { YP2PCollabSession, type AnyYContext } from '../../lib/crdt/yP2PSession.js'
+import type { BoardYContext } from '../../lib/crdt/boardYdoc.js'
 import type { RoomCap } from '../../lib/crdt/p2pRoom.js'
 import { resolveReachableBase } from '../../lib/collab/reachableBase.js'
 import {
@@ -59,12 +60,23 @@ interface P2PLinks {
 /**
  * The Y context DocsEditor builds via `createYContext(null, ydoc)` and mutates
  * IN PLACE once the ProseMirror editor mounts (`yctx.schema = editor.schema`;
- * see DocsEditor.jsx). `schema` therefore starts `null` on the very same object
- * this hook holds a reference to, which is exactly the race ctxReady/waitForCtx
- * below exist to handle — this hook cannot just take `AnyYContext` from
- * ydoc.ts's `YContext` (which requires a non-null `schema`) at its own boundary.
+ * see DocsEditor.tsx, which imports this exact type rather than redeclaring
+ * it). `schema` therefore starts `null` on the very same object this hook
+ * holds a reference to, which is exactly the race ctxReady/waitForCtx below
+ * exist to handle — this hook cannot just take `AnyYContext` from ydoc.ts's
+ * `YContext` (which requires a non-null `schema`) at its own boundary.
  */
-type DocsYContext = { ydoc: Y.Doc; shadow: Y.Doc; schema: Schema | null }
+export type DocsYContext = { ydoc: Y.Doc; shadow: Y.Doc; schema: Schema | null }
+
+/**
+ * This hook is shared verbatim by Docs (ProseMirror, `DocsYContext` above —
+ * schema starts `null` and is attached post-mount) and the whiteboard
+ * (Excalidraw, `BoardYContext` — no `schema` at all, validation goes through
+ * `applyUpdate` instead; see boardYdoc.ts). Both are accepted here structurally
+ * and handed to `YP2PCollabSession` as `AnyYContext` once ctxReady/waitForCtx
+ * confirm the object is complete for its shape.
+ */
+type HookYContext = DocsYContext | BoardYContext
 
 type ShareResult = { rwLink: string; roLink: string; roomId: string }
 
@@ -121,7 +133,7 @@ function ctxReady(ctx: unknown): ctx is AnyYContext {
  * of hanging the join forever.
  */
 function waitForCtx(
-  ctx: DocsYContext | null | undefined,
+  ctx: HookYContext | null | undefined,
   { timeoutMs = 15_000, intervalMs = 50 }: { timeoutMs?: number; intervalMs?: number } = {},
 ): Promise<boolean> {
   if (ctxReady(ctx)) return Promise.resolve(true)
@@ -139,8 +151,10 @@ function waitForCtx(
 export interface UseP2PCollabOptions {
   fileId: string
   /** { ydoc, shadow, schema } (createYContext); `schema` may still be `null`
-   *  until the ProseMirror editor mounts — see DocsYContext above. */
-  ctx: DocsYContext | null
+   *  until the ProseMirror editor mounts — see DocsYContext above. Or, from
+   *  the whiteboard, a `BoardYContext` ({ ydoc, shadow, applyUpdate }) —
+   *  see HookYContext. */
+  ctx: HookYContext | null
   autoJoinFromLink?: boolean
   /** master switch (VITE_DOCS_COLLAB) */
   enabled?: boolean

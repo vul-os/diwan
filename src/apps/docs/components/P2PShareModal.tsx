@@ -43,7 +43,9 @@ export interface P2PShareModalProps {
   onClose?: () => void
   links: P2PShareLinks | null
   onRotate?: () => void
-  roomId?: string
+  /** useP2PCollab's `roomId` state — `string | null` (never omitted, never
+   *  `undefined`), same as `links` above; both lanes pass it straight through. */
+  roomId: string | null
   unavailable?: boolean
 }
 

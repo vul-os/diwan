@@ -565,40 +565,25 @@ describe('Custom font size input', () => {
 // ─── 14. Sheets Find/Replace helpers ─────────────────────────────────────────
 
 // The module under test here lives in ../../sheets (a sibling app owned by a
-// different conversion pass, still .jsx) — these types describe only the
-// shape this suite reads/writes, cast onto the untyped dynamic import rather
-// than assuming sheets' internal representation.
-interface SheetCellValue {
-  v: string
-  m: string
-}
-interface SheetCell {
-  r: number
-  c: number
-  v: SheetCellValue | string | number
-}
-interface SheetData {
-  name: string
-  celldata: SheetCell[]
-}
-interface FlatCell {
-  sheetIdx: number
-  r: number
-  c: number
-  value: string
-}
+// different conversion pass) — imported dynamically because it's a React
+// component module. Its exported FRSheet/FoundCell/FRCellValue types are the
+// real shape; this suite imports them rather than re-declaring an approximate
+// duplicate (a prior pass's SheetData/FlatCell locals disagreed subtly with
+// these — e.g. no index signature, required rather than optional `v`/`m` —
+// and did not typecheck against them).
+import type { FRSheet, FoundCell, FRCellValue } from '../../sheets/SheetsFindReplace.jsx'
 
 describe('Sheets FindReplace helpers', () => {
-  let collectCells!: (data: SheetData[]) => FlatCell[]
-  let findMatches!: (cells: FlatCell[], term: string, matchCase: boolean) => number[]
+  let collectCells!: (data: FRSheet[]) => FoundCell[]
+  let findMatches!: (cells: FoundCell[], term: string, matchCase: boolean) => number[]
   let applyReplace!: (
-    data: SheetData[],
-    cells: FlatCell[],
+    data: FRSheet[],
+    cells: FoundCell[],
     matchIndices: number[],
     term: string,
     replacement: string,
     matchCase: boolean,
-  ) => SheetData[]
+  ) => FRSheet[]
 
   beforeEach(async () => {
     const mod = await import('../../sheets/SheetsFindReplace.jsx')
@@ -607,7 +592,7 @@ describe('Sheets FindReplace helpers', () => {
     applyReplace = mod.applyReplace as typeof applyReplace
   })
 
-  const sampleData: SheetData[] = [
+  const sampleData: FRSheet[] = [
     {
       name: 'Sheet1',
       celldata: [
@@ -650,10 +635,10 @@ describe('Sheets FindReplace helpers', () => {
     const matchIdxs = findMatches(cells, 'hello', false)
     const newData = applyReplace(sampleData, cells, matchIdxs, 'hello', 'Hi', false)
     const sheet = newData[0]
-    const cell00 = mustFind(sheet.celldata, (c) => c.r === 0 && c.c === 0)
-    const cell10 = mustFind(sheet.celldata, (c) => c.r === 1 && c.c === 0)
-    expect((cell00.v as SheetCellValue).v).toBe('Hi')
-    expect((cell10.v as SheetCellValue).v).toBe('Hi again')
+    const cell00 = mustFind(sheet.celldata ?? [], (c) => c.r === 0 && c.c === 0)
+    const cell10 = mustFind(sheet.celldata ?? [], (c) => c.r === 1 && c.c === 0)
+    expect((cell00.v as FRCellValue).v).toBe('Hi')
+    expect((cell10.v as FRCellValue).v).toBe('Hi again')
   })
 
   it('applyReplace leaves non-matching cells unchanged', () => {
@@ -661,9 +646,9 @@ describe('Sheets FindReplace helpers', () => {
     const matchIdxs = findMatches(cells, 'World', true)
     const newData = applyReplace(sampleData, cells, matchIdxs, 'World', 'Earth', true)
     const sheet = newData[0]
-    const cell00 = mustFind(sheet.celldata, (c) => c.r === 0 && c.c === 0)
-    expect((cell00.v as SheetCellValue).v).toBe('Hello') // unchanged
-    const cell01 = mustFind(sheet.celldata, (c) => c.r === 0 && c.c === 1)
-    expect((cell01.v as SheetCellValue).v).toBe('Earth')
+    const cell00 = mustFind(sheet.celldata ?? [], (c) => c.r === 0 && c.c === 0)
+    expect((cell00.v as FRCellValue).v).toBe('Hello') // unchanged
+    const cell01 = mustFind(sheet.celldata ?? [], (c) => c.r === 0 && c.c === 1)
+    expect((cell01.v as FRCellValue).v).toBe('Earth')
   })
 })
