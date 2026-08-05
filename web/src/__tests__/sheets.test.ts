@@ -195,9 +195,16 @@ describe('Filter view computation', () => {
     value: string
   }
 
+  // Same coercion FilterPanel.tsx's own matchesRule uses: value is unknown
+  // cell content, and a bare String(value) on a non-primitive stringifies to
+  // '[object Object]' rather than failing loudly — scalarStr keeps this
+  // inline copy honest about the same divergence production already guards.
+  const scalarStr = (x: unknown): string =>
+    typeof x === 'string' || typeof x === 'number' || typeof x === 'boolean' ? String(x) : ''
+
   function matchesRule(value: unknown, rule: FilterRule): boolean {
-    const v  = String(value ?? '').toLowerCase()
-    const rv = String(rule.value ?? '').toLowerCase()
+    const v  = scalarStr(value).toLowerCase()
+    const rv = scalarStr(rule.value).toLowerCase()
     switch (rule.type) {
       case 'contains':  return v.includes(rv)
       case 'equals':    return v === rv
