@@ -1,5 +1,5 @@
 /**
- * e2e/fixtures.js — in-browser API mocking for the Playwright E2E layer.
+ * e2e/fixtures.ts — in-browser API mocking for the Playwright E2E layer.
  *
  * Installs a `page.route('**\/api/**')` handler that serves a small, stateful
  * mock of the Diwan backend so the browser app runs with no Go server.
@@ -11,12 +11,80 @@
  *   test('…', async ({ officePage }) => { … })   // officePage = mocked page
  */
 
-import { test as base, expect } from '@playwright/test'
+import { test as base, expect, type Page, type Route } from '@playwright/test'
 
-export function makeBackend({ role = 'owner' } = {}) {
+export type Role = 'owner' | 'editor' | 'viewer'
+
+// The mock never inspects a file's `content` internally (it only stores and
+// echoes back whatever the app POSTs/PUTs) — each document type (doc/slide/
+// sheet/whiteboard) shapes it differently, so `unknown` is the honest type,
+// not a stand-in for `any`.
+export interface FileRecord {
+  id: string
+  name: string
+  type: string
+  content: unknown
+  _restoredFrom?: string
+}
+
+export interface VersionRecord {
+  id: string
+  name?: string
+  created_at: string
+  label: string
+}
+
+export interface CommentReply {
+  id: string
+  author_id?: string | undefined
+  body?: string | undefined
+  created_at: string
+}
+
+export interface CommentRecord {
+  id: string
+  anchor?: unknown
+  author_id?: string | undefined
+  body?: string | undefined
+  state: string
+  created_at: string
+  replies: CommentReply[]
+}
+
+export interface SuggestionRecord {
+  id: string
+  kind?: string | undefined
+  author_id?: string | undefined
+  from?: unknown
+  to?: unknown
+  text?: string | undefined
+  state: string
+  created_at: string
+  reviewer_id?: string
+}
+
+export interface BackendState {
+  role: Role
+  files: Record<string, FileRecord>
+  versions: Record<string, VersionRecord[]>
+  comments: Record<string, CommentRecord[]>
+  suggestions: Record<string, SuggestionRecord[]>
+}
+
+export interface MakeBackendOptions {
+  role?: Role
+}
+
+interface MockBackend {
+  state: BackendState
+  uid: (prefix: string) => string
+  CAN_RESTORE: Set<Role>
+}
+
+export function makeBackend({ role = 'owner' }: MakeBackendOptions = {}): MockBackend {
   let seq = 1
-  const uid = (p) => `${p}_${seq++}`
-  const state = {
+  const uid = (p: string) => `${p}_${seq++}`
+  const state: BackendState = {
     role,
     files: {
       doc1: { id: 'doc1', name: 'Design Notes', type: 'doc', content: { _html: '<p>Hello world</p>' } },
@@ -40,18 +108,38 @@ export function makeBackend({ role = 'owner' } = {}) {
     comments: { doc1: [] },
     suggestions: { doc1: [] },
   }
-  const CAN_RESTORE = new Set(['owner', 'editor'])
+  const CAN_RESTORE = new Set<Role>(['owner', 'editor'])
   return { state, uid, CAN_RESTORE }
+}
+
+// The shape of every JSON body this mock ever receives, flattened into one
+// interface — each route handler below reads only the subset relevant to its
+// own request. postDataJSON() itself types as `any` (it decodes an arbitrary
+// wire payload); this is the one assertion that gives it a concrete shape.
+interface RequestBody {
+  name?: string
+  type?: string
+  content?: unknown
+  label?: string
+  anchor?: unknown
+  author_id?: string
+  body?: string
+  from?: unknown
+  to?: unknown
+  text?: string
+  kind?: string
+  state?: string
+  reviewer_id?: string
 }
 
 /**
  * Attach the mock backend to a page. Call BEFORE page.goto().
  * Returns the mutable `state` so a test can inspect/seed it.
  */
-export async function installBackend(page, opts = {}) {
+export async function installBackend(page: Page, opts: MakeBackendOptions = {}): Promise<BackendState> {
   const { state, uid, CAN_RESTORE } = makeBackend(opts)
 
-  const json = (route, body, status = 200) =>
+  const json = (route: Route, body: unknown, status = 200) =>
     route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) })
 
   await page.route('**/api/**', async (route) => {
@@ -59,8 +147,8 @@ export async function installBackend(page, opts = {}) {
     const url = new URL(req.url())
     const path = url.pathname.replace(/^\/api/, '')
     const method = req.method()
-    let body = {}
-    try { body = req.postDataJSON() || {} } catch { /* no body */ }
+    let body: RequestBody = {}
+    try { body = (req.postDataJSON() as RequestBody) ?? {} } catch { /* no body */ }
 
     // ── auth ────────────────────────────────────────────────────────────────
     if (path === '/auth/status' || path === '/auth/me')
@@ -87,12 +175,12 @@ export async function installBackend(page, opts = {}) {
     // content so the destination editor loads exactly what the importer produced.
     if (path === '/files' && method === 'POST') {
       const id = uid('file')
-      const f = { id, name: body.name || 'Untitled', type: body.type || 'doc', content: body.content }
+      const f: FileRecord = { id, name: body.name || 'Untitled', type: body.type || 'doc', content: body.content }
       state.files[id] = f
       return json(route, f)
     }
 
-    let m
+    let m: RegExpMatchArray | null
     if ((m = path.match(/^\/files\/([^/]+)$/))) {
       const id = m[1]
       if (method === 'GET') return json(route, state.files[id] || { error: 'nf' }, state.files[id] ? 200 : 404)
@@ -114,7 +202,7 @@ export async function installBackend(page, opts = {}) {
     }
 
     if ((m = path.match(/^\/files\/([^/]+)\/versions$/)) && method === 'POST') {
-      const v = { id: uid('v'), name: state.files[m[1]]?.name, created_at: new Date().toISOString(), label: body.label || '' }
+      const v: VersionRecord = { id: uid('v'), name: state.files[m[1]]?.name, created_at: new Date().toISOString(), label: body.label || '' }
       ;(state.versions[m[1]] ||= []).unshift(v)
       return json(route, v)
     }
@@ -124,7 +212,7 @@ export async function installBackend(page, opts = {}) {
       const id = m[1]
       if (method === 'GET') return json(route, state.comments[id] || [])
       if (method === 'POST') {
-        const c = { id: uid('c'), anchor: body.anchor, author_id: body.author_id, body: body.body, state: 'open', created_at: new Date().toISOString(), replies: [] }
+        const c: CommentRecord = { id: uid('c'), anchor: body.anchor, author_id: body.author_id, body: body.body, state: 'open', created_at: new Date().toISOString(), replies: [] }
         ;(state.comments[id] ||= []).push(c)
         return json(route, c)
       }
@@ -137,7 +225,7 @@ export async function installBackend(page, opts = {}) {
     }
     if ((m = path.match(/^\/files\/([^/]+)\/comments\/([^/]+)\/replies$/)) && method === 'POST') {
       const [, id, cid] = m
-      const r = { id: uid('r'), author_id: body.author_id, body: body.body, created_at: new Date().toISOString() }
+      const r: CommentReply = { id: uid('r'), author_id: body.author_id, body: body.body, created_at: new Date().toISOString() }
       const c = (state.comments[id] || []).find((x) => x.id === cid)
       if (c) (c.replies ||= []).push(r)
       return json(route, r)
@@ -148,7 +236,7 @@ export async function installBackend(page, opts = {}) {
       const id = m[1]
       if (method === 'GET') return json(route, state.suggestions[id] || [])
       if (method === 'POST') {
-        const s = { id: uid('s'), kind: body.kind, author_id: body.author_id, from: body.from, to: body.to, text: body.text, state: 'pending', created_at: new Date().toISOString() }
+        const s: SuggestionRecord = { id: uid('s'), kind: body.kind, author_id: body.author_id, from: body.from, to: body.to, text: body.text, state: 'pending', created_at: new Date().toISOString() }
         ;(state.suggestions[id] ||= []).push(s)
         return json(route, s)
       }
@@ -169,12 +257,18 @@ export async function installBackend(page, opts = {}) {
   return state
 }
 
+// officePage's extra property is only ever set by the fixture below — typing
+// it on the fixture itself (rather than augmenting Playwright's own `Page`
+// globally) keeps the guarantee scoped to tests that actually opted into it.
+export type OfficePage = Page & { _mockState: BackendState }
+
 // A test fixture that hands you a page with the backend already installed.
-export const test = base.extend({
+export const test = base.extend<{ officePage: OfficePage }>({
   officePage: async ({ page }, use) => {
     const state = await installBackend(page)
-    page._mockState = state
-    await use(page)
+    const officePage = page as OfficePage
+    officePage._mockState = state
+    await use(officePage)
   },
 })
 
