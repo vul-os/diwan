@@ -168,7 +168,7 @@ vi.mock('file-saver', () => ({ saveAs: vi.fn() }))
 // ─── 1. Toolbar: bold command wires through editor.chain ──────────────────────
 
 describe('Toolbar formatting commands', () => {
-  it('should call toggleBold through chain when Bold button clicked', async () => {
+  it('should call toggleBold through chain when Bold button clicked', () => {
     // We test the command routing via the chain mock
     const editor = makeEditor()
     // Simulate calling chain().focus().toggleBold().run() — what the toolbar does
@@ -280,7 +280,7 @@ describe('FindReplace component', () => {
     expect(screen.getByPlaceholderText('Replace with…')).toBeInTheDocument()
   })
 
-  it('calls onClose when Escape is pressed', async () => {
+  it('calls onClose when Escape is pressed', () => {
     const editor = makeEditor()
     const onClose = vi.fn()
     render(<FindReplace editor={asEditor(editor)} mode="find" onClose={onClose} />)
@@ -289,7 +289,7 @@ describe('FindReplace component', () => {
     expect(onClose).toHaveBeenCalled()
   })
 
-  it('calls onClose when X button is clicked', async () => {
+  it('calls onClose when X button is clicked', () => {
     const editor = makeEditor()
     const onClose = vi.fn()
     render(<FindReplace editor={asEditor(editor)} mode="find" onClose={onClose} />)
@@ -504,7 +504,7 @@ describe('HTML export', () => {
     expect(editor.getHTML).toHaveBeenCalled()
   })
 
-  it('exportToHtml output includes DOCTYPE and body content', async () => {
+  it('exportToHtml output includes DOCTYPE and body content', () => {
     // Verify the HTML string structure without actually invoking saveAs.
     const html = `<!DOCTYPE html>
 <html lang="en">
@@ -587,9 +587,12 @@ describe('Sheets FindReplace helpers', () => {
 
   beforeEach(async () => {
     const mod = await import('../../sheets/SheetsFindReplace.jsx')
-    collectCells = mod.collectCells as typeof collectCells
-    findMatches = mod.findMatches as typeof findMatches
-    applyReplace = mod.applyReplace as typeof applyReplace
+    // SheetsFindReplace is a real .tsx module (not the untyped .jsx its
+    // import specifier implies) — its exports already match these locals'
+    // declared types exactly, so the cast was a no-op.
+    collectCells = mod.collectCells
+    findMatches = mod.findMatches
+    applyReplace = mod.applyReplace
   })
 
   const sampleData: FRSheet[] = [
