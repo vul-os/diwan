@@ -97,7 +97,7 @@ export function useLiveCursors(
       let text: string
       try { text = typeof data === 'string' ? data : new TextDecoder().decode(data) } catch { return }
       let frame: { channel?: string; payload?: CursorPayload }
-      try { frame = JSON.parse(text) } catch { return }
+      try { frame = JSON.parse(text) as { channel?: string; payload?: CursorPayload } } catch { return }
       if (frame.channel !== CURSOR_CHANNEL) return
       const p = frame.payload
       if (!p || !p.accountId) return
