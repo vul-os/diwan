@@ -90,15 +90,23 @@ export function toBool(v: unknown): boolean {
   return !!v
 }
 
+// A formula operand is always string/number/boolean; anything else has no
+// meaningful scalar form, so it gets '' rather than String()'s
+// "[object Object]" (which could produce two dissimilar non-primitives
+// spuriously comparing equal).
+function scalarStr(v: unknown): string {
+  return typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' ? String(v) : ''
+}
+
 /** Loose scalar equality used by lookup/match (number-aware, case-insensitive). */
 export function looseEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true
   const an = Number(a), bn = Number(b)
-  if (isFinite(an) && isFinite(bn) && String(a).trim() !== '' && String(b).trim() !== '') {
+  if (isFinite(an) && isFinite(bn) && scalarStr(a).trim() !== '' && scalarStr(b).trim() !== '') {
     return an === bn
   }
   if (a == null || b == null) return false
-  return String(a).toLowerCase() === String(b).toLowerCase()
+  return scalarStr(a).toLowerCase() === scalarStr(b).toLowerCase()
 }
 
 /** Escape a string for safe use as a literal inside a RegExp. */
