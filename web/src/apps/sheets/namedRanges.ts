@@ -121,7 +121,7 @@ export function expandNamedRanges(formula: string, namedRanges: NamedRangeDef[])
     let code = p.code
     for (const def of defs) {
       const re = new RegExp(escapeRe(def.name), 'g')
-      code = code.replace(re, (m, offset, whole) =>
+      code = code.replace(re, (m: string, offset: number, whole: string) =>
         before(whole[offset - 1]) && after(whole[offset + m.length]) ? toRef(def) : m
       )
     }
