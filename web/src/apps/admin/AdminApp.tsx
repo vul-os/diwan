@@ -129,7 +129,7 @@ export function InvitesPanel({ onError }: { onError: (msg: string) => void }) {
   }, [onError])
 
   useEffect(() => {
-    refresh()
+    void refresh()
   }, [refresh])
 
   const mint = async (e: React.FormEvent) => {
@@ -164,7 +164,7 @@ export function InvitesPanel({ onError }: { onError: (msg: string) => void }) {
 
   return (
     <div className="space-y-6">
-      <form onSubmit={mint} className="flex flex-wrap items-end gap-3 rounded-lg border border-line bg-paper p-4">
+      <form onSubmit={(e) => void mint(e)} className="flex flex-wrap items-end gap-3 rounded-lg border border-line bg-paper p-4">
         <label className="flex flex-col text-sm">
           <span className="text-ink-muted mb-1.5">Note (e.g. invitee email)</span>
           <input
@@ -247,7 +247,7 @@ export function InvitesPanel({ onError }: { onError: (msg: string) => void }) {
                   {!inv.revoked && (
                     <button
                       type="button"
-                      onClick={() => revoke(inv.id)}
+                      onClick={() => void revoke(inv.id)}
                       className="text-danger hover:underline"
                     >
                       Revoke
@@ -276,7 +276,7 @@ export function AuditPanel({ onError }: { onError: (msg: string) => void }) {
   }, [onError])
 
   useEffect(() => {
-    refresh()
+    void refresh()
   }, [refresh])
 
   return (
@@ -285,7 +285,7 @@ export function AuditPanel({ onError }: { onError: (msg: string) => void }) {
         <p className="text-sm text-ink-faint">Append-only — newest first.</p>
         <button
           type="button"
-          onClick={refresh}
+          onClick={() => void refresh()}
           className="text-sm text-accent hover:underline"
         >
           Refresh
