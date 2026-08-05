@@ -51,7 +51,9 @@ describe('invite generate/parse round-trip', () => {
     const other = await generateInvite({ cap: 'rw' })
     // Rebuild a's fragment but claim `other`'s roomId.
     const payloadB64 = a.fragment.replace(/^vp2p=/, '')
-    const payload = JSON.parse(new TextDecoder().decode(b64urlToBytes(payloadB64)))
+    // Same wire-payload shape parseInvite() itself declares (p2pRoom.ts).
+    const payload = JSON.parse(new TextDecoder().decode(b64urlToBytes(payloadB64))) as
+      { v?: number; r?: string; c?: string; k?: string }
     payload.r = other.roomId // forge the advertised roomId
     const forged = 'vp2p=' + bytesToB64url(new TextEncoder().encode(JSON.stringify(payload)))
     await expect(parseInvite(forged)).rejects.toThrow(/roomId does not match/)
