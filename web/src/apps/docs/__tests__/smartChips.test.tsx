@@ -176,7 +176,9 @@ describe('SmartChip node', () => {
   it('clamps an over-long label', () => {
     editor = makeEditor('<p></p>')
     editor.commands.insertSmartChip({ chipType: 'place', label: 'x'.repeat(500) })
-    const label = editor.getJSON().content![0].content!.find((n) => n.type === 'smartChip')!.attrs!.label
+    // node.attrs is ProseMirror's own Attrs (`{[key: string]: any}`).
+    const rawLabel: unknown = editor.getJSON().content![0].content!.find((n) => n.type === 'smartChip')!.attrs!.label
+    const label = typeof rawLabel === 'string' ? rawLabel : ''
     expect(label.length).toBe(MAX_CHIP_LABEL)
   })
 })
