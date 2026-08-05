@@ -37,11 +37,11 @@ export default function App() {
   const location = useLocation()
   const navigate = useNavigate()
 
-  useEffect(() => { fetchStatus() }, [])
+  useEffect(() => { void fetchStatus() }, [])
   // Resolve "who am I" for share/ownership UI (best-effort, independent of auth
   // gating). Re-runs when the authenticated status flips (e.g. after login).
   useEffect(() => {
-    if (status?.authenticated !== false) fetchIdentity()
+    if (status?.authenticated !== false) void fetchIdentity()
   }, [status?.authenticated])
 
   // ── Protocol handler + deep-link ?goto= param ─────────────────────────────
@@ -53,7 +53,23 @@ export default function App() {
     // call's type locally rather than drop the argument.
     try {
       type RegisterProtocolHandlerLegacy = (scheme: string, url: string, title?: string) => void
-      const registerProtocolHandlerLegacy = navigator.registerProtocolHandler as unknown as RegisterProtocolHandlerLegacy
+      // BUG FIX: registerProtocolHandler is a WebIDL platform-object method —
+      // extracting it as a bare reference and calling it unbound throws
+      // "TypeError: Illegal invocation" in every browser (the same class of
+      // bug as an unbound RTCDataChannel.send elsewhere in this fleet), which
+      // this try/catch was silently swallowing as "unsupported browser". The
+      // protocol handler registration was therefore never actually
+      // succeeding anywhere — .bind(navigator) keeps the receiver so the
+      // real call can succeed (or genuinely fail on an unsupporting browser,
+      // which is what the catch below is actually for).
+      // VERIFIED TOOL DISAGREEMENT: no-unnecessary-type-assertion claims this
+      // cast is a no-op, but removing it makes `tsc --noEmit` fail with
+      // "Expected 2 arguments, but got 3" on the call below — .bind() keeps
+      // registerProtocolHandler's real (spec) 2-arg signature, and this
+      // widening is exactly what lets the legacy 3-arg call through.
+      // Confirmed by direct removal.
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
+      const registerProtocolHandlerLegacy = navigator.registerProtocolHandler.bind(navigator) as RegisterProtocolHandlerLegacy
       registerProtocolHandlerLegacy('web+diwan', window.location.origin + '/?goto=%s', 'Diwan')
     } catch { /* unsupported browser */ }
 
@@ -64,7 +80,7 @@ export default function App() {
     if (goto) {
       const clean = goto.replace(/^\/+/, '')
       window.history.replaceState({}, '', window.location.pathname) // remove ?goto from URL
-      if (clean) navigate('/' + clean, { replace: true })
+      if (clean) void navigate('/' + clean, { replace: true })
     }
   }, []) // eslint-disable-line
 
