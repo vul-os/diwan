@@ -29,6 +29,7 @@ import {
 } from 'y-prosemirror'
 import type * as Y from 'yjs'
 import type { Command } from '@tiptap/core'
+import type { Plugin } from 'prosemirror-state'
 
 export interface YCollabOptions {
   /** the document's Y fragment */
@@ -49,10 +50,11 @@ export const YCollab = Extension.create<YCollabOptions>({
   addProseMirrorPlugins() {
     const fragment = this.options.fragment
     if (!fragment) return []
+    // y-prosemirror ships no types — its exports are `any`.
     return [
       ySyncPlugin(fragment),
       yUndoPlugin(),
-    ]
+    ] as Plugin[]
   },
 
   addCommands() {
