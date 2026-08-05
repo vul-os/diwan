@@ -300,6 +300,7 @@ export default function SlidesEditor(_props: SlidesEditorProps) {
   const [activeIdx, setActiveIdx] = useState(0)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(true)
+  const [saveError, setSaveError] = useState(false)
   const [presenting, setPresenting] = useState(false)
   const [showComments, setShowComments] = useState(false)
   // Import-honesty: the itemised list of native pptx constructs (tables/charts/
@@ -601,6 +602,19 @@ export default function SlidesEditor(_props: SlidesEditorProps) {
     try {
       await updateFile(id, title, sd)
       setSaved(true)
+      setSaveError(false)
+    } catch (err) {
+      // BUG FIX: this only had try/finally (no catch) — updateFile
+      // (filesStore.ts) genuinely rejects on a network failure or an
+      // unresolved save conflict, and nothing here caught it. The rejection
+      // propagated out of autosave uncaught (an unhandled promise rejection
+      // from the debounced setTimeout call site below, which had no .catch
+      // either), and — worse for the user — `setSaved(true)` was simply
+      // skipped, so the deck silently stopped saving with no error shown:
+      // the save pill kept reading "saving…" → back to "unsaved" with
+      // nothing ever telling the user their edits stopped persisting.
+      console.error('[slides] autosave failed:', err)
+      setSaveError(true)
     } finally {
       setSaving(false)
     }
@@ -609,7 +623,8 @@ export default function SlidesEditor(_props: SlidesEditorProps) {
   const schedule = (sd: DeckData) => {
     setSaved(false)
     clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => autosave(sd), 2000)
+    // autosave now catches its own errors (see above) and never rejects.
+    saveTimer.current = setTimeout(() => { void autosave(sd) }, 2000)
   }
 
   // Cancel any pending debounced autosave when the editor unmounts, so a save
@@ -913,7 +928,7 @@ export default function SlidesEditor(_props: SlidesEditorProps) {
     )
   }
 
-  const saveStatusKind = saving ? 'saving' : saved ? 'saved' : 'dirty'
+  const saveStatusKind = saving ? 'saving' : saveError ? 'error' : saved ? 'saved' : 'dirty'
 
   const currentTheme = slidesData.customTheme
     ? { ...getTheme(slidesData.themeId || 'obsidian'), ...slidesData.customTheme }
@@ -1060,7 +1075,7 @@ export default function SlidesEditor(_props: SlidesEditorProps) {
             <Button
               variant="primary"
               size="sm"
-              onClick={() => { clearTimeout(saveTimer.current); autosave(slidesData) }}
+              onClick={() => { clearTimeout(saveTimer.current); void autosave(slidesData) }}
               disabled={saving}
             >
               {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
