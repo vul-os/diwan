@@ -300,7 +300,7 @@ export class SuggestionStore {
         break
       }
       default:
-        console.warn('[SuggestionStore] unknown op:', (op as SuggestionOp).op)
+        console.warn('[SuggestionStore] unknown op:', op.op)
     }
   }
 
