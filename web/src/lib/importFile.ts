@@ -93,7 +93,7 @@ const MAMMOTH_OPTS = {
   ),
 }
 
-async function docFromText(text: string) {
+function docFromText(text: string) {
   const paragraphs = String(text).split(/\n\n+/).map((para) => ({
     type: 'paragraph',
     content: para.trim() ? [{ type: 'text', text: para.replace(/\n/g, ' ').trim() }] : [],
@@ -173,7 +173,7 @@ async function convertToSlideContent(file: File) {
   // per-format object union agree at runtime (both are "positioned slide
   // object" records) but are structurally distinct types as TS infers them
   // from plain JS — an assertion here, not a behaviour change.
-  deck.slides = deck.slides.map((s) => ({ ...s, objects: sanitizeObjects(s.objects || []) })) as typeof deck.slides
+  deck.slides = deck.slides.map((s) => ({ ...s, objects: sanitizeObjects(s.objects || []) }))
   return deck
 }
 
@@ -195,7 +195,7 @@ export async function importFile(file: File, navigate: NavigateFunction): Promis
 
   if (type === 'pdf') {
     await stashPdf(file, file.name)
-    navigate('/pdf-editor')
+    void navigate('/pdf-editor')
     return
   }
   if (!type) throw new ImportError(unsupportedMessage(file.name))
@@ -208,7 +208,7 @@ export async function importFile(file: File, navigate: NavigateFunction): Promis
 
   const created = await api.createFile(baseName, type, content) as CreatedFile
   useFilesStore.setState({ files: [created, ...useFilesStore.getState().files.filter((f: CreatedFile) => f.id !== created.id)] })
-  navigate(`/${typeToRoute(type)}/${created.id}`)
+  void navigate(`/${typeToRoute(type)}/${created.id}`)
 }
 
 // ── Public: import a backend-served local file (local scan) ─────────────────────
@@ -225,7 +225,7 @@ export async function importFromUrl(
 
   if (appType === 'pdf') {
     sessionStorage.setItem('pendingPDF', JSON.stringify({ name, url }))
-    navigate('/pdf-editor')
+    void navigate('/pdf-editor')
     return
   }
 
@@ -242,5 +242,5 @@ export async function importFromUrl(
 
   const created = await api.createFile(baseName, appType, content) as CreatedFile
   useFilesStore.setState({ files: [created, ...useFilesStore.getState().files.filter((f: CreatedFile) => f.id !== created.id)] })
-  navigate(`/${typeToRoute(appType)}/${created.id}`)
+  void navigate(`/${typeToRoute(appType)}/${created.id}`)
 }
