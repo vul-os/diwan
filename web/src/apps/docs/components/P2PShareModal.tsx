@@ -103,7 +103,7 @@ export default function P2PShareModal({ open, onClose, links, onRotate, roomId, 
               hint="Can read and edit"
               value={links.rwLink}
               copied={copied === 'rw'}
-              onCopy={() => copy('rw', links.rwLink)}
+              onCopy={() => void copy('rw', links.rwLink)}
               tone="accent"
             />
             <LinkRow
@@ -112,7 +112,7 @@ export default function P2PShareModal({ open, onClose, links, onRotate, roomId, 
               hint="Can read live edits, cannot change the document"
               value={links.roLink}
               copied={copied === 'ro'}
-              onCopy={() => copy('ro', links.roLink)}
+              onCopy={() => void copy('ro', links.roLink)}
               tone="muted"
             />
 
