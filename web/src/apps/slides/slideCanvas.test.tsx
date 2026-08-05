@@ -11,6 +11,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
+import type pptxgen from 'pptxgenjs'
 
 import {
   ensureObjects, sanitizeObject, sanitizeObjects, clampFinite,
@@ -192,7 +193,11 @@ describe('animation playback (P1)', () => {
 
   it('honours prefers-reduced-motion (no class applied)', () => {
     const el = document.createElement('div')
-    const prior = window.matchMedia
+    // matchMedia is a WebIDL platform-object method (same class as
+    // registerProtocolHandler/RTCDataChannel.send elsewhere in this fleet) —
+    // bind it to window before holding it bare, so the restored reference
+    // below is never a detached, receiver-less call.
+    const prior = window.matchMedia.bind(window)
     window.matchMedia = (q: string) => ({
       matches: q.includes('reduce'), media: q, onchange: null, addListener() {}, removeListener() {},
       addEventListener() {}, removeEventListener() {}, dispatchEvent() { return false },
@@ -500,14 +505,18 @@ describe('PPTX export fidelity', () => {
 
     // Text placed with real geometry (0.1 * 13.333 ≈ 1.333in) + rotation.
     expect(addText).toHaveBeenCalled()
-    const textOpt = addText.mock.calls[0][1]
+    // addText's spy has no generic signature (vi.fn() infers unknown[] args),
+    // and vitest's own expect.any() is typed `(constructor: unknown) => any` —
+    // both any-return boundaries, typed at this one read/assert site.
+    const textOpt = addText.mock.calls[0][1] as pptxgen.TextPropsOptions
     expect(textOpt.x).toBeCloseTo(0.1 * 13.333, 1)
     expect(textOpt.y).toBeCloseTo(0.2 * 7.5, 1)
     expect(textOpt.rotate).toBe(10)
 
     // Shape mapped to pptx ellipse with positioned box.
     expect(addShape).toHaveBeenCalledWith('ellipse', expect.objectContaining({
-      x: expect.any(Number), y: expect.any(Number), w: expect.any(Number), h: expect.any(Number),
+      x: expect.any(Number) as number, y: expect.any(Number) as number,
+      w: expect.any(Number) as number, h: expect.any(Number) as number,
     }))
 
     // Image placed via path with geometry.
