@@ -16,12 +16,13 @@ node_modules
 dist/*
 !dist/.gitkeep
 
-# Playwright E2E artifacts
-/test-results/
-/playwright-report/
-/blob-report/
-/.playwright/
-/e2e-results/
+# Playwright E2E artifacts (generated under web/, where playwright.config.js
+# and playwright.p2p.config.js now live and Playwright is invoked from)
+/web/test-results/
+/web/playwright-report/
+/web/blob-report/
+/web/.playwright/
+/web/e2e-results/
 dist-ssr
 dist-lib/
 dist-office/

@@ -56,7 +56,10 @@ export default defineConfig({
   resolve: {
     dedupe: ['react', 'react-dom'],
   },
-  plugins: [react(), stripExternalCssImports(), licensesTxt({ root: dir })],
+  // licensesTxt reads THIRD-PARTY-NOTICES.txt / THIRD-PARTY-NOTICES-GO.txt,
+  // both of which stay at the repo root (one level up from this config's own
+  // dir, web/) — not `dir` itself.
+  plugins: [react(), stripExternalCssImports(), licensesTxt({ root: resolve(dir, '..') })],
   root: dir,
   define: {
     'import.meta.env.VITE_BUILD_TARGET': JSON.stringify('web'),

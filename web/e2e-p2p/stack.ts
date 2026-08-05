@@ -50,7 +50,14 @@ import { fileURLToPath } from 'node:url'
 
 const execFileAsync = promisify(execFile)
 
-export const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+// This file lives in web/e2e-p2p/, so one level up is the frontend project
+// root (web/ — where package.json/vite.config.js live and `npx vite build`
+// must run) and two levels up is the actual repo root (where go.mod/main.go
+// live and `go build` must run). These used to coincide before the frontend
+// moved into web/; they no longer do, so buildBinaries() below uses each
+// explicitly rather than a single shared root.
+export const WEB_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+export const REPO_ROOT = path.resolve(WEB_ROOT, '..')
 
 /**
  * Diwan's own built-in rendezvous mount prefix — must match
@@ -124,7 +131,7 @@ export interface BuiltBinaries {
  */
 export async function buildBinaries(outDir: string): Promise<BuiltBinaries> {
   const officeBin = path.join(outDir, 'diwan-e2e')
-  await execFileAsync('npx', ['vite', 'build'], { cwd: REPO_ROOT, timeout: 300_000, maxBuffer: 64 << 20 })
+  await execFileAsync('npx', ['vite', 'build'], { cwd: WEB_ROOT, timeout: 300_000, maxBuffer: 64 << 20 })
   await execFileAsync('go', ['build', '-o', officeBin, '.'], { cwd: REPO_ROOT, timeout: 300_000, maxBuffer: 64 << 20 })
   return { officeBin }
 }

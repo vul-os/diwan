@@ -18,7 +18,7 @@
 | [THREAT-MODEL.md](THREAT-MODEL.md) | STRIDE threat model |
 | [SLOs.md](SLOs.md) | Service level objectives |
 | [RELEASING.md](RELEASING.md) | Release policy and CI pipeline |
-| [../src/design/DESIGN.md](../src/design/DESIGN.md) | Design system (near-black token model, primitives) |
+| [../web/src/design/DESIGN.md](../web/src/design/DESIGN.md) | Design system (near-black token model, primitives) |
 | [../ROADMAP.md](../ROADMAP.md) | Planned features, milestones, and Now/Next/Later status |
 | [../CHANGELOG.md](../CHANGELOG.md) | Version history |
 | [../SECURITY.md](../SECURITY.md) | Security policy |

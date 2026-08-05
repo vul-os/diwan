@@ -28,6 +28,9 @@ TIGRIS_ENDPOINT="${TIGRIS_ENDPOINT:-https://fly.storage.tigris.dev}"
 GIT_SHA="$(git rev-parse --short HEAD)"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# The frontend project (package.json, node_modules, the vite configs) lives
+# in web/ — the build must run from there.
+WEB_ROOT="$REPO_ROOT/web"
 
 ALL_TARGETS=(office)
 
@@ -43,9 +46,9 @@ export AWS_REGION="auto"
 
 for t in "${TARGETS[@]}"; do
   echo "==> Building $t …"
-  (cd "$REPO_ROOT" && npx vite build --config "vite.config.${t}.js")
+  (cd "$WEB_ROOT" && npx vite build --config "vite.config.${t}.js")
 
-  DIST_DIR="$REPO_ROOT/dist-${t}"
+  DIST_DIR="$WEB_ROOT/dist-${t}"
   S3_PATH="s3://${TIGRIS_BUCKET}/${t}/${GIT_SHA}/"
 
   echo "==> Uploading $DIST_DIR → $S3_PATH"

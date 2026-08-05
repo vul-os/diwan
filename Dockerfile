@@ -24,14 +24,20 @@
 FROM node:20-bookworm AS web
 WORKDIR /build
 COPY . /build
+# The frontend project lives in web/ (its own package.json/package-lock.json).
 # Drop any node_modules dragged in from the host (there is no .dockerignore
 # excluding it). Host node_modules can hold platform-native binaries (e.g.
 # macOS rollup) that break under Linux — force clean Linux installs.
-RUN rm -rf /build/node_modules
+RUN rm -rf /build/web/node_modules
+WORKDIR /build/web
 # `npm ci` needs a lockfile in sync; the repo ships package-lock.json. Fall
 # back to `npm install` only if ci fails (e.g. lockfile drifted locally).
 RUN npm ci --no-audit --no-fund || npm install --no-audit --no-fund
-# Produces dist/ (the embedded SPA). vite.config.js recreates dist/.gitkeep.
+# Produces /build/dist (the embedded SPA) — web/vite.config.js's outDir
+# resolves one level up, to the repo root, because that is where main.go's
+# `//go:embed all:dist` requires it to be (go:embed cannot reach into a
+# sibling directory, and the SPA build no longer lives next to main.go).
+# web/vite.config.js recreates dist/.gitkeep there too.
 RUN npm run build:frontend
 
 # ── Stage 2: build the static Go binary ───────────────────────────────────────
@@ -40,7 +46,9 @@ ARG VERSION=docker
 WORKDIR /build
 COPY . /build
 # Overlay the freshly-built SPA so //go:embed all:dist bakes in real assets
-# instead of the committed dist/.gitkeep placeholder.
+# instead of the committed dist/.gitkeep placeholder. The web stage writes it
+# to /build/dist (repo root, sibling of main.go), not /build/web/dist — see
+# that stage's comment.
 COPY --from=web /build/dist /build/dist
 RUN go mod download
 # Pure-Go (Postgres via pgx, local storage without cgo) — CGO off yields a

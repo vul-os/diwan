@@ -1,8 +1,18 @@
 import { writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { stripExternalCssImports } from './vite.strip-external-css-imports.js'
 import { licensesTxt } from './vite-plugin-licenses.js'
+
+// This config lives in web/, but dist/ has to stay a sibling of main.go at
+// the REPO ROOT: main.go's `//go:embed all:dist` resolves relative to the Go
+// source file, not to this config, and go:embed cannot reach into a sibling
+// directory. repoRoot/distDir below are what make the build land where the
+// Go backend actually looks for it.
+const dir = import.meta.dirname
+const repoRoot = resolve(dir, '..')
+const distDir = resolve(repoRoot, 'dist')
 
 // emptyOutDir wipes dist/ on every build, including the dist/.gitkeep
 // placeholder that lets `go build` (//go:embed all:dist) compile before any
@@ -10,7 +20,7 @@ import { licensesTxt } from './vite-plugin-licenses.js'
 const keepGitkeep = {
   name: 'keep-dist-gitkeep',
   closeBundle() {
-    writeFileSync('dist/.gitkeep', '')
+    writeFileSync(resolve(distDir, '.gitkeep'), '')
   },
 }
 
@@ -72,9 +82,14 @@ export default defineConfig({
   resolve: {
     dedupe: ['react', 'react-dom'],
   },
-  plugins: [react(), keepGitkeep, stripExternalCssImports(), licensesTxt()],
+  // root defaults to process.cwd() (web/, since that is where package.json
+  // and this config live and npm scripts run from there) — index.html and
+  // src/ resolve correctly with no explicit `root`. licensesTxt still needs
+  // pointing at the repo root explicitly: THIRD-PARTY-NOTICES.txt and
+  // THIRD-PARTY-NOTICES-GO.txt stay there (see notices npm scripts).
+  plugins: [react(), keepGitkeep, stripExternalCssImports(), licensesTxt({ root: repoRoot })],
   build: {
-    outDir: 'dist',
+    outDir: distDir,
     emptyOutDir: true,
     chunkSizeWarningLimit: 2000,
     rollupOptions: {
