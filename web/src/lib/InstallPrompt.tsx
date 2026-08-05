@@ -83,7 +83,14 @@ export default function InstallPrompt() {
     if (!deferred) return
     setVisible(false)
     try {
-      deferred.prompt()
+      // BUG FIX: `deferred.prompt()` returns a Promise (rejects if the
+      // browser refuses to show the prompt again) — calling it without
+      // awaiting meant a rejection wasn't actually inside this try/catch's
+      // coverage despite appearances (same class of bug as draftStore.ts's
+      // `return new Promise(...)` vs `return await new Promise(...)`), and
+      // would have surfaced as an unhandled rejection instead of the silent
+      // "user dismissed" fallback this catch is meant to provide.
+      await deferred.prompt()
       await deferred.userChoice
     } catch {
       /* user dismissed the native dialog — nothing to do */
@@ -162,7 +169,7 @@ export default function InstallPrompt() {
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
             <button
               type="button"
-              onClick={install}
+              onClick={() => void install()}
               style={{
                 fontSize: 'var(--text-sm, 0.8125rem)',
                 fontWeight: 600,
