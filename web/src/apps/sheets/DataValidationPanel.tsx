@@ -68,7 +68,7 @@ function cellA1(row: number, col: number): string { return `${colLetter(col)}${r
 // row/column shape rather than the `[number, number]` tuple applyValidation's
 // signature declares — a local, typed adapter over the same runtime contract.
 const parseRangeTyped = (text: string): { row: [number, number]; column: [number, number] }[] | undefined =>
-  parseRange(text) as { row: [number, number]; column: [number, number] }[] | undefined
+  parseRange(text)
 
 const EMPTY_FORM: DVForm = {
   kind: 'dropdown',
