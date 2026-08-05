@@ -455,19 +455,31 @@ export class SignalingClient extends EventTarget {
       // signFrame is null the join is sent SYNCHRONOUSLY (no await reached), so a
       // consumer that inspects the socket right after 'open' sees it immediately.
       if (this._signFrame) {
-        this._buildJoinPayload().then((join) => this._send(join))
+        // BUG FIX: this had no catch — _signFrame (caller-supplied) can
+        // reject (a WebCrypto sign failure), and _buildJoinPayload()
+        // propagates that. An unhandled rejection here meant the client
+        // would silently never send its 'join' frame: it opens a live
+        // WebSocket, announces nothing, and never appears to any peer, with
+        // no error surfaced anywhere.
+        this._buildJoinPayload().then((join) => this._send(join)).catch((err: unknown) => {
+          console.error('[signaling] failed to build/send signed join frame:', err)
+        })
       } else {
         this._send(this._buildJoinBase().join)
       }
     })
 
-    ws.addEventListener('message', async (ev: MessageEvent) => {
+    ws.addEventListener('message', (ev: MessageEvent) => {
       let frame: { channel?: string, from?: string, payload?: SignalPayload }
-      try { frame = JSON.parse(ev.data) } catch { return }
+      try {
+        // ev.data is DOM's MessageEvent.data, typed `any` upstream.
+        frame = JSON.parse(ev.data as string) as { channel?: string, from?: string, payload?: SignalPayload }
+      } catch { return }
       if (frame.channel !== SIGNAL_CHANNEL) return
       // Delegate to the transport-agnostic processor: the server stamps `from`,
-      // so `frame.from` is the sender peerId.
-      await this._processSignal(frame.from as string, frame.payload as SignalPayload)
+      // so `frame.from` is the sender peerId. _processSignal fail-closes on
+      // every verification path (see its own try/catches) and never rejects.
+      void this._processSignal(frame.from as string, frame.payload as SignalPayload)
     })
 
     ws.addEventListener('close', () => {
@@ -635,7 +647,15 @@ export class SignalingClient extends EventTarget {
             candidate: p.candidate,
             pubKey: p.pubKey,
           })
-          const valid = await this._verifyFrame(verifyKey, canonical, p.sig)
+          // BUG FIX: unlike the join-verification path above (which wraps the
+          // same _verifyFrame call in try/catch), this one didn't — a
+          // malformed/corrupted signature on an offer/answer/ice frame (a
+          // buggy or hostile peer) throws out of WebCrypto's subtle.verify,
+          // which propagated as an unhandled rejection through the WebSocket
+          // message handler instead of the fail-closed "drop silently"
+          // behavior every other verification failure in this function gets.
+          let valid = false
+          try { valid = await this._verifyFrame(verifyKey, canonical, p.sig) } catch { valid = false }
           if (!valid) {
             // Signature mismatch — impersonation attempt or MITM SDP/candidate
             // swap (or a tampered ts).  Drop silently to avoid leaking timing.
@@ -964,7 +984,7 @@ export class SignalingClient extends EventTarget {
       return await crypto.subtle.verify(
         { name: 'ECDSA', hash: 'SHA-256' },
         pubKey,
-        sigBuf as BufferSource,
+        sigBuf,
         msgBytes as BufferSource,
       )
     } catch {
