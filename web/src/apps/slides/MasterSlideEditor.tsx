@@ -70,7 +70,7 @@ export default function MasterSlideEditor({ masters, onSave, onClose }: MasterSl
 
   const updateActive = (key: MasterKey, value: string | boolean) => {
     setLocalMasters((prev) =>
-      prev.map((m) => m.id === activeMasterId ? ({ ...m, [key]: value } as MasterLayout) : m)
+      prev.map((m) => m.id === activeMasterId ? { ...m, [key]: value } : m)
     )
   }
 
