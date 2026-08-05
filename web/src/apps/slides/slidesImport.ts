@@ -76,7 +76,8 @@ const RASTER_MIME: Record<string, string | null> = {
 }
 
 function esc(s: unknown): string {
-  return String(s ?? '')
+  const str = typeof s === 'string' || typeof s === 'number' || typeof s === 'boolean' ? String(s) : ''
+  return str
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
 }
