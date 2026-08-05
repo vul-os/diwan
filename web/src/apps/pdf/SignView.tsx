@@ -769,7 +769,7 @@ export default function SignView() {
 
           <button
             type="button"
-            onClick={handleSubmit}
+            onClick={() => void handleSubmit()}
             disabled={!canSubmit}
             className="w-full py-3 rounded-md text-sm font-semibold text-white bg-accent
               hover:bg-accent-hover active:bg-accent-press disabled:opacity-40 disabled:cursor-not-allowed
