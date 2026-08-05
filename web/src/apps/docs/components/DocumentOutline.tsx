@@ -43,8 +43,11 @@ export function extractOutline(editor: Editor | null | undefined): OutlineHeadin
   editor.state.doc.descendants((node, pos) => {
     if (node.type?.name === 'heading') {
       const text = node.textContent || ''
+      // node.attrs is ProseMirror's own Attrs (`{[key: string]: any}`).
+      const rawLevel: unknown = node.attrs?.level
+      const level = typeof rawLevel === 'number' && Number.isFinite(rawLevel) ? rawLevel : 1
       out.push({
-        level: node.attrs?.level || 1,
+        level,
         text,
         pos,
         key: `${pos}-${i++}`,
