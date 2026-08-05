@@ -130,7 +130,7 @@ describe('ErrorState', () => {
     expect(alert).toHaveTextContent('Failed to load activity')
   })
 
-  it('renders a Retry control that fires onRetry', async () => {
+  it('renders a Retry control that fires onRetry', () => {
     const onRetry = vi.fn()
     render(<ErrorState message="boom" onRetry={onRetry} />)
     const btn = screen.getByRole('button', { name: /retry/i })
