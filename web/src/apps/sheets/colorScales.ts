@@ -284,13 +284,21 @@ export function makeColorScale(partial: ColorScaleRuleInput = {}): ColorScaleRul
  * The panel's user-facing gate; matchCells enforces the same conditions silently
  * (a rule that can't match paints nothing), so the two can never diverge.
  */
+// rule's fields are ColorScaleRuleInput's own `unknown` (pre-validation, a
+// corrupt file or hostile peer op) — only coerce a real string/number rather
+// than String()'ing whatever arrived, which would show the user the literal
+// text "[object Object]" instead of a useful validation message.
+function csStr(v: unknown): string {
+  return typeof v === 'string' || typeof v === 'number' ? String(v) : ''
+}
+
 export function colorScaleError(rule: ColorScaleRuleInput | null | undefined): string | null {
   const kind = typeof rule?.kind === 'string' ? rule.kind : undefined
   const meta = kind ? CS_KIND_META[kind] : undefined
   if (!meta || !rule) return 'Pick a condition.'
   if (!parseBounds(typeof rule.range === 'string' ? rule.range : '')) return 'Enter a valid range, e.g. A1:A10.'
   if (meta.input === 'formula') {
-    return String(rule.formula || '').trim() ? null : 'Enter a formula, e.g. =$A1>10.'
+    return csStr(rule.formula).trim() ? null : 'Enter a formula, e.g. =$A1>10.'
   }
   if (meta.input === 'number') {
     const n1 = Number(String(rule.value1).trim())
@@ -315,9 +323,9 @@ export function colorScaleSummary(rule: ColorScaleRuleInput | null | undefined):
   const kind = typeof rule?.kind === 'string' ? rule.kind : undefined
   const meta = kind ? CS_KIND_META[kind] : undefined
   if (!meta || !rule) return 'Rule'
-  if (rule.kind === 'formula') return `Custom formula ${rule.formula || ''}`.trim()
-  if (meta.args === 2) return `${meta.label} ${rule.value1} and ${rule.value2}`
-  if (meta.args === 1) return `${meta.label} ${rule.value1}`
+  if (rule.kind === 'formula') return `Custom formula ${csStr(rule.formula)}`.trim()
+  if (meta.args === 2) return `${meta.label} ${csStr(rule.value1)} and ${csStr(rule.value2)}`
+  if (meta.args === 1) return `${meta.label} ${csStr(rule.value1)}`
   return meta.label
 }
 
@@ -462,7 +470,7 @@ function dayFromYMD(y: number, m: number, d: number): number {
 
 /** parseDay — 'YYYY-MM-DD' | 'YYYY/M/D' | 'M/D/YYYY' → Excel serial day, else NaN. */
 export function parseDay(text: unknown): number {
-  const s = String(text ?? '').trim()
+  const s = csStr(text).trim()
   if (!s) return NaN
   let m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/)
   if (m) return dayFromYMD(+m[1], +m[2], +m[3])
@@ -503,7 +511,7 @@ export function dateWindow(kind: string, now: Date = new Date()): [number, numbe
   return null
 }
 
-const norm = (s: unknown): string => String(s ?? '').trim().toLowerCase()
+const norm = (s: unknown): string => csStr(s).trim().toLowerCase()
 
 interface RuleOperands {
   n1?: number
