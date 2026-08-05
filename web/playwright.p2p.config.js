@@ -36,7 +36,15 @@ export default defineConfig({
   workers: 1,
   forbidOnly: !!process.env.CI,
   retries: 0,
-  reporter: process.env.CI ? [['github'], ['list']] : [['list']],
+  // In CI, also emit the machine-readable `json` reporter alongside the
+  // human-facing ones. CI's "did the built-in suite actually EXECUTE" gate
+  // (see .github/workflows/ci.yml, job e2e-p2p) parses this file for
+  // per-test status rather than grepping `playwright test --list` output,
+  // which reports only what was COLLECTED, not what ran. Output path comes
+  // from PLAYWRIGHT_JSON_OUTPUT_NAME so CI controls where the artifact lands.
+  reporter: process.env.CI
+    ? [['github'], ['list'], ['json', { outputFile: process.env.PLAYWRIGHT_JSON_OUTPUT_NAME || 'p2p-report.json' }]]
+    : [['list']],
   use: {
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
