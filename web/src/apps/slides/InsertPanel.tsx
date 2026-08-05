@@ -126,8 +126,10 @@ export default function InsertPanel({ editor, onInsert, api: apiProp }: InsertPa
     } catch {
       const reader = new FileReader()
       reader.onload = (ev) => {
-        if (ev.target?.result) {
-          insertHtml(`<img src="${ev.target.result}" alt="slide image" style="max-width:100%;" />`)
+        // readAsDataURL always yields a string (never ArrayBuffer).
+        const result = ev.target?.result
+        if (typeof result === 'string') {
+          insertHtml(`<img src="${result}" alt="slide image" style="max-width:100%;" />`)
         }
       }
       reader.readAsDataURL(file)
@@ -162,7 +164,7 @@ export default function InsertPanel({ editor, onInsert, api: apiProp }: InsertPa
       >
         <ImageIcon size={12} /> Image
       </button>
-      <input ref={imgInput} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+      <input ref={imgInput} type="file" accept="image/*" className="hidden" onChange={(e) => void handleImageUpload(e)} />
 
       {/* Video */}
       <div className="relative">
