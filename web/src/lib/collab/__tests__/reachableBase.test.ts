@@ -25,7 +25,7 @@ describe('resolveReachableBase', () => {
   it('returns the configured public base when the endpoint provides one', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ public_base_url: 'https://office.vulos.org/', deploy_mode: 'os' }),
+      json: () => Promise.resolve({ public_base_url: 'https://office.vulos.org/', deploy_mode: 'os' }),
     }))
     const base = await resolveReachableBase()
     expect(base).toBe('https://office.vulos.org') // trailing slash trimmed
@@ -36,7 +36,7 @@ describe('resolveReachableBase', () => {
   it('falls back to window.location.origin when public_base_url is blank', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ public_base_url: '', deploy_mode: 'standalone' }),
+      json: () => Promise.resolve({ public_base_url: '', deploy_mode: 'standalone' }),
     }))
     const base = await resolveReachableBase()
     expect(base).toBe(window.location.origin)
@@ -55,7 +55,7 @@ describe('resolveReachableBase', () => {
   it('caches the resolution (single fetch across calls)', async () => {
     const f = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ public_base_url: 'https://relay-abc.relay.vulos.org' }),
+      json: () => Promise.resolve({ public_base_url: 'https://relay-abc.relay.vulos.org' }),
     })
     vi.stubGlobal('fetch', f)
     const a = await resolveReachableBase()
