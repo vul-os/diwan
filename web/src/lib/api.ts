@@ -57,13 +57,13 @@ async function request<T = unknown>(path: string, options: RequestOptions = {}):
     }
   }
   if (!res.ok) {
-    const err: JsonRecord = await res.json().catch(() => ({ error: res.statusText }))
+    const err = await res.json().catch(() => ({ error: res.statusText })) as JsonRecord
     // Attach the HTTP status so callers can branch (e.g. 409 Conflict → reload +
     // reconcile for optimistic concurrency). `...err` carries any extra payload
     // the server sent, e.g. the current file under `current` on a 409.
     throw Object.assign(new Error((err.error as string) || 'Request failed'), { status: res.status, ...err })
   }
-  return res.json()
+  return res.json() as Promise<T>
 }
 
 export const api = {
