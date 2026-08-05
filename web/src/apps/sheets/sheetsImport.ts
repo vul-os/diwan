@@ -25,7 +25,7 @@ import * as XLSX from 'xlsx'
 import {
   assertFileSize, MAX_SHEETS, MAX_CELLS_PER_SHEET, MAX_ROWS, MAX_COLS, ImportError,
 } from '../../lib/importBounds.js'
-import { makeChart, type Chart, type ChartInput } from './charts.js'
+import { makeChart, type Chart } from './charts.js'
 import { CHART_META_SHEET } from './sheetsExport.js'
 import { readXlsxCharts } from './xlsxChartsRead.js'
 import { readOdsObjects } from './odsChartsRead.js'
@@ -79,8 +79,24 @@ const MAX_META_CHARTS = 200
  */
 export function chartsFromMetaSheet(ws: XLSX.WorkSheet | undefined): Chart[] {
   if (!ws || !ws['!ref']) return []
+  // VERIFIED TOOL DISAGREEMENT: no-unnecessary-type-assertion claims this
+  // cast is a no-op, but removing it does NOT type-check — `tsc --noEmit`
+  // then fails with "Property 'map' does not exist on type '{}'" on the verify
+  // line below (xlsx's sheet_to_json overload resolution without an explicit
+  // <T> lands on an inferred `{}`, not `any[][]`, for this call shape).
+  // Confirmed by removing the cast and running tsc directly, twice.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false }) as unknown[][]
-  const header = (rows[0] || []).map((h) => String(h ?? ''))
+  // Cell values from sheet_to_json are `unknown` defensively, but a real xlsx
+  // cell is always string/number/boolean/Date — never an arbitrary object —
+  // so this coerces only those (never String()'s worst case, the literal
+  // text "[object Object]") and treats anything else as absent. makeChart
+  // (below) fail-closed-clamps the result either way.
+  const str = (v: unknown): string =>
+    typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' ? String(v)
+    : v instanceof Date ? v.toISOString()
+    : ''
+  const header = (rows[0] || []).map((h) => str(h))
   if (header[0] !== 'type' || header[1] !== 'range') return []   // not our schema
   const col = (name: string) => header.indexOf(name)
   const idx = {
@@ -93,13 +109,13 @@ export function chartsFromMetaSheet(ws: XLSX.WorkSheet | undefined): Chart[] {
   const get = (row: unknown[], i: number): unknown => (i >= 0 ? row[i] : undefined)
   const yes = (v: unknown, dflt: boolean): boolean => {
     if (v === undefined || v === null || v === '') return dflt
-    const s = String(v).trim().toLowerCase()
+    const s = str(v).trim().toLowerCase()
     return s === 'yes' || s === 'true' || s === '1'
   }
   const out: Chart[] = []
   for (const row of rows.slice(1, MAX_META_CHARTS + 1)) {
     if (!Array.isArray(row) || row.every((c) => c === '' || c == null)) continue
-    const type = String(get(row, idx.type) ?? '')
+    const type = str(get(row, idx.type))
     if (!type) continue
     const geom: Partial<Record<'x' | 'y' | 'w' | 'h', number>> = {}
     // x/y may legitimately be 0 (a chart dragged flush to the grid origin), so
@@ -120,12 +136,12 @@ export function chartsFromMetaSheet(ws: XLSX.WorkSheet | undefined): Chart[] {
       // local LWW key, so a file that omits it still round-trips fine.
       id: typeof idVal === 'string' ? idVal : undefined,
       type,
-      range: String(get(row, idx.range) ?? ''),
-      title: String(get(row, idx.title) ?? ''),
+      range: str(get(row, idx.range)),
+      title: str(get(row, idx.title)),
       options: {
-        xAxisLabel:  String(get(row, idx.x1) ?? ''),
-        yAxisLabel:  String(get(row, idx.y1) ?? ''),
-        y2AxisLabel: String(get(row, idx.y2) ?? ''),
+        xAxisLabel:  str(get(row, idx.x1)),
+        yAxisLabel:  str(get(row, idx.y1)),
+        y2AxisLabel: str(get(row, idx.y2)),
         legend:      yes(get(row, idx.legend), true),
         headerRow:   yes(get(row, idx.headerRow), true),
         headerCol:   yes(get(row, idx.headerCol), true),
@@ -133,7 +149,7 @@ export function chartsFromMetaSheet(ws: XLSX.WorkSheet | undefined): Chart[] {
         bins:        Number(get(row, idx.bins)),
       },
       ...geom,
-    } as ChartInput))
+    }))
   }
   return out
 }
@@ -148,7 +164,7 @@ function ctType(t: unknown): string {
 
 function worksheetToSheet(ws: XLSX.WorkSheet | undefined, name: string): ImportSheet {
   if (!ws || !ws['!ref']) return { name, celldata: [], config: {}, row: 84, column: 60 }
-  const range = XLSX.utils.decode_range(ws['!ref'] as string)
+  const range = XLSX.utils.decode_range(ws['!ref'])
   // Clamp the declared range so a lying header can't force a huge iteration.
   const endR = Math.min(range.e.r, MAX_ROWS - 1)
   const endC = Math.min(range.e.c, MAX_COLS - 1)
