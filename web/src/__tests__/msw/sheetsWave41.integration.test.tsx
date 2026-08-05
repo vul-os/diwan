@@ -178,6 +178,12 @@ describe('WAVE64 data validation kinds (real component + model)', () => {
 
   it('offers every advertised kind in the criteria menu', () => {
     panel()
+    // VERIFIED TOOL DISAGREEMENT: getByLabelText<T extends HTMLElement =
+    // HTMLElement>() can't infer T from this later .options access (generic
+    // inference only looks at the call's own arguments), so tsc needs this
+    // cast — removing it fails `tsc --noEmit` with "Property 'options' does
+    // not exist on type 'HTMLElement'". Confirmed by direct removal.
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
     const values = Array.from((screen.getByLabelText('Criteria') as HTMLSelectElement).options).map((o) => o.value)
     expect(values).toEqual(['dropdown', 'dropdownRange', 'checkbox', 'number', 'date', 'text', 'textLength'])
   })
@@ -354,10 +360,12 @@ describe('WAVE41 XLSX export carries the number format', () => {
     const parsed = XLSX.read(new Uint8Array(buf), { type: 'array', cellNF: true })
     const ws = parsed.Sheets[parsed.SheetNames[0]]
 
-    expect(ws['B1'].z).toBe('"$"#,##0.00') // currency format carried through
+    // ws['B1']/['B2'] hit WorkSheet's own [cell: string]: CellObject | WSKeys | any
+    // index signature, which resolves to any by TS's rules — cast the reads.
+    expect((ws['B1'] as XLSX.CellObject).z).toBe('"$"#,##0.00') // currency format carried through
     // The unformatted cell did NOT inherit the currency format (xlsx read-back
     // may fill 'General' as its default; the point is it's not our custom code).
-    expect(ws['B2'].z).not.toBe('"$"#,##0.00')
-    expect(ws['B2'].v).toBe(0.25) // raw value preserved
+    expect((ws['B2'] as XLSX.CellObject).z).not.toBe('"$"#,##0.00')
+    expect((ws['B2'] as XLSX.CellObject).v).toBe(0.25) // raw value preserved
   })
 })
