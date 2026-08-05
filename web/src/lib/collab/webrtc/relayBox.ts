@@ -57,7 +57,7 @@ const HKDF_INFO = new TextEncoder().encode('vulos-relay-box-v1')
 
 export function bytesToB64(bytes: Uint8Array): string {
   let s = ''
-  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]!)
+  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i])
   return btoa(s)
 }
 
@@ -220,7 +220,7 @@ function v2Aad(from: string, to: string, session: string, headerBytes: Uint8Arra
 export function relayBlobVersion(blobB64: string): number {
   const raw = b64ToBytes(blobB64)
   if (raw.length < 1) throw new Error('relay blob empty')
-  return raw[0]!
+  return raw[0]
 }
 
 /** Arguments to {@link sealRelayBlobV2}. */
@@ -282,7 +282,7 @@ export function parseRelayBlobV2(blobB64: string): ParsedRelayBlobV2 {
   const raw = b64ToBytes(blobB64)
   if (raw.length < 1 + 2) throw new Error('relay blob too short')
   if (raw[0] !== BOX_VERSION_V2) throw new Error('unsupported relay blob version ' + raw[0])
-  const headerLen = (raw[1]! << 8) | raw[2]!
+  const headerLen = (raw[1] << 8) | raw[2]
   const headerStart = 3
   const nonceStart = headerStart + headerLen
   const sealedStart = nonceStart + NONCE_LEN
