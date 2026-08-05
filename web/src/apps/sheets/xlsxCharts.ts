@@ -101,7 +101,8 @@ export function nativeXlsxSupport(type: unknown): NativeXlsxSupport {
 
 /** XML text escape. Applied to EVERY interpolated string, always. */
 export function xmlEscape(v: unknown): string {
-  return String(v ?? '')
+  const s = typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' ? String(v) : ''
+  return s
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
@@ -178,7 +179,7 @@ function strLit(values: unknown[]): string {
  */
 export function chartRefs(chart: Chart, sheetName: string | null | undefined): ChartRefs | null {
   let parsed: ParsedRangeRect | undefined
-  try { parsed = parseRange(String(chart?.range || ''))?.[0] as ParsedRangeRect | undefined } catch { return null }
+  try { parsed = parseRange(chart?.range || '')[0] } catch { return null }
   if (!parsed) return null
   const [r0, r1raw] = parsed.row
   const [c0, c1raw] = parsed.column
