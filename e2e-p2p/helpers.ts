@@ -137,11 +137,14 @@ export async function mintInviteLink(page: Page): Promise<string> {
   await page.getByRole('button', { name: /Share — with people/i }).click()
   await page.getByRole('button', { name: /Share via link \(P2P\)/i }).click()
   await expect(page.getByText('Editor link')).toBeVisible({ timeout: 30_000 })
-  const rw: string | undefined = await page.locator('input[readonly]').evaluateAll(
+  // tsconfig.json has noUncheckedIndexedAccess off (repo-wide), so indexing
+  // the filtered array below types as `string`, not `string | undefined` —
+  // matching this function's Promise<string> return type with no cast needed.
+  const rw = await page.locator('input[readonly]').evaluateAll(
     (els) => (els as HTMLInputElement[]).map((e) => e.value).filter((v) => /#vp2p=/.test(v))[0],
   )
   expect(rw, 'the share modal must produce a #vp2p= invite link').toMatch(/#vp2p=/)
   // Close the modal so it does not sit over the editor while we type.
   await page.keyboard.press('Escape')
-  return rw as string
+  return rw
 }

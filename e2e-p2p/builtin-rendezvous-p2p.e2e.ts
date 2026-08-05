@@ -66,8 +66,8 @@ test.beforeAll(async () => {
   stack = await startStack({ rendezvous: 'builtin', offices: 1, localOnlyOffice: true })
 })
 
-test.afterAll(async () => {
-  if (stack) await stack.stop()
+test.afterAll(() => {
+  if (stack) stack.stop()
 })
 
 test('a bare standalone Diwan serves its own discovery surface and no host-box peering', async ({ request }) => {
@@ -87,7 +87,8 @@ test('a bare standalone Diwan serves its own discovery surface and no host-box p
   // And the surface is really there.
   const health = await request.get(`${a.url}${BUILTIN_PREFIX}/healthz`)
   expect(health.status()).toBe(200)
-  expect((await health.json()).ok).toBe(true)
+  const healthBody = await health.json() as { ok: boolean }
+  expect(healthBody.ok).toBe(true)
 
   // The negative-control instance advertises NOTHING, honestly.
   const localOnly = stack.localOnly

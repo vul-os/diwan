@@ -166,7 +166,7 @@ export interface Stack {
   offices: OfficeInstance[]
   localOnly: OfficeInstance | null
   logs: string[]
-  stop: () => Promise<void>
+  stop: () => void
 }
 
 interface StartOfficeOptions {
@@ -264,7 +264,7 @@ export async function startStack({ rendezvous = 'builtin', offices = 1, localOnl
       // explanation — a port already taken, a data dir it cannot write, a config
       // it rejected — is discarded in exactly the run that needed it.
       const tail = logs.slice(-40).join('\n') || '(the process produced no output)'
-      throw new Error(`${(err as Error).message}\n──── ${name} output ────\n${tail}\n────────────────────────`)
+      throw new Error(`${(err as Error).message}\n──── ${name} output ────\n${tail}\n────────────────────────`, { cause: err })
     }
     return { name, url, dir, port, builtin, rendezvousUrl }
   }
@@ -281,7 +281,10 @@ export async function startStack({ rendezvous = 'builtin', offices = 1, localOnl
     ? await startOffice('office-local-only', { builtin: false, rendezvousUrl: '' })
     : null
 
-  const stop = async (): Promise<void> => {
+  // Not async: kill() and rmSync() are both synchronous. Stack.stop is typed
+  // () => void; callers already `await stack.stop()`, which works fine on a
+  // non-Promise return (await on a non-thenable just resolves immediately).
+  const stop = (): void => {
     for (const p of procs.reverse()) {
       try { p.kill('SIGKILL') } catch { /* already gone */ }
     }

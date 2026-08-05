@@ -96,8 +96,12 @@ test.describe('Slides text formatting (wave-48) — E2E', () => {
     // value tracker swallows the synthetic event and onChange never fires.
     const hi = page.getByLabel('Choose highlight color')
     await hi.evaluate((el) => {
-      const setter = Object.getOwnPropertyDescriptor(
-        window.HTMLInputElement.prototype, 'value')?.set
+      const descriptor = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')
+      // This IS the unbound native property setter, extracted on purpose so it
+      // can be invoked with an explicit receiver (`.call(el, ...)` below)
+      // instead of React's tracked <input>.value setter — the whole point.
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      const setter = descriptor?.set
       if (!setter) throw new Error('HTMLInputElement.prototype has no value setter')
       setter.call(el, '#ffe066')
       el.dispatchEvent(new Event('input', { bubbles: true }))

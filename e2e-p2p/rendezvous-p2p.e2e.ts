@@ -97,8 +97,8 @@ test.beforeAll(async () => {
   stack = await startStack({ rendezvous: 'external', offices: 2, localOnlyOffice: true })
 })
 
-test.afterAll(async () => {
-  if (stack) await stack.stop()
+test.afterAll(() => {
+  if (stack) stack.stop()
 })
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -108,7 +108,8 @@ test('relayd rendezvous is browser-reachable cross-origin — the guarantee the 
   // protocol.
   const health = await request.get(`${stack.relayUrl}/rendezvous/healthz`)
   expect(health.ok()).toBe(true)
-  expect((await health.json()).role).toBe('rendezvous')
+  const healthBody = await health.json() as { role: string }
+  expect(healthBody.role).toBe('rendezvous')
 
   // ── The CORS contract, asserted as a REQUIREMENT ──────────────────────────
   //

@@ -6,11 +6,11 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  // Everything outside src/ is either build output, the Go backend, the
-  // still-plain-JS site/ + scripts/ (both explicitly out of scope), or the
-  // Playwright e2e suites (also plain JS, not part of this pass). src/ is
-  // fully TypeScript end to end (see Phase 1 of the migration) so that's the
-  // only tree this config lints.
+  // Everything outside src/ + e2e/ + e2e-p2p/ is either build output, the Go
+  // backend, or the still-plain-JS site/ + scripts/ (both explicitly out of
+  // scope). src/ is fully TypeScript end to end (see Phase 1 of the
+  // migration), and e2e/ + e2e-p2p/ followed (the Playwright suites — see
+  // their own config block below), so those are the trees this config lints.
   globalIgnores([
     'dist',
     'dist-lib',
@@ -19,8 +19,6 @@ export default defineConfig([
     'coverage',
     'test-results',
     'backend',
-    'e2e',
-    'e2e-p2p',
     'scripts',
     'site',
     'docs',
@@ -91,6 +89,44 @@ export default defineConfig([
     files: ['src/**/*.{test,spec}.{ts,tsx}', 'src/__tests__/**/*.{ts,tsx}'],
     languageOptions: {
       globals: { ...globals.browser, ...globals.node, ...globals.vitest },
+    },
+  },
+
+  // The Playwright E2E suites (e2e/**, e2e-p2p/**), migrated to TypeScript.
+  // Type-aware (recommendedTypeChecked, via parserOptions.projectService) —
+  // NOT a mechanical copy of the untyped src block above: these are async
+  // top-to-bottom (page/route/request calls throughout), so a dropped `await`
+  // is a real flake source, and `no-floating-promises` catches exactly that.
+  // projectService resolves each file against tsconfig.json, which already
+  // includes 'e2e' and 'e2e-p2p' (added alongside the TS conversion) — so this
+  // is not aspirational, it type-checks against the same program `tsc --noEmit`
+  // does.
+  {
+    files: ['e2e/**/*.{ts,tsx}', 'e2e-p2p/**/*.{ts,tsx}'],
+    extends: [
+      js.configs.recommended,
+      ...tseslint.configs.recommendedTypeChecked,
+      reactHooks.configs.flat.recommended,
+    ],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: { ...globals.node, ...globals.browser },
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    rules: {
+      'no-unused-vars': 'off',
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+      'no-empty': ['error', { allowEmptyCatch: true }],
+      // Playwright's fixture API is `async ({ page }, use) => { await use(x) }`.
+      // React 19 also has a `use` hook, so rules-of-hooks sees the call and
+      // demands the enclosing function be a component/hook. It is neither —
+      // this is a test fixture, not React. The rule does not apply here.
+      'react-hooks/rules-of-hooks': 'off',
     },
   },
 ])

@@ -52,18 +52,22 @@ async function makeDocx(bodyText: string): Promise<Buffer> {
   return zip.generateAsync({ type: 'nodebuffer' })
 }
 
+// xlsx's own types declare write()'s return as `any` (types/index.d.ts) for
+// every bookType/output combination — this asserts the concrete type its own
+// docs promise for `type: 'array'` (a Uint8Array), rather than letting that
+// `any` propagate into these functions' declared Buffer return type.
 function makeXlsx(cellText: string): Buffer {
   const wb = XLSX.utils.book_new()
   const ws = XLSX.utils.aoa_to_sheet([[cellText, 42], ['row2', 7]])
   XLSX.utils.book_append_sheet(wb, ws, 'Data')
-  return Buffer.from(XLSX.write(wb, { bookType: 'xlsx', type: 'array' }))
+  return Buffer.from(XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as Uint8Array)
 }
 
 function makeOds(cellText: string): Buffer {
   const wb = XLSX.utils.book_new()
   const ws = XLSX.utils.aoa_to_sheet([[cellText, 1], ['b', 2]])
   XLSX.utils.book_append_sheet(wb, ws, 'Data')
-  return Buffer.from(XLSX.write(wb, { bookType: 'ods', type: 'array' }))
+  return Buffer.from(XLSX.write(wb, { bookType: 'ods', type: 'array' }) as Uint8Array)
 }
 
 async function makePptx(text: string): Promise<Buffer> {
