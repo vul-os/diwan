@@ -69,10 +69,11 @@ class FakeFabric extends EventTarget {
   online: boolean
   sent: string[]
   constructor(bus: FakeBus, peerId: string) { super(); this.bus = bus; this.peerId = peerId; this.online = false; this.sent = [] }
-  async join() {
+  join(): Promise<void> {
     this.online = true; this.bus.register(this)
     for (const n of this.bus.nodes) if (n !== this)
       this.dispatchEvent(new CustomEvent('state', { detail: { peerId: n.peerId, state: 'connected' } }))
+    return Promise.resolve()
   }
   send(frame: string) { this.sent.push(frame); if (this.online) this.bus.broadcast(this.peerId, frame) }
   sendTo(to: string, frame: string) { if (this.online) this.bus.unicast(this.peerId, to, frame) }
