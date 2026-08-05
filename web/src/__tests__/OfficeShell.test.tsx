@@ -36,8 +36,8 @@ vi.mock('../shells/RequireAuth', () => ({
 import OfficeShell from '../shells/OfficeShell'
 
 describe('OfficeShell', () => {
-  it('renders the canonical left-rail Sidebar with all four app links', async () => {
-    await act(async () => {
+  it('renders the canonical left-rail Sidebar with all four app links', () => {
+    act(() => {
       render(
         <MemoryRouter initialEntries={['/sheets/abc123']}>
           <OfficeShell />
@@ -52,7 +52,7 @@ describe('OfficeShell', () => {
   })
 
   it('deep-link /sheets/:id routes to SheetsEditor', async () => {
-    await act(async () => {
+    act(() => {
       render(
         <MemoryRouter initialEntries={['/sheets/abc123']}>
           <OfficeShell />
@@ -65,7 +65,7 @@ describe('OfficeShell', () => {
   })
 
   it('deep-link /pdf/:id routes to PDFEditor', async () => {
-    await act(async () => {
+    act(() => {
       render(
         <MemoryRouter initialEntries={['/pdf/doc42']}>
           <OfficeShell />
