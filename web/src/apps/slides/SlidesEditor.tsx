@@ -40,7 +40,7 @@ import {
   type AlignEdge, type DistributeAxis,
 } from './slideArrange'
 import { playAnimationsOn, type SlideAnimation } from './slideAnimations'
-import { TreeSession, getTreeReplicaId, ordKeyBetween, type Slide as TreeSlide } from '../../lib/crdt/tree.js'
+import { TreeSession, getTreeReplicaId, ordKeyBetween, type Slide as TreeSlide, type TreeLocalOpDetail } from '../../lib/crdt/tree.js'
 import { OpLogSync } from '../../lib/collab/opLogSync.js'
 import { updateLogEnabled } from '../../lib/flags.js'
 import CommentsPanel from '../../components/CommentsPanel'
@@ -361,14 +361,14 @@ export default function SlidesEditor(_props: SlidesEditorProps) {
   // and presence/cursor transport).
   const replicaIdRef = useRef<string | null>(null)
   if (!replicaIdRef.current) replicaIdRef.current = getTreeReplicaId()
-  const replicaId = replicaIdRef.current!
+  const replicaId = replicaIdRef.current
 
   const { fabric, peers: collabPeers, joined, configured } =
     useCollabFabric({ sessionId: id as string, peerId: replicaId })
 
   const identityRef = useRef<CollabIdentity | null>(null)
   if (!identityRef.current) identityRef.current = getCollabIdentity(replicaId)
-  const localIdentity = identityRef.current!
+  const localIdentity = identityRef.current
 
   // ── Live cursors + presence roster (OFFICE-25 / WAVE-27) ────────────────────
   // FabricClient (lib/collab/webrtc/fabric.ts) extends EventTarget and so
@@ -456,7 +456,7 @@ export default function SlidesEditor(_props: SlidesEditorProps) {
       opLog = new OpLogSync({
         fileId: id,
         subscribeLocal: (cb) => {
-          const h = (e: Event) => cb((e as CustomEvent).detail.op)
+          const h = (e: Event) => cb((e as CustomEvent<TreeLocalOpDetail>).detail.op)
           session.addEventListener('localOp', h)
           return () => session.removeEventListener('localOp', h)
         },

@@ -160,6 +160,13 @@ export type TreeOpSetSlide = {
 }
 export type TreeOp = TreeOpInsert | TreeOpMove | TreeOpSetText | TreeOpDelete | TreeOpSetSlide
 
+// The 'localOp' / 'remoteOp' CustomEvent detail this session dispatches (see
+// dispatchEvent sites below) — same reasoning as GridLocalOpDetail/
+// GridRemoteOpDetail in grid.ts: consumers were casting to bare `CustomEvent`
+// (detail: any) before this existed.
+export type TreeLocalOpDetail = { op: TreeOp }
+export type TreeRemoteOpDetail = { op: TreeOp } | { snapshot: true }
+
 // ---------------------------------------------------------------------------
 // Slide value <-> object-granular state
 // ---------------------------------------------------------------------------
