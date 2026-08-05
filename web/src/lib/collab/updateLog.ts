@@ -239,6 +239,12 @@ export function createMemoryUpdateLog(): UpdateLogTransport & { _debug: () => { 
   let snapshot: UpdateLogFrame | null = null
   return {
     async load(since = 0) {
+      // Genuinely async-shaped (not just Promise-typed): apiTransport's real
+      // network transport also resolves on a later microtask, so a caller
+      // that wrongly assumes this mock resolves synchronously would pass
+      // here and fail against the real transport — this keeps the mock
+      // faithful to that timing instead of masking it.
+      await Promise.resolve()
       const floor = snapshot ? (snapshot.floor ?? 0) : 0
       if (snapshot && since < floor) {
         return {
@@ -250,6 +256,8 @@ export function createMemoryUpdateLog(): UpdateLogTransport & { _debug: () => { 
       return { snapshot: null, frames: frames.filter((f) => f.seq > since), head }
     },
     async append({ kind = 'update', data, floor = 0 }: UpdateLogAppendInput) {
+      // See load()'s comment above — same real-transport-timing fidelity.
+      await Promise.resolve()
       head += 1
       const seq = head
       if (kind === 'snapshot') {
