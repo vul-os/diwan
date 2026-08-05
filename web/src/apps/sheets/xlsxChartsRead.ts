@@ -331,7 +331,7 @@ export function geometryOf(anchor: Element | null | undefined): Geometry | null 
  * must NOT be joined onto the declaring part's directory.
  */
 function resolveTarget(basePath: string, target: unknown): string {
-  const raw = String(target || '')
+  const raw = typeof target === 'string' ? target : ''
   if (raw.startsWith('/')) return raw.slice(1)
   const baseDir = basePath.replace(/\/[^/]*$/, '')
   const parts = `${baseDir}/${raw}`.split('/')
@@ -461,7 +461,10 @@ export async function readXlsxCharts(
     let title = richText(kid(titleEl, 'tx') || titleEl)
     if (!title && titleEl && typeof cellAt === 'function') {
       const ref = refIn(kid(titleEl, 'tx'))
-      if (ref) title = String(cellAt(ref.r0, ref.c0) ?? '')
+      if (ref) {
+        const cell: unknown = cellAt(ref.r0, ref.c0)
+        title = typeof cell === 'string' || typeof cell === 'number' ? String(cell) : ''
+      }
     }
 
     const groups = [...(plotArea.children || [])].filter((el) => PLOT_GROUPS.has(el.localName) || /Chart$/.test(el.localName))
