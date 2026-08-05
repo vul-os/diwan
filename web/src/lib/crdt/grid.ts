@@ -220,6 +220,30 @@ export type ChartDescriptor = { id: string; [key: string]: unknown }
 export type PivotDescriptor = { id: string; [key: string]: unknown }
 export type ColorScaleRule = { id: string; [key: string]: unknown }
 
+// The `remoteOp` CustomEvent this session (and SubstrateGridSession, which
+// dispatches the identical shape — see the WAVE-55/63 comments in
+// substrateGrid.ts) fires. A plain cell op or snapshot carries no field a
+// consumer reads by name (SheetsEditor re-reads cells from the session
+// itself), so those two variants are intentionally left as opaque markers
+// here; only the chart/pivot/color-scale side-channel fields that
+// SheetsEditor.onRemote actually destructures are named. Consumers were
+// casting to bare `CustomEvent` (detail: any) before this existed.
+export type GridRemoteOpDetail = {
+  op?: GridOp
+  snapshot?: true
+  chart?: ChartDescriptor
+  chartId?: string
+  action?: string
+  pivot?: PivotDescriptor
+  pivotId?: string
+  pivotAction?: string
+  colorScale?: ColorScaleRule
+  colorScaleId?: string
+  colorScaleAction?: string
+  opId?: string
+}
+export type GridLocalOpDetail = { op: GridOp }
+
 type FabricMessage = {
   type: string
   session: string

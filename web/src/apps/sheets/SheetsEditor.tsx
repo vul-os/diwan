@@ -28,6 +28,7 @@ import {
 import {
   GridSession, getGridReplicaId,
   type GridSessionOptions, type ChartDescriptor as CrdtChartDescriptor,
+  type GridRemoteOpDetail,
 } from '../../lib/crdt/grid.js'
 import { GRID_ENGINE_MISMATCH_NOTICE } from '../../lib/crdt/gridEngine.js'
 import { OpLogSync } from '../../lib/collab/opLogSync.js'
@@ -160,10 +161,16 @@ interface SelectionRect { r0: number; r1: number; c0: number; c1: number }
  * valid A1 selection and a stable grid.
  */
 function normalizeSheets(sheets: unknown): Sheet[] {
-  const arr: Sheet[] = Array.isArray(sheets) && sheets.length
+  // `sheets` is untrusted, freshly-loaded document content — Array.isArray
+  // narrows it to `any[]`, not `Sheet[]`, so the per-element cast below is
+  // where the boundary is actually crossed (same pattern as the file's own
+  // `cast<T>()` helper above).
+  const arr: unknown[] = Array.isArray(sheets) && sheets.length
     ? sheets
     : [{ name: 'Sheet1', celldata: [], config: {} }]
-  return arr.map((sh, i) => ({
+  return arr.map((raw, i) => {
+    const sh = raw as Sheet
+    return {
     ...sh,
     name: sh.name || `Sheet${i + 1}`,
     celldata: sh.celldata || [],
@@ -181,7 +188,8 @@ function normalizeSheets(sheets: unknown): Sheet[] {
     luckysheet_select_save: Array.isArray(sh.luckysheet_select_save) && sh.luckysheet_select_save.length
       ? sh.luckysheet_select_save
       : [{ row: [0, 0], column: [0, 0], row_focus: 0, column_focus: 0 }],
-  }))
+    }
+  })
 }
 
 // loadContent — the single UNTRUSTED-ORIGIN normalise+clamp used by every load
@@ -623,7 +631,7 @@ export default function SheetsEditor() {
         opLog = new OpLogSync({
           fileId: id,
           subscribeLocal: (cb) => {
-            const h = (e: Event) => cb((e as CustomEvent).detail.op)
+            const h = (e: Event) => cb((e as CustomEvent<GridRemoteOpDetail>).detail.op)
             s.addEventListener('localOp', h)
             return () => s.removeEventListener('localOp', h)
           },
@@ -647,7 +655,7 @@ export default function SheetsEditor() {
     const onRemote = (ev: Event) => {
       // WAVE-54: a chart op carries a chart payload; merge it into sheet.charts
       // (LWW-by-id: last upsert wins, delete removes). Cell ops fall through.
-      const detail = (ev as CustomEvent)?.detail
+      const detail = (ev as CustomEvent<GridRemoteOpDetail>)?.detail
       if (detail && (detail.chart || detail.chartId)) {
         // WAVE-55 SECURITY: the descriptor arrives from an untrusted peer over
         // the CRDT fabric. NEVER merge it raw — run it through makeChart so the
@@ -839,14 +847,20 @@ export default function SheetsEditor() {
         loadDocument(loadContent(df.content))
       }).catch(() => {
         showToast('Could not open this spreadsheet.', 'error')
-        navigate('/sheets')
+        // BrowserRouter (declarative) mode, per main.tsx — navigate() is
+        // always synchronous void here, never returns a Promise. void just
+        // makes that explicit against NavigateFunction's wider (data-router)
+        // type.
+        void navigate('/sheets')
       })
     }
   }, [id])
 
   useEffect(() => {
     if (!id) return
-    readDraft(id).then((d) => { if (d && d.ts) setDraft(d) })
+    // readDraft catches its own IndexedDB failures internally (see
+    // draftStore.ts) and resolves null rather than rejecting.
+    void readDraft(id).then((d) => { if (d && d.ts) setDraft(d) })
   }, [id])
 
   // ── Live cursors + presence roster (OFFICE-25 / WAVE-27) ────────────────────
@@ -926,7 +940,9 @@ export default function SheetsEditor() {
         const delay = RETRY_DELAY_MS * (retryNum + 1)
         retryTimer.current = setTimeout(() => {
           setRetryCount(retryNum + 1)
-          doSave(undefined, retryNum + 1)
+          // doSave catches its own errors (see its try/catch below) and never
+          // rejects — this is its own retry loop re-entering itself.
+          void doSave(undefined, retryNum + 1)
         }, delay)
       }
     }
@@ -938,7 +954,9 @@ export default function SheetsEditor() {
     // canvas to paint. Those are RENDER-ONLY — strip them here so they never
     // enter the authoritative model / save payload (else they'd accumulate and
     // round-trip). The user's own CF rules (no marker) are kept.
-    let newData: Sheet[] | unknown = newDataRaw
+    // `unknown` already subsumes `Sheet[]` here — this stays genuinely unknown
+    // until the Array.isArray narrow below, then gets an explicit per-branch cast.
+    let newData: unknown = newDataRaw
     if (Array.isArray(newData)) {
       newData = (newData as Sheet[]).map((sheet) => {
         const cf = sheet?.luckysheet_conditionformat_save
@@ -1014,7 +1032,7 @@ export default function SheetsEditor() {
     // Persist the MERGED content (charts + pivots included). newData from a
     // plain grid edit lacks both overlays; merge them in for the save PUT too so
     // they reload with the sheet. An authoritative update already carries them.
-    let toSave: Sheet[] | unknown = newData
+    let toSave: unknown = newData
     if (Array.isArray(newData) && !opts.overlaysAuthoritative) {
       toSave = opts.chartsAuthoritative
         ? newData
@@ -1024,14 +1042,15 @@ export default function SheetsEditor() {
       toSave = mergeImportNotes(cast<INSheet[]>(toSave), getImportNotes(cast<INSheet[]>(dataRef.current)))
       toSave = mergeProtectedRanges(cast<PRSheet[]>(toSave), getProtectedRanges(cast<PRSheet[]>(dataRef.current)))
     }
-    saveTimer.current = setTimeout(() => doSave(cast<Sheet[]>(toSave)), AUTOSAVE_DELAY_MS)
+    // doSave catches its own errors internally and never rejects.
+    saveTimer.current = setTimeout(() => { void doSave(cast<Sheet[]>(toSave)) }, AUTOSAVE_DELAY_MS)
   }, [id, markDirty, broadcastSheetCursor, doSave])
 
   const handleSave = () => {
     clearTimeout(saveTimer.current)
     clearTimeout(retryTimer.current)
     setRetryCount(0)
-    doSave(dataRef.current)
+    void doSave(dataRef.current)
   }
 
   // ── Export (WAVE-64) ──────────────────────────────────────────────────────
@@ -1071,7 +1090,7 @@ export default function SheetsEditor() {
 
   const requestExport = useCallback((fmt: string) => {
     if (exportNeedsConfirm(cast<ExportSheet[]>(data), fmt)) setExportFormat(fmt)
-    else runExport(fmt)
+    else void runExport(fmt) // runExport catches its own errors (toast on failure)
   }, [data, runExport])
 
   // ── Charts (WAVE-54) ──────────────────────────────────────────────────────
@@ -1080,8 +1099,8 @@ export default function SheetsEditor() {
   // the same descriptor without waiting for a full re-save round-trip. We diff
   // the charts array to know which chart to upsert/remove on the fabric.
   const handleChartChange = useCallback((nextData: Sheet[]) => {
-    const prevCharts = Array.isArray(dataRef.current?.[0]?.charts) ? dataRef.current[0].charts! : []
-    const nextCharts = Array.isArray(nextData?.[0]?.charts) ? nextData[0].charts! : []
+    const prevCharts = Array.isArray(dataRef.current?.[0]?.charts) ? dataRef.current[0].charts : []
+    const nextCharts = Array.isArray(nextData?.[0]?.charts) ? nextData[0].charts : []
     // chartsAuthoritative: nextData already holds the definitive charts array
     // (an insert/edit/move/delete from the wizard or ChartLayer) — do NOT let
     // handleChange's merge re-attach the PREVIOUS charts over this one.
@@ -1109,8 +1128,8 @@ export default function SheetsEditor() {
   // AND broadcast a pivot_op so live collaborators merge the same descriptor. We
   // diff the pivots array to know which pivot to upsert/remove on the fabric.
   const handlePivotChange = useCallback((nextData: Sheet[]) => {
-    const prevPivots = Array.isArray(dataRef.current?.[0]?.pivots) ? dataRef.current[0].pivots! : []
-    const nextPivots = Array.isArray(nextData?.[0]?.pivots) ? nextData[0].pivots! : []
+    const prevPivots = Array.isArray(dataRef.current?.[0]?.pivots) ? dataRef.current[0].pivots : []
+    const nextPivots = Array.isArray(nextData?.[0]?.pivots) ? nextData[0].pivots : []
     // overlaysAuthoritative: nextData was derived from the full current data via
     // a pivot.js op, so it already carries the definitive charts AND pivots — do
     // NOT let handleChange re-merge stale overlays over it.
@@ -1138,8 +1157,8 @@ export default function SheetsEditor() {
   // merge resurrect a just-deleted rule) AND broadcast cs_ops so collaborators
   // converge. We diff the rules to know which to upsert/remove on the fabric.
   const handleColorScaleChange = useCallback((nextData: Sheet[]) => {
-    const prevRules = Array.isArray(dataRef.current?.[0]?.colorScales) ? dataRef.current[0].colorScales! : []
-    const nextRules = Array.isArray(nextData?.[0]?.colorScales) ? nextData[0].colorScales! : []
+    const prevRules = Array.isArray(dataRef.current?.[0]?.colorScales) ? dataRef.current[0].colorScales : []
+    const nextRules = Array.isArray(nextData?.[0]?.colorScales) ? nextData[0].colorScales : []
     handleChange(nextData, { overlaysAuthoritative: true })
     const session = gridSessionRef.current
     if (session) {
@@ -1157,7 +1176,7 @@ export default function SheetsEditor() {
     setTitle(newTitle)
     markDirty(id ?? '')
     clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => doSave(dataRef.current), 1500)
+    saveTimer.current = setTimeout(() => { void doSave(dataRef.current) }, 1500)
   }
 
   // WAVE-62 SECURITY: a draft is client-side persisted content (IndexedDB) and
@@ -1169,7 +1188,7 @@ export default function SheetsEditor() {
   // makeChart; the restore path must too, or it reopens the wave-55 render-DoS
   // through the load door. Normalise + clamp fail-closed before it reaches data.
   const handleRestoreDraft  = () => { if (!draft) return; loadDocument(loadContent(draft.content)); if (draft.name) setTitle(draft.name); setDraft(null); markDirty(id ?? '') }
-  const handleDiscardDraft  = () => { if (id) clearDraft(id); setDraft(null) }
+  const handleDiscardDraft  = () => { if (id) void clearDraft(id); setDraft(null) } // clearDraft catches its own errors (draftStore.ts)
 
   // ── Import CSV ──────────────────────────────────────────────────────────────
   const handleImportCSV = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -1182,7 +1201,7 @@ export default function SheetsEditor() {
         const next = [...prev, cast<Sheet>(sheet)]
         markDirty(id ?? '')
         clearTimeout(saveTimer.current)
-        saveTimer.current = setTimeout(() => doSave(next), AUTOSAVE_DELAY_MS)
+        saveTimer.current = setTimeout(() => { void doSave(next) }, AUTOSAVE_DELAY_MS)
         return next
       })
       showToast(`Imported “${file.name}”`, 'success')
@@ -1239,7 +1258,7 @@ export default function SheetsEditor() {
         if (merged) next = cast<Sheet[]>(setImportNotes(cast<INSheet[]>(next), merged))
         markDirty(id ?? '')
         clearTimeout(saveTimer.current)
-        saveTimer.current = setTimeout(() => doSave(next), AUTOSAVE_DELAY_MS)
+        saveTimer.current = setTimeout(() => { void doSave(next) }, AUTOSAVE_DELAY_MS)
         return next
       })
       const summary = importLossSummary(lost)
@@ -1308,8 +1327,9 @@ export default function SheetsEditor() {
       {/* Hidden file inputs for import */}
       <input ref={importInputRef} type="file" className="hidden" accept=".csv,.tsv,.xlsx,.xls,.ods" onChange={(e) => {
         const name = (e.target.files?.[0]?.name || '').toLowerCase()
-        if (/\.(xlsx|xls|ods)$/.test(name)) handleImportXLSX(e)
-        else handleImportCSV(e)
+        // Both handlers catch their own errors internally (toast on failure).
+        if (/\.(xlsx|xls|ods)$/.test(name)) void handleImportXLSX(e)
+        else void handleImportCSV(e)
       }} />
 
       {/* Engine-mismatch banner. The connection pill alone is not enough here:
@@ -1341,7 +1361,7 @@ export default function SheetsEditor() {
       <Topbar
         leading={
           <Tooltip label="Back to Sheets">
-            <IconButton size="sm" onClick={() => navigate('/sheets')}><ArrowLeft size={15} /></IconButton>
+            <IconButton size="sm" onClick={() => void navigate('/sheets')}><ArrowLeft size={15} /></IconButton>
           </Tooltip>
         }
         title={
@@ -1738,7 +1758,7 @@ export default function SheetsEditor() {
             data={cast<ExportSheet[]>(data)}
             format={exportFormat}
             onCancel={() => setExportFormat(null)}
-            onConfirm={(fmt) => runExport(fmt)}
+            onConfirm={(fmt) => void runExport(fmt)}
           />
         )}
       </Suspense>
