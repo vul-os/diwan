@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx'
 import { saveAs } from 'file-saver'
-import { escapeChartText, type Chart, type ChartSheet } from './charts.js'
+import { escapeChartText, type Chart } from './charts.js'
 import { injectChartsIntoXlsx, nativeXlsxSupport, type SkippedChart } from './xlsxCharts.js'
 import { getImportNotes, type ImportNoteChart } from './importNotes.js'
 
@@ -195,8 +195,8 @@ export function chartsMetaSheet(data: ExportSheet[] | null | undefined): XLSX.Wo
  * import wrote down what it dropped, and we say it again here.
  */
 export function exportFidelity(data: ExportSheet[] | null | undefined, format: string): ExportFidelityReport {
-  const charts = Array.isArray(data?.[0]?.charts) ? data![0].charts! : []
-  const pivots = Array.isArray(data?.[0]?.pivots) ? data![0].pivots! : []
+  const charts = Array.isArray(data?.[0]?.charts) ? data[0].charts : []
+  const pivots = Array.isArray(data?.[0]?.pivots) ? data[0].pivots : []
   const imported = getImportNotes(data)
   const report: ExportFidelityReport = {
     format, charts: charts.length, pivots: pivots.length, native: 0,
@@ -284,8 +284,8 @@ export async function exportSheetsToXlsx(data: ExportSheet[], filename: string):
   }
   const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as Parameters<typeof injectChartsIntoXlsx>[0]
 
-  const charts = Array.isArray(data?.[0]?.charts) ? data[0].charts! : []
-  const { buffer, embedded, skipped } = await injectChartsIntoXlsx(buf, charts, (data?.[0] || {}) as ChartSheet)
+  const charts = Array.isArray(data?.[0]?.charts) ? data[0].charts : []
+  const { buffer, embedded, skipped } = await injectChartsIntoXlsx(buf, charts, data?.[0] || {})
   saveAs(
     new Blob([buffer as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
     `${filename}.xlsx`
@@ -307,7 +307,10 @@ export async function exportSheetsToXlsx(data: ExportSheet[], filename: string):
 // scoped to string cells only.
 export function csvField(cell: unknown): string {
   if (typeof cell === 'number') return String(cell)
-  let s = String(cell ?? '')
+  // A real FortuneSheet cell value is string/number/boolean (per the module
+  // doc above); anything else has no meaningful CSV representation — treat
+  // it as empty rather than exporting the literal text "[object Object]".
+  let s = typeof cell === 'string' || typeof cell === 'boolean' ? String(cell) : ''
   if (/^[=+\-@\t\r]/.test(s)) s = "'" + s
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
@@ -319,7 +322,7 @@ export function buildCsv(data: ExportSheet[] | null | undefined): string {
   const cells = sheet.celldata || []
   let maxR = 0, maxC = 0
   for (const { r, c } of cells) { if (r > maxR) maxR = r; if (c > maxC) maxC = c }
-  const grid: unknown[][] = Array.from({ length: maxR + 1 }, () => new Array(maxC + 1).fill(''))
+  const grid: unknown[][] = Array.from({ length: maxR + 1 }, () => new Array<unknown>(maxC + 1).fill(''))
   for (const { r, c, v } of cells) {
     if (!v) continue
     grid[r][c] = v.v !== undefined ? v.v : (v.m ?? '')
@@ -353,6 +356,9 @@ export function exportSheetsToOds(data: ExportSheet[], filename: string): void {
   }
   const meta = chartsMetaSheet(data)
   if (meta) XLSX.utils.book_append_sheet(wb, meta, CHART_META_SHEET)
-  const buf = XLSX.write(wb, { bookType: 'ods', type: 'array' })
+  // XLSX.write's return type is overloaded on its options in a way TS can't
+  // narrow from an inline object; `type: 'array'` is documented to return an
+  // array buffer (same boundary as roundTripCheck.ts).
+  const buf = XLSX.write(wb, { bookType: 'ods', type: 'array' }) as ArrayBuffer
   saveAs(new Blob([buf], { type: 'application/vnd.oasis.opendocument.spreadsheet' }), `${filename}.ods`)
 }
