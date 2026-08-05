@@ -180,8 +180,10 @@ export default function AppHome({ type }: AppHomeProps) {
     if (file) await openImportedFile(file)
   }
 
-  useEffect(() => { fetchFiles(); fetchFolders(); fetchSharedWithMe() }, [])
-  useEffect(() => { if (!scanned) scan() }, [scanned])
+  // Each of these self-catches (filesStore.ts / localFilesStore.ts) and never
+  // rejects — a failure clears `loading` and/or leaves its section empty.
+  useEffect(() => { void fetchFiles(); void fetchFolders(); void fetchSharedWithMe() }, [])
+  useEffect(() => { if (!scanned) void scan() }, [scanned])
 
   // Debounced backend full-text search (content, not just names). Scoped to this
   // app's type so a Docs search doesn't surface Sheets. The server enforces ACL
@@ -191,15 +193,19 @@ export default function AppHome({ type }: AppHomeProps) {
     if (q.length < 2) { setContentResults(null); setContentSearching(false); return }
     setContentSearching(true)
     let live = true
-    const t = setTimeout(async () => {
-      try {
-        const res = await api.searchDocs(q, type) as SearchDocsResponse
-        if (live) setContentResults(res?.results || [])
-      } catch {
-        if (live) setContentResults([])
-      } finally {
-        if (live) setContentSearching(false)
-      }
+    const t = setTimeout(() => {
+      // IIFE: the try/catch/finally below already handles every failure —
+      // void just satisfies setTimeout's void-returning callback type.
+      void (async () => {
+        try {
+          const res = await api.searchDocs(q, type) as SearchDocsResponse
+          if (live) setContentResults(res?.results || [])
+        } catch {
+          if (live) setContentResults([])
+        } finally {
+          if (live) setContentSearching(false)
+        }
+      })()
     }, 250)
     return () => { live = false; clearTimeout(t) }
   }, [search, type])
@@ -251,11 +257,37 @@ export default function AppHome({ type }: AppHomeProps) {
     return out
   }, [folders, folderId, view])
 
-  const openFile = (f: { id: string }) => navigate(`/${cfg.route}/${f.id}`)
+  // BrowserRouter (declarative) mode, per main.tsx — navigate() is always
+  // synchronous void here, never returns a Promise. The explicit block body
+  // makes openFile's own return type void instead of inheriting
+  // NavigateFunction's wider (data-router) `void | Promise<void>`.
+  const openFile = (f: { id: string }) => { void navigate(`/${cfg.route}/${f.id}`) }
   const startRename = (f: DiwanFile) => { setRenaming(f.id); setRenameValue(f.name); setMenuOpen(null) }
-  const commitRename = async (id: string) => { if (renameValue.trim()) await renameFile(id, renameValue.trim()); setRenaming(null) }
+  // BUG FIX: renameFile/renameFolder (filesStore.ts) do not catch their own
+  // errors — a network failure or unresolved save-conflict throws through
+  // here. That used to skip `setRenaming(null)`, leaving the rename input
+  // stuck open forever with no feedback (the user has no way to tell the
+  // rename failed vs. is still in flight). try/finally so the input always
+  // closes, and a toast so a real failure is visible instead of silent.
+  const commitRename = async (id: string) => {
+    try {
+      if (renameValue.trim()) await renameFile(id, renameValue.trim())
+    } catch (e) {
+      showToast(`Could not rename: ${e instanceof Error ? e.message : String(e)}`, 'error')
+    } finally {
+      setRenaming(null)
+    }
+  }
   const startRenameFolder = (f: DiwanFolder) => { setRenaming('folder:' + f.id); setRenameValue(f.name); setMenuOpen(null) }
-  const commitRenameFolder = async (id: string) => { if (renameValue.trim()) await renameFolder(id, renameValue.trim()); setRenaming(null) }
+  const commitRenameFolder = async (id: string) => {
+    try {
+      if (renameValue.trim()) await renameFolder(id, renameValue.trim())
+    } catch (e) {
+      showToast(`Could not rename folder: ${e instanceof Error ? e.message : String(e)}`, 'error')
+    } finally {
+      setRenaming(null)
+    }
+  }
 
   const handleNewFolder = async () => {
     const name = window.prompt('New folder name')
@@ -265,9 +297,15 @@ export default function AppHome({ type }: AppHomeProps) {
     }
   }
 
-  const wrap = <A extends unknown[]>(label: string, fn: (...a: A) => Promise<unknown>) => async (...a: A) => {
-    try { await fn(...a) } catch (e) { showToast(`${label}: ${e instanceof Error ? e.message : String(e)}`, 'error') }
-    setMenuOpen(null)
+  // Returns a plain void-returning handler (not an async function) so it can
+  // be passed directly to the void-typed onTrash/onRestore/onDelete/onStar
+  // props below without a floating/misused promise: the promise this starts
+  // is fully handled INSIDE — .catch shows the toast, .finally always closes
+  // the menu, matching the try/catch/finally this replaced exactly.
+  const wrap = <A extends unknown[]>(label: string, fn: (...a: A) => Promise<unknown>) => (...a: A): void => {
+    fn(...a)
+      .catch((e: unknown) => showToast(`${label}: ${e instanceof Error ? e.message : String(e)}`, 'error'))
+      .finally(() => setMenuOpen(null))
   }
 
   const openLocalFile = async (file: LocalFileEntry & { appType: string }) => {
@@ -293,7 +331,7 @@ export default function AppHome({ type }: AppHomeProps) {
       className="flex-1 overflow-auto bg-bg relative"
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
-      onDrop={onDrop}
+      onDrop={(e) => void onDrop(e)}
     >
       {dragActive && (
         <div className="absolute inset-0 z-30 flex items-center justify-center bg-accent-tint/80 backdrop-blur-sm border-2 border-dashed border-accent m-3 rounded-xl pointer-events-none">
@@ -336,7 +374,7 @@ export default function AppHome({ type }: AppHomeProps) {
             </Tooltip>
           </div>
 
-          <input ref={fileInputRef} type="file" accept={cfg.importExts} className="hidden" onChange={handleImportFile} />
+          <input ref={fileInputRef} type="file" accept={cfg.importExts} className="hidden" onChange={(e) => void handleImportFile(e)} />
           <Button
             variant="secondary" size="sm"
             onClick={() => fileInputRef.current?.click()}
@@ -348,7 +386,7 @@ export default function AppHome({ type }: AppHomeProps) {
           {cfg.canCreate && (
             <>
               <Tooltip label="New folder" side="bottom">
-                <IconButton size="sm" onClick={handleNewFolder} aria-label="New folder">
+                <IconButton size="sm" onClick={() => void handleNewFolder()} aria-label="New folder">
                   <FolderPlus size={14} />
                 </IconButton>
               </Tooltip>
@@ -464,7 +502,7 @@ export default function AppHome({ type }: AppHomeProps) {
                     setMenuOpen={setMenuOpen}
                     onOpen={() => { setView('browse'); setFolderId(folder.id) }}
                     onRename={() => startRenameFolder(folder)}
-                    onRenameCommit={() => commitRenameFolder(folder.id)}
+                    onRenameCommit={() => void commitRenameFolder(folder.id)}
                     onTrash={wrap('Trash folder', () => trashFolder(folder.id, true))}
                     onRestore={wrap('Restore folder', () => trashFolder(folder.id, false))}
                     onDelete={wrap('Delete folder', () => deleteFolder(folder.id))}
@@ -496,7 +534,7 @@ export default function AppHome({ type }: AppHomeProps) {
                       setMenuOpen={setMenuOpen}
                       onOpen={() => openFile(file)}
                       onRename={() => startRename(file)}
-                      onRenameCommit={() => commitRename(file.id)}
+                      onRenameCommit={() => void commitRename(file.id)}
                       onStar={wrap('Star', () => toggleStar(file.id))}
                       onMove={() => { setMoving(file); setMenuOpen(null) }}
                       onShare={() => { setSharing(file); setMenuOpen(null) }}
@@ -520,7 +558,7 @@ export default function AppHome({ type }: AppHomeProps) {
                   setMenuOpen={setMenuOpen}
                   onOpen={openFile}
                   onRename={startRename}
-                  onRenameCommit={commitRename}
+                  onRenameCommit={(id) => void commitRename(id)}
                   onStar={(id) => wrap('Star', () => toggleStar(id))()}
                   onMove={(file) => { setMoving(file); setMenuOpen(null) }}
                   onShare={(file) => { setSharing(file); setMenuOpen(null) }}
@@ -589,7 +627,7 @@ export default function AppHome({ type }: AppHomeProps) {
                   {myLocalFiles.length}
                 </span>
               </div>
-              <button onClick={() => scan()} className="flex items-center gap-1.5 text-2xs text-ink-faint hover:text-ink-muted transition-colors rounded-sm px-1 -mx-1 focus:outline-none focus-visible:shadow-focus focus-visible:text-ink-muted">
+              <button onClick={() => void scan()} className="flex items-center gap-1.5 text-2xs text-ink-faint hover:text-ink-muted transition-colors rounded-sm px-1 -mx-1 focus:outline-none focus-visible:shadow-focus focus-visible:text-ink-muted">
                 <RefreshCw size={11} className={localLoading ? 'animate-spin' : ''} />
                 Rescan
               </button>
@@ -598,7 +636,7 @@ export default function AppHome({ type }: AppHomeProps) {
               {myLocalFiles.map((file, i) => (
                 <button
                   key={file.path}
-                  onClick={() => openLocalFile(file)}
+                  onClick={() => void openLocalFile(file)}
                   disabled={importing === file.path}
                   className={[
                     'w-full flex items-center gap-3 px-4 py-2.5 text-left group',
@@ -640,10 +678,14 @@ export default function AppHome({ type }: AppHomeProps) {
           file={moving}
           folders={(folders || []).filter(f => !f.trashed)}
           onClose={() => setMoving(null)}
-          onMove={async (targetId) => {
-            try { await moveFile(moving.id, { parentId: targetId }) }
-            catch (e) { showToast(`Move failed: ${e instanceof Error ? e.message : String(e)}`, 'error') }
-            setMoving(null)
+          onMove={(targetId) => {
+            // try/catch below already handles every failure — void just
+            // satisfies this prop's void-returning callback type.
+            void (async () => {
+              try { await moveFile(moving.id, { parentId: targetId }) }
+              catch (e) { showToast(`Move failed: ${e instanceof Error ? e.message : String(e)}`, 'error') }
+              setMoving(null)
+            })()
           }}
         />
       )}
@@ -652,7 +694,7 @@ export default function AppHome({ type }: AppHomeProps) {
           open
           file={sharing}
           me={myAccountId ?? undefined}
-          onClose={() => { setSharing(null); fetchSharedWithMe() }}
+          onClose={() => { setSharing(null); void fetchSharedWithMe() }}
         />
       )}
       {menuOpen && <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(null)} />}
