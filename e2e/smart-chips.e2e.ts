@@ -11,7 +11,7 @@ import { test, expect } from './fixtures.js'
 
 test.describe('Docs smart chips E2E', () => {
   test('typing @ opens the chip menu and inserting a place chip adds an inline chip', async ({ officePage: page }) => {
-    const pageErrors = []
+    const pageErrors: string[] = []
     page.on('pageerror', (e) => pageErrors.push(e.message))
 
     await page.goto('/docs/doc1')
