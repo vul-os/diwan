@@ -268,7 +268,11 @@ function isCredentialedProbeAllowed(base: string): boolean {
 
 function readEnv(name: string): string {
   try {
-    return (import.meta && import.meta.env && import.meta.env[name]) || ''
+    // Vite's ImportMetaEnv has no index signature for an arbitrary name, so
+    // this dynamic lookup is `any` by the tool's own types, not this file's.
+    const env = import.meta.env as Record<string, unknown> | undefined
+    const v = env?.[name]
+    return typeof v === 'string' ? v : ''
   } catch {
     return ''
   }
@@ -286,7 +290,7 @@ function readCache(): EndpointPair | null {
   try {
     const raw = typeof localStorage !== 'undefined' && localStorage.getItem(_lsKey)
     if (!raw) return null
-    const v = JSON.parse(raw)
+    const v = JSON.parse(raw) as Partial<EndpointPair> | null
     if (v && typeof v === 'object') {
       // Validate on read: a poisoned cache must not feed an unsafe base URL into
       // the credentialed probe. Anything that isn't '' or a well-formed
@@ -498,7 +502,8 @@ if (typeof window !== 'undefined' && window.addEventListener) {
     if (_reselectTimer !== null) clearTimeout(_reselectTimer)
     _reselectTimer = setTimeout(() => {
       _reselectTimer = null
-      selectEndpoint({ force: true })
+      // probe() (the only awaited call inside) fully self-catches.
+      void selectEndpoint({ force: true })
     }, RESELECT_DEBOUNCE_MS)
   }
   window.addEventListener('online', reselect)
