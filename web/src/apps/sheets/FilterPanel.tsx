@@ -59,7 +59,7 @@ function sheetToRows(sheet: FPSheet | null | undefined): string[][] {
     if (r > maxR) maxR = r
     if (c > maxC) maxC = c
   }
-  const grid: string[][] = Array.from({ length: maxR + 1 }, () => new Array(maxC + 1).fill(''))
+  const grid: string[][] = Array.from({ length: maxR + 1 }, () => new Array<string>(maxC + 1).fill(''))
   for (const { r, c, v } of cells) {
     if (!v) continue
     grid[r][c] = String(v.v !== undefined ? v.v : (v.m ?? ''))
@@ -69,8 +69,10 @@ function sheetToRows(sheet: FPSheet | null | undefined): string[][] {
 
 function matchesRule(value: unknown, rule: FilterRule | null | undefined): boolean {
   if (!rule || !rule.type) return true
-  const v = String(value ?? '').toLowerCase()
-  const rv = String(rule.value ?? '').toLowerCase()
+  const scalarStr = (x: unknown): string =>
+    typeof x === 'string' || typeof x === 'number' || typeof x === 'boolean' ? String(x) : ''
+  const v = scalarStr(value).toLowerCase()
+  const rv = scalarStr(rule.value).toLowerCase()
   switch (rule.type) {
     case 'contains':      return v.includes(rv)
     case 'equals':        return v === rv
