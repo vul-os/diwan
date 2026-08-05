@@ -68,7 +68,7 @@ export default function TransitionPanel({ slide, onChange }: TransitionPanelProp
   const updateAnimation = (id: string | undefined, key: 'label' | 'type' | 'effect', value: string) => {
     onChange({
       ...slide,
-      animations: animations.map((a) => a.id === id ? ({ ...a, [key]: value } as SlideAnimation) : a),
+      animations: animations.map((a) => a.id === id ? { ...a, [key]: value } : a),
     })
   }
 
