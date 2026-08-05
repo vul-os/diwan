@@ -153,19 +153,23 @@ export const DocImage = Image.extend({
   // a live poisoned <img> src. Fail-closed: an unsafe src is dropped, the node
   // renders as an (empty) <img> rather than executing/leaking.
   renderHTML({ node, HTMLAttributes }) {
-    const { width, align } = node.attrs
-    const { style: baseStyle, src, ...rest } = HTMLAttributes
+    // node.attrs / HTMLAttributes are tiptap's own Record<string, any> —
+    // narrow the two fields this override actually reads/writes.
+    const width: unknown = node.attrs.width
+    const align: unknown = node.attrs.align
+    const { style: baseStyle, src, ...rest } = HTMLAttributes as Record<string, unknown>
     if (src != null && !isSafeImageSrc(src)) {
       // Drop an unsafe src entirely; keep the (now image-less) node.
       delete rest.src
     } else if (src != null) {
       rest.src = src
     }
+    const widthStr = typeof width === 'string' || typeof width === 'number' ? String(width) : ''
     const parts = []
-    if (width) parts.push(`width:${width}`)
+    if (widthStr) parts.push(`width:${widthStr}`)
     const a = alignStyle(align)
     if (a) parts.push(a)
-    const attrs = { ...rest }
+    const attrs: Record<string, unknown> = { ...rest }
     if (width) attrs.width = width
     const style = [baseStyle, parts.join(';')].filter(Boolean).join(';')
     if (style) attrs.style = style
