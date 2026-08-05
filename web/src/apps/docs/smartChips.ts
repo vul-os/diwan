@@ -134,7 +134,7 @@ export const SmartChip = Node.create({
         default: '',
         parseHTML: (el: HTMLElement) => (el.getAttribute('data-chip-ref') || '').slice(0, 256),
         renderHTML: (attrs: { refId?: unknown }) =>
-          (attrs.refId ? { 'data-chip-ref': String(attrs.refId).slice(0, 256) } : {}),
+          (typeof attrs.refId === 'string' && attrs.refId ? { 'data-chip-ref': attrs.refId.slice(0, 256) } : {}),
       },
       refHref: {
         default: '',
@@ -213,7 +213,7 @@ export const SmartChip = Node.create({
           const clean = {
             chipType: normType(attrs.chipType),
             label: clampLabel(attrs.label),
-            refId: attrs.refId ? String(attrs.refId).slice(0, 256) : '',
+            refId: typeof attrs.refId === 'string' && attrs.refId ? attrs.refId.slice(0, 256) : '',
             refHref: isSafeChipHref(attrs.refHref) ? attrs.refHref : '',
           }
           // Insert the chip followed by a space so the caret lands after it and
@@ -277,7 +277,9 @@ export function detectChipTrigger(state: EditorState): ChipTriggerMatch | null {
 
 function includesCI(hay: unknown, needle: unknown): boolean {
   if (!needle) return true
-  return String(hay || '').toLowerCase().includes(String(needle).toLowerCase())
+  const h = typeof hay === 'string' || typeof hay === 'number' ? String(hay) : ''
+  const n = typeof needle === 'string' || typeof needle === 'number' ? String(needle) : ''
+  return h.toLowerCase().includes(n.toLowerCase())
 }
 
 function fmtDate(d: Date): string {
