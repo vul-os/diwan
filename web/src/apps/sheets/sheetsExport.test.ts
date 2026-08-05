@@ -82,8 +82,10 @@ describe('xlsx export — formula & dimension fidelity', () => {
       ],
     })
     // SheetJS wants the formula without a leading '='; the cached value is kept.
-    expect(ws['C1'].f).toBe('A1+B1') // was dropped → the cell became a static 15
-    expect(ws['C1'].v).toBe(15)
+    // ws['C1'] hits WorkSheet's own [cell: string]: CellObject | WSKeys | any
+    // index signature, which resolves to any by TS's rules — cast the read.
+    expect((ws['C1'] as XLSX.CellObject).f).toBe('A1+B1') // was dropped → the cell became a static 15
+    expect((ws['C1'] as XLSX.CellObject).v).toBe(15)
   })
 
   it('survives a real SheetJS write→read round-trip with the formula intact', () => {
@@ -96,9 +98,11 @@ describe('xlsx export — formula & dimension fidelity', () => {
     })
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'S')
-    const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+    // XLSX.write()'s return is any in the library's own types — cast to
+    // ArrayBuffer, documented as type: 'array''s real return.
+    const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
     const re = XLSX.read(buf, { type: 'array' })
-    expect(re.Sheets['S']['C1'].f).toBe('A1+B1')
+    expect((re.Sheets['S']['C1'] as XLSX.CellObject).f).toBe('A1+B1')
   })
 
   it('preserves column widths and row heights', () => {
