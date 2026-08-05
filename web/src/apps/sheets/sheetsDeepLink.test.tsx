@@ -59,9 +59,9 @@ const SHEET = {
 vi.mock('../../lib/api', () => ({
   api: {
     // The file is NOT in the store (deep link), so the editor must fetch it.
-    getFile: vi.fn(async () => SHEET),
-    updateFile: vi.fn(async () => SHEET),
-    listFiles: vi.fn(async () => []),
+    getFile: vi.fn(() => Promise.resolve(SHEET)),
+    updateFile: vi.fn(() => Promise.resolve(SHEET)),
+    listFiles: vi.fn(() => Promise.resolve([])),
   },
 }))
 
