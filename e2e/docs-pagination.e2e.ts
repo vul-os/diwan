@@ -17,18 +17,23 @@
  *     KaTeX renders to a `.katex` subtree (real typeset math, not raw source).
  */
 
-import { test, expect } from './fixtures.js'
+import { test, expect, type OfficePage } from './fixtures.js'
 
 // A long document — many paragraphs so the laid-out content exceeds one page and
 // the pagination pass inserts page-break separators.
-function longDocHtml(paras = 90) {
+function longDocHtml(paras = 90): string {
   const p = '<p>The quick brown fox jumps over the lazy dog. '
     + 'Pack my box with five dozen liquor jugs. '
     + 'How vexingly quick daft zebras jump.</p>'
   return Array.from({ length: paras }, () => p).join('')
 }
 
-async function openDoc(page, { html, headerFooter } = {}) {
+interface OpenDocOptions {
+  html?: string
+  headerFooter?: unknown
+}
+
+async function openDoc(page: OfficePage, { html, headerFooter }: OpenDocOptions = {}): Promise<void> {
   const doc = {
     id: 'doc1', name: 'Report', type: 'doc',
     content: { _html: html ?? '<p>Hello world</p>', ...(headerFooter ? { headerFooter } : {}) },
