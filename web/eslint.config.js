@@ -27,20 +27,27 @@ export default defineConfig([
   ]),
 
   // The TypeScript app source (src/**). Parse with the typescript-eslint
-  // parser and lint with the recommended TS + react-hooks + react-refresh
-  // rule sets.
+  // parser and lint with the recommended type-checked TS + react-hooks +
+  // react-refresh rule sets. Type-aware (recommendedTypeChecked, via
+  // parserOptions.projectService) — mirrors the e2e block below. tsconfig.json
+  // already includes 'src', so projectService resolves against the same
+  // program `tsc --noEmit` does.
   {
     files: ['src/**/*.{ts,tsx}'],
     extends: [
       js.configs.recommended,
-      ...tseslint.configs.recommended,
+      ...tseslint.configs.recommendedTypeChecked,
       reactHooks.configs.flat.recommended,
     ],
     languageOptions: {
       ecmaVersion: 2022,
       sourceType: 'module',
       globals: { ...globals.browser, ...globals.es2021 },
-      parserOptions: { ecmaFeatures: { jsx: true } },
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
     },
     rules: {
       'react-refresh/only-export-components': 'warn',
