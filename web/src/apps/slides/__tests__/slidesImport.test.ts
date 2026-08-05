@@ -69,7 +69,7 @@ describe('pptxToSlides — fidelity', () => {
     const body = objs.find((o) => o.type === 'text' && /Point A/.test(o.html)) as TextSlideObject | undefined
     expect(body!.html).toContain('<strong>Point A</strong>')
 
-    const img = objs.find((o) => o.type === 'image') as ImageSlideObject | undefined
+    const img = objs.find((o) => o.type === 'image')
     expect(img!.src).toMatch(/^data:image\/png;base64,/)
     expect(img!.w).toBeCloseTo(3000000 / 12192000, 3)
 
@@ -128,11 +128,11 @@ describe('odpToSlides — fidelity', () => {
     const deck = await odpToSlides(await makeOdp(), 'd.odp')
     expect(deck.slides).toHaveLength(1)
     const objs = deck.slides[0].objects
-    const text = objs.find((o) => o.type === 'text') as TextSlideObject | undefined
+    const text = objs.find((o) => o.type === 'text')
     expect(text!.html).toContain('ODP Title')
     expect(text!.x).toBeCloseTo(1 / 10, 2)      // 1in of a 10in page
     expect(text!.y).toBeCloseTo(0.5 / 7.5, 2)
-    const img = objs.find((o) => o.type === 'image') as ImageSlideObject | undefined
+    const img = objs.find((o) => o.type === 'image')
     expect(img!.src).toMatch(/^data:image\/png;base64,/)
     expect(img!.w).toBeCloseTo(4 / 10, 2)
   })
