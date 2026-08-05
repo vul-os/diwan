@@ -28,6 +28,20 @@ function xr(opts: string | IRunOptions): TextRun {
   return new TextRun(opts)
 }
 
+// tiptap's JSONContent types `attrs` as `Record<string, any>` (and a mark's
+// own `attrs` the same way) — genuinely untyped by the library, not by this
+// file. These are the one boundary where that's allowed to leak in; every
+// other read in this file goes through one of these and gets a real
+// string/number back instead of `any`.
+function attrStr(node: JSONContent, key: string, fallback = ''): string {
+  const v: unknown = node.attrs?.[key]
+  return typeof v === 'string' ? v : fallback
+}
+function attrNum(node: JSONContent, key: string): number | undefined {
+  const v: unknown = node.attrs?.[key]
+  return typeof v === 'number' && Number.isFinite(v) ? v : undefined
+}
+
 // P4: Render every math node in an exported HTML string with KaTeX, then hand
 // the result through sanitizeDocHtml. The doc HTML carries the LaTeX source in a
 // `data-latex` attribute on a `.math-inline` / `.math-block` element (see
@@ -155,7 +169,7 @@ function renderTocInHtml(html: string, headings: HeadingOutlineEntry[]): string 
 // Read headings from doc JSON (export doesn't have a live editor state).
 function readHeadingsForExport(json: JSONContent): HeadingOutlineEntry[] {
   const out: HeadingOutlineEntry[] = []
-  const slugify = (t: unknown) => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+  const slugify = (t: string) => String(t || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
   const textOf = (node: JSONContent): string => {
     let s = ''
     const walk = (n: JSONContent) => {
@@ -168,7 +182,11 @@ function readHeadingsForExport(json: JSONContent): HeadingOutlineEntry[] {
   const walk = (n: JSONContent) => {
     if (n.type === 'heading') {
       const text = textOf(n)
-      out.push({ level: n.attrs?.level || 1, text, slug: slugify(text) })
+      // n.attrs is tiptap's loosely-typed JSONContent attrs bag (any); coerce
+      // to a real number rather than letting `any` leak into HeadingOutlineEntry.
+      const rawLevel: unknown = n.attrs?.level
+      const level = typeof rawLevel === 'number' && Number.isFinite(rawLevel) ? rawLevel : 1
+      out.push({ level, text, slug: slugify(text) })
     }
     ;(n.content || []).forEach(walk)
   }
@@ -180,7 +198,7 @@ function readHeadingsForExport(json: JSONContent): HeadingOutlineEntry[] {
 // text — these are plain strings, not markup). Defence-in-depth: the body is
 // sanitised separately; this keeps a title/header from breaking the document
 // structure or smuggling markup into <title>/@page running elements.
-function escapeHtml(s: unknown): string {
+function escapeHtml(s: string): string {
   return String(s ?? '').replace(/[&<>"']/g, (c) => (
     { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string
   ))
@@ -235,7 +253,7 @@ function hfToPrintCss(hf: HeaderFooterConfig, filename: string): { headerCss: st
 // a value like `</style><script>…` would break out of the stylesheet and inject
 // live script into the exported file. CSS unicode escapes \3c /\3e render as the
 // literal characters in `content:` but can never form an HTML tag.
-function cssStr(s: unknown): string {
+function cssStr(s: string): string {
   return String(s ?? '')
     .replace(/\\/g, '\\\\')
     .replace(/"/g, '\\"')
@@ -424,7 +442,7 @@ async function listToDocx(listNode: JSONContent, depth: number): Promise<FileChi
       if (child.type === 'bulletList' || child.type === 'orderedList') {
         items.push(...(await listToDocx(child, depth + 1)))
       } else if (child.type === 'taskItem') {
-        const checked = child.attrs?.checked || false
+        const checked = typeof child.attrs?.checked === 'boolean' ? child.attrs.checked : false
         items.push(new Paragraph({
           bullet: { level: Math.min(depth, 8) },
           children: [xr({ text: (checked ? '☑ ' : '☐ ') }), ...inlineNodes(child.content?.[0]?.content || [])],
@@ -455,7 +473,7 @@ async function nodeToDocx(node: JSONContent, fnOrder?: FootnoteOrderMap): Promis
     case 'paragraph':
       return [new Paragraph({ children: inlineNodes(node.content || [], fnOrder) })]
     case 'heading':
-      return [new Paragraph({ heading: HEADING_MAP[node.attrs?.level] || HeadingLevel.HEADING_1, children: inlineNodes(node.content || [], fnOrder) })]
+      return [new Paragraph({ heading: HEADING_MAP[attrNum(node, 'level') ?? 1] || HeadingLevel.HEADING_1, children: inlineNodes(node.content || [], fnOrder) })]
     case 'bulletList':
     case 'orderedList':
       return await listToDocx(node, 0)
@@ -486,7 +504,7 @@ async function nodeToDocx(node: JSONContent, fnOrder?: FootnoteOrderMap): Promis
       // URLs — docx embeds raw bytes and we can't synchronously fetch a remote
       // image at export time, so a remote <img> is dropped from the DOCX (it
       // still round-trips through HTML export; see DOCX-fidelity note in memory).
-      const src: string = node.attrs?.src || ''
+      const src: string = attrStr(node, 'src')
       const m = /^data:(image\/(?:png|jpe?g|gif|webp));base64,(.*)$/is.exec(src)
       if (m) {
         try {
@@ -497,7 +515,7 @@ async function nodeToDocx(node: JSONContent, fnOrder?: FootnoteOrderMap): Promis
           // sensible default. Aspect isn't known without decoding, so height is
           // proportional to a 4:3 assumption for the default and preserved-ish
           // for px widths — documented as best-effort fidelity.
-          const pxWidth = /^(\d+)px$/i.exec(node.attrs?.width || '')
+          const pxWidth = /^(\d+)px$/i.exec(attrStr(node, 'width'))
           const width = pxWidth ? Math.min(parseInt(pxWidth[1], 10), 600) : 400
           const height = Math.round(width * 0.75)
           const docxType = ext === 'jpeg' ? 'jpg' : ext
@@ -532,7 +550,7 @@ async function nodeToDocx(node: JSONContent, fnOrder?: FootnoteOrderMap): Promis
       // equation is exported as its LaTeX source in a monospace, centred
       // paragraph (readable + round-trips as text). Documented as best-effort;
       // the HTML export renders true KaTeX. See DOCX-fidelity note.
-      const latex = node.attrs?.latex || ''
+      const latex = attrStr(node, 'latex')
       return [new Paragraph({
         alignment: AlignmentType.CENTER,
         children: [xr({ text: latex, font: 'Cambria Math', italics: true })],
@@ -544,7 +562,7 @@ async function nodeToDocx(node: JSONContent, fnOrder?: FootnoteOrderMap): Promis
       const out: FileChild[] = [new Paragraph({ border: { top: { style: BorderStyle.SINGLE, size: 1, color: 'AAAAAA' } } })]
       for (const item of node.content || []) {
         if (item.type !== 'footnoteItem') continue
-        const num = fnOrder?.get(item.attrs?.id)
+        const num = fnOrder?.get(attrStr(item, 'id'))
         const marker = num ? `${num}. ` : ''
         // A footnoteItem holds paragraph+ content; flatten them, prefixing the
         // first with its number.
@@ -567,13 +585,13 @@ async function nodeToDocx(node: JSONContent, fnOrder?: FootnoteOrderMap): Promis
 export function inlineNodes(nodes: JSONContent[], fnOrder?: FootnoteOrderMap): ParagraphChild[] {
   return nodes.map((node): ParagraphChild => {
     if (node.type === 'footnoteRef') {
-      const num = fnOrder?.get(node.attrs?.id)
+      const num = fnOrder?.get(attrStr(node, 'id'))
       return xr({ text: num ? String(num) : '*', superScript: true })
     }
     // P4: inline equation → its LaTeX source in Cambria Math (best-effort; see
     // the mathBlock note above and the DOCX-fidelity note).
     if (node.type === 'mathInline') {
-      return xr({ text: node.attrs?.latex || '', font: 'Cambria Math', italics: true })
+      return xr({ text: attrStr(node, 'latex'), font: 'Cambria Math', italics: true })
     }
     // SMART CHIPS: a chip has no `text` child — its display text is the `label`
     // attribute. Emit it as a styled run so the chip's content is PRESERVED in
@@ -581,22 +599,25 @@ export function inlineNodes(nodes: JSONContent[], fnOrder?: FootnoteOrderMap): P
     // becomes its label text (docx has no in-app link target); person/date/place
     // become their label. Coloured to read as a chip.
     if (node.type === 'smartChip') {
-      const label: string = (node.attrs?.label || '').slice(0, 200)
+      const label: string = attrStr(node, 'label').slice(0, 200)
       if (!label) return xr('')
       return xr({ text: label, color: '3730A3', bold: true })
     }
     if (node.type !== 'text') return xr('')
     const marks = node.marks || []
     const hasMark = (type: string) => marks.some((m) => m.type === type)
-    const markAttr = (type: string, attr: string) => marks.find((m) => m.type === type)?.attrs?.[attr]
-    const color = markAttr('color', 'color')?.replace('#', '')
+    // A mark's `attrs` is the same tiptap-untyped `Record<string, any>` as a
+    // node's — returns `unknown`, same reasoning as attrStr/attrNum above.
+    const markAttr = (type: string, attr: string): unknown => marks.find((m) => m.type === type)?.attrs?.[attr]
+    const rawColor = markAttr('color', 'color')
+    const color = typeof rawColor === 'string' ? rawColor.replace('#', '') : undefined
     // Font size / family live on the textStyle mark (see lib/tiptap/fontStyle.js).
     const rawSize = markAttr('textStyle', 'fontSize')
-    const sizePt = rawSize ? parseFloat(rawSize) : NaN
+    const sizePt = typeof rawSize === 'string' || typeof rawSize === 'number' ? parseFloat(String(rawSize)) : NaN
     const rawFamily = markAttr('textStyle', 'fontFamily')
     // docx wants a single font name, not a CSS stack — take the first, unquoted.
-    const font: string | undefined = rawFamily
-      ? String(rawFamily).split(',')[0].trim().replace(/^['"]|['"]$/g, '')
+    const font: string | undefined = typeof rawFamily === 'string' && rawFamily
+      ? rawFamily.split(',')[0].trim().replace(/^['"]|['"]$/g, '')
       : undefined
     // DATA-INTEGRITY: a `link` mark carries the hyperlink href. Previously
     // inlineNodes handled no link case, so the anchor TEXT survived to .docx but
@@ -605,6 +626,7 @@ export function inlineNodes(nodes: JSONContent[], fnOrder?: FootnoteOrderMap): P
     // is linked, render it underlined+blue and wrap it in a docx ExternalHyperlink.
     const href = markAttr('link', 'href')
     const linkOk = typeof href === 'string' && /^(https?:|mailto:)/i.test(href.trim())
+    const runColor = color || (linkOk ? '0563C1' : undefined)
     const run = xr({
       text: node.text || '',
       bold: hasMark('bold'),
@@ -612,11 +634,14 @@ export function inlineNodes(nodes: JSONContent[], fnOrder?: FootnoteOrderMap): P
       strike: hasMark('strike'),
       superScript: hasMark('superscript'),
       subScript: hasMark('subscript'),
-      color: color || (linkOk ? '0563C1' : undefined),
       // Linked runs get the conventional underline even if no explicit mark.
-      // Optional docx fields (underline/size/font) are omitted entirely rather
-      // than set to `undefined` — IRunOptions doesn't accept an explicit
-      // undefined value for them.
+      // Optional docx fields (color/underline/size/font) are omitted entirely
+      // rather than set to `undefined` — exactOptionalPropertyTypes (tsconfig)
+      // doesn't accept an explicit undefined value for an optional field, and
+      // now that `color` carries a real `string | undefined` type (it used to
+      // be `any` via the untyped markAttr chain, which silently passed
+      // whatever this evaluated to) tsc actually catches it.
+      ...(runColor ? { color: runColor } : {}),
       ...((hasMark('underline') || linkOk) ? { underline: {} } : {}),
       // docx size is in half-points.
       ...(Number.isFinite(sizePt) && sizePt > 0 ? { size: Math.round(sizePt * 2) } : {}),
