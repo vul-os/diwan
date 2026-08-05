@@ -105,8 +105,10 @@ function addObjectToSlide(s: PptxSlide, obj: SlideObject, theme: ThemeColors): v
     const name = PPTX_SHAPE[obj.shape] || 'rect'
     const shapeOpts: PptxShapeProps = {
       x, y, w, h, rotate,
-      fill: obj.shape === 'line' ? undefined : { color: hex(obj.fill, '7c6af7'), transparency: Math.round((1 - (obj.opacity ?? 1)) * 100) },
       line: { color: hex(obj.stroke, '5b4dd0'), width: obj.strokeWidth ?? 2 },
+    }
+    if (obj.shape !== 'line') {
+      shapeOpts.fill = { color: hex(obj.fill, '7c6af7'), transparency: Math.round((1 - (obj.opacity ?? 1)) * 100) }
     }
     s.addShape(name, shapeOpts)
   }

@@ -162,7 +162,7 @@ export type GenerateInviteOptions = {
   cap?: RoomCap
   /** app origin+path to prefix (default: current location origin + /docs/collab).
    *  When omitted in a non-browser context, only the fragment is returned. */
-  baseUrl?: string
+  baseUrl?: string | undefined
   /** reuse an existing roomKey (for ro derived from the same room as an rw
    *  link). Default: a fresh random 32-byte key. */
   roomKey?: Uint8Array

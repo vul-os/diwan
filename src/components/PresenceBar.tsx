@@ -47,7 +47,7 @@ const STATUS_DOT_STYLE: Record<PresenceStatus, { bg: string; label: string }> = 
  *   className — extra classes
  */
 interface PresenceDotProps {
-  status?: PresenceStatus
+  status?: PresenceStatus | undefined
   size?: number
   className?: string
 }

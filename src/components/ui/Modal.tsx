@@ -105,7 +105,7 @@ type ModalSize = 'sm' | 'md' | 'lg' | 'xl'
 
 interface ModalProps {
   open: boolean
-  onClose?: () => void
+  onClose?: (() => void) | undefined
   title?: string
   size?: ModalSize
   children?: ReactNode

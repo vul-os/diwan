@@ -84,7 +84,7 @@ function KindDot({ kind }: { kind: string }) {
 // ─── ActivityList ─────────────────────────────────────────────────────────────
 function ActivityList({ fileId }: { fileId: string }) {
   const [events, setEvents] = useState<ActivityEvent[]>([])
-  const [loading, setLoading] = useState(true)
+  const [_loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
@@ -173,7 +173,7 @@ function ActivityList({ fileId }: { fileId: string }) {
 // ─── SnapshotsTab ─────────────────────────────────────────────────────────────
 interface SnapshotsTabProps {
   fileId: string
-  onRestore?: (updated: unknown) => void
+  onRestore?: ((updated: unknown) => void) | undefined
 }
 
 function SnapshotsTab({ fileId, onRestore }: SnapshotsTabProps) {

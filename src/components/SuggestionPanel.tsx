@@ -170,7 +170,7 @@ const TAB_ITEMS = [
 ]
 
 interface SuggestionPanelProps {
-  fileId?: string
+  fileId?: string | undefined
   authorId?: string
   suggestions?: Suggestion[]
   onAccept: (item: Suggestion) => void | Promise<void>
@@ -179,7 +179,7 @@ interface SuggestionPanelProps {
 }
 
 export default function SuggestionPanel({
-  fileId, authorId = 'You', suggestions = [], onAccept, onReject, onClose,
+  fileId: _fileId, authorId = 'You', suggestions = [], onAccept, onReject, onClose,
 }: SuggestionPanelProps) {
   const [busy, setBusy]     = useState(false)
   const [filter, setFilter] = useState('pending')

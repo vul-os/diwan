@@ -120,7 +120,7 @@ function resolveReachability({ force = false }: { force?: boolean } = {}): Promi
       const ctrl = hasAbort ? new AbortController() : null
       const timer = ctrl ? setTimeout(() => ctrl.abort(), PROBE_TIMEOUT_MS) : null
       try {
-        const res = await fetch(REACHABILITY_URL, { method: 'GET', signal: ctrl?.signal })
+        const res = await fetch(REACHABILITY_URL, { method: 'GET', signal: ctrl?.signal ?? null })
         if (!res?.ok) return applyFallback()
         const body: { public_base_url?: unknown; rendezvous_url?: unknown; builtin_rendezvous_prefix?: unknown } = await res.json()
         const pub = body && typeof body.public_base_url === 'string' ? body.public_base_url.trim() : ''

@@ -24,9 +24,9 @@ import { playAnimationsOn, type SlideAnimation } from './slideAnimations'
 interface PreviewSlide extends SlideLike {
   id: string
   background?: string
-  transition?: string
+  transition?: string | undefined
   notes?: string
-  animations?: SlideAnimation[]
+  animations?: SlideAnimation[] | undefined
 }
 
 interface PreviewData {
@@ -74,7 +74,7 @@ export default function SlidePreview({ data, onClose }: { data: PreviewData; onC
     import('reveal.js').then(({ default: RevealCtor }) => {
       deck = new RevealCtor(containerRef.current as HTMLElement, {
         embedded: true,
-        transition: (data.transition || 'slide') as Reveal.Options['transition'],
+        transition: (data.transition || 'slide') as NonNullable<Reveal.Options['transition']>,
         margin: 0.04,
         controls: true,
         progress: true,

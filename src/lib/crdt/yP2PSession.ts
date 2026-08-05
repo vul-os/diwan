@@ -232,7 +232,7 @@ export class YP2PCollabSession extends EventTarget {
   }
 
   static async create({ peerId, fileId, baseUrl, ctx, ...rest }: {
-    peerId: string, fileId?: string, baseUrl?: string, ctx: AnyYContext,
+    peerId: string, fileId?: string, baseUrl?: string | undefined, ctx: AnyYContext,
   } & Omit<YP2PCollabSessionOptions, 'room' | 'cap' | 'peerId' | 'fileId' | 'ctx'>): Promise<{
     session: YP2PCollabSession, rwLink: string, roLink: string, roomId: string,
   }> {

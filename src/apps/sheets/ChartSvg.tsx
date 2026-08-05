@@ -31,7 +31,7 @@ interface Plot { x: number; y: number; w: number; h: number }
 
 export interface ChartSvgProps {
   chart: Chart
-  sheet?: ChartSheet | null
+  sheet?: ChartSheet | null | undefined
   width?: number
   height?: number
   extracted?: ExtractedChartData | null
@@ -184,7 +184,7 @@ function Legend({ chart, series, y, W, secondary }: LegendProps) {
 
 interface AxisFrameProps {
   chart: Chart; plot: Plot; W: number; H: number; legendH: number
-  yLabel?: string; xLabel?: string; secondary?: boolean
+  yLabel?: string; xLabel?: string; secondary?: boolean | undefined
 }
 
 /** Shared axis frame (left + bottom rules and the optional axis titles). */

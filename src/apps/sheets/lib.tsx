@@ -30,8 +30,8 @@ export interface SheetsAppProps {
  * actually reads these. */
 interface SheetsEditorProps {
   apiBase?: string
-  onNotification?: (title: string, body: string, priority?: unknown) => void
-  onSignOut?: () => void
+  onNotification?: ((title: string, body: string, priority?: unknown) => void) | undefined
+  onSignOut?: (() => void) | undefined
 }
 const SheetsEditor = lazy(() => import('./SheetsEditor.jsx')) as unknown as LazyExoticComponent<ComponentType<SheetsEditorProps>>
 

@@ -29,7 +29,7 @@ interface UrlPopoverProps {
   label?: string
   submitLabel?: string
   onSubmit?: (url: string) => void
-  onRemove?: () => void
+  onRemove?: (() => void) | undefined
   onClose?: () => void
   align?: 'left' | 'right'
   className?: string
@@ -66,7 +66,7 @@ export default function UrlPopover({
 
   const submit = () => {
     const v = val.trim()
-    if (!v) { onRemove ? onRemove() : onClose?.(); return }
+    if (!v) { if (onRemove) onRemove(); else onClose?.(); return }
     if (!isSafeUrl(v)) { setErr('That doesn’t look like a safe URL.'); return }
     onSubmit?.(normalizeUrl(v))
   }

@@ -49,7 +49,7 @@ function MasterCard({ master, active, onClick }: MasterCardProps) {
 type MasterKey = 'titleY' | 'titleAlign' | 'bodyY' | 'bodyAlign' | 'footerText' | 'showLogo'
 
 interface MasterSlideEditorProps {
-  masters?: Partial<MasterLayout>[]
+  masters?: Partial<MasterLayout>[] | undefined
   onSave: (masters: MasterLayout[]) => void
   onClose: () => void
 }

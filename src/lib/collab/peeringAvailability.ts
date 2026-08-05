@@ -49,7 +49,7 @@ export function probePeeringAvailable(
       const ctrl = hasAbort ? new AbortController() : null
       const timer = ctrl ? setTimeout(() => ctrl.abort(), PROBE_TIMEOUT_MS) : null
       try {
-        const res = await fetch(iceUrl, { method: 'GET', signal: ctrl?.signal })
+        const res = await fetch(iceUrl, { method: 'GET', signal: ctrl?.signal ?? null })
         return !!res?.ok
       } finally {
         if (timer) clearTimeout(timer)

@@ -38,7 +38,7 @@ vi.setConfig({ testTimeout: 30_000 })
 class FakeFabric extends EventTarget {
   peers: Set<FakeFabric>
   id: string
-  wireLog?: string[]
+  wireLog?: string[] | undefined
   constructor(wireLog?: string[]) {
     super()
     this.peers = new Set()

@@ -43,8 +43,8 @@ export type LocalIdentity = { accountId: string; displayName?: string }
 export type CursorType = 'doc' | 'sheet' | 'slide'
 export type CursorPayload = {
   accountId: string
-  displayName?: string
-  color?: string
+  displayName?: string | undefined
+  color?: string | undefined
   from: string | number
   to: string | number
   type: CursorType

@@ -73,8 +73,8 @@ interface DeckSlide extends SlideLike {
   notes?: string
   background?: string
   master?: string
-  transition?: string
-  animations?: SlideAnimation[]
+  transition?: string | undefined
+  animations?: SlideAnimation[] | undefined
   objects?: SlideObject[]
 }
 
@@ -271,13 +271,13 @@ const SIDEBAR_TABS: { id: 'slides' | 'transitions'; icon: typeof FileText; label
 
 export interface SlidesEditorProps {
   apiBase?: string
-  onSignOut?: () => void
-  onNotification?: (title: string, body: string, priority?: string) => void
+  onSignOut?: (() => void) | undefined
+  onNotification?: ((title: string, body: string, priority?: string) => void) | undefined
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- props accepted
-// for interface parity with <SlidesApp/>'s callers; this editor does not yet
-// use them (pre-existing — noted, not fixed, matching PDFEditor's same gap).
+// props accepted for interface parity with <SlidesApp/>'s callers; this
+// editor does not yet use them (pre-existing — noted, not fixed, matching
+// PDFEditor's same gap).
 export default function SlidesEditor(_props: SlidesEditorProps) {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -476,7 +476,7 @@ export default function SlidesEditor(_props: SlidesEditorProps) {
             // sanitized text, gated image src) and fail closed — a malformed
             // object is repaired or dropped, never rendered raw.
             .map((s) => {
-              const slide = { ...s.data } as DeckSlide
+              const slide = { ...s.data } as unknown as DeckSlide
               if (Array.isArray(slide.objects)) slide.objects = sanitizeObjects(slide.objects)
               return slide
             }),
@@ -494,7 +494,7 @@ export default function SlidesEditor(_props: SlidesEditorProps) {
       session.destroy()
       treeSessionRef.current = null
     }
-  }, [id, fabric]) // eslint-disable-line — recreate session when the fabric attaches
+  }, [id, fabric]) // recreate session when the fabric attaches
 
   // ── Sync editor when switching slides ─────────────────────────────────────
   useEffect(() => {
@@ -689,7 +689,7 @@ export default function SlidesEditor(_props: SlidesEditorProps) {
     // Auto-clear the "playing" flag once the longest animation could have run.
     const t = setTimeout(() => { cleanup(); setAnimPlaying(false) }, 2000)
     return () => { clearTimeout(t); cleanup() }
-  }, [activeObjects, activeSlide]) // eslint-disable-line
+  }, [activeObjects, activeSlide])
 
   const insertObject = (partial: ObjectSeed) => {
     const maxZ = Math.max(0, ...activeObjects.map((o) => o.z || 0))

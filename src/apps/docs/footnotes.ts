@@ -231,7 +231,7 @@ export const FootnoteRef = Node.create({
         // Insert the inline ref at the cursor, then ensure a list item exists.
         return chain()
           .insertContent({ type: this.name, attrs: { id } })
-          .command(({ tr, dispatch }: { tr: Transaction; dispatch?: (tr: Transaction) => void }) => {
+          .command(({ tr, dispatch }: { tr: Transaction; dispatch?: ((tr: Transaction) => void) | undefined }) => {
             if (dispatch) ensureFootnoteItem(state, tr, id)
             return true
           })

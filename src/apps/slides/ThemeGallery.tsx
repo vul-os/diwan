@@ -27,7 +27,7 @@ interface ImportedThemeMeta {
 
 interface ThemeGalleryProps {
   currentThemeId?: string
-  customTheme?: Partial<SlideTheme> | null
+  customTheme?: Partial<SlideTheme> | null | undefined
   onApply: (payload: { themeId: string; customTheme: Partial<SlideTheme> | null }) => void
   onClose: () => void
 }

@@ -32,9 +32,9 @@ const MAP: Record<SaveStatusKind, { dot: string; text: string; tone: string }> =
 }
 
 interface SaveStatusProps {
-  status?: SaveStatusKind
-  text?: string
-  title?: string
+  status?: SaveStatusKind | undefined
+  text?: string | undefined
+  title?: string | undefined
   className?: string
 }
 

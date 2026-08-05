@@ -113,9 +113,9 @@ function roleMeta(role: string) {
 interface AccountShareModalProps {
   open: boolean
   onClose: () => void
-  file?: { id?: string; name?: string } | null
-  me?: string
-  onSwitchToLink?: () => void
+  file?: { id?: string | undefined; name?: string | undefined } | null
+  me?: string | undefined
+  onSwitchToLink?: (() => void) | undefined
   liveCollabNotice?: string | null
 }
 

@@ -19,8 +19,8 @@ import {
   AlignCenter, AlignRight, AlignJustify, Image, Link,
   Table, Highlighter, Palette, Undo, Redo,
   RemoveFormatting, ChevronDown, Minus, Download,
-  Indent, Outdent, MoreHorizontal, Heading1, Heading2,
-  Heading3, Heading4, Heading5, Heading6, Type,
+  Indent, Outdent, MoreHorizontal,
+  Heading5, Heading6, Type,
   ListTree, Printer, AlertCircle, Sigma, FileText, PanelTop,
   AtSign,
 } from 'lucide-react'
@@ -315,13 +315,13 @@ interface OverflowMenuProps {
   editor: Editor
   title: string
   onInsertToc?: () => void
-  onPageSetup?: () => void
-  onHeaderFooter?: () => void
-  spellcheck?: boolean
-  onToggleSpellcheck?: () => void
+  onPageSetup?: (() => void) | undefined
+  onHeaderFooter?: (() => void) | undefined
+  spellcheck?: boolean | undefined
+  onToggleSpellcheck?: (() => void) | undefined
 }
 
-function OverflowMenu({ editor, title, onInsertToc, onPageSetup, onHeaderFooter, spellcheck, onToggleSpellcheck }: OverflowMenuProps) {
+function OverflowMenu({ editor, title: _title, onInsertToc, onPageSetup, onHeaderFooter, spellcheck, onToggleSpellcheck }: OverflowMenuProps) {
   return (
     <Dropdown
       trigger={

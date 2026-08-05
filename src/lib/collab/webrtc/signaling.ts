@@ -130,35 +130,35 @@ export type SignalFrameType = 'offer' | 'answer' | 'ice' | 'join' | 'leave'
  */
 export interface SignalPayload {
   type: SignalFrameType
-  session?: string
+  session?: string | undefined
   /** targeted delivery (optional; omit = broadcast) */
-  to?: string | null
+  to?: string | null | undefined
   /** offer / answer SDP */
-  sdp?: string
-  candidate?: RTCIceCandidateInit
+  sdp?: string | undefined
+  candidate?: RTCIceCandidateInit | undefined
   /** replay-protection nonce (required when sig present) */
-  nonce?: string
+  nonce?: string | undefined
   /** signed epoch-ms timestamp (required when sig present) */
-  ts?: number
+  ts?: number | undefined
   /** base64 ECDSA P-256 signature over the canonical payload */
   sig?: string
   /** sender's raw ECDSA public key, base64 (offer/answer only) */
-  pubKey?: string
+  pubKey?: string | undefined
   /** published on 'join': base64 raw ECDSA P-256 deposit-signing public key */
-  depositPubKey?: string | null
+  depositPubKey?: string | null | undefined
   /** published on 'join': base64 raw X25519 box (encryption) public key */
-  boxPubKey?: string | null
+  boxPubKey?: string | null | undefined
   /** published on 'join': this peer's signed prekey for the v2 (X3DH) relay path */
   signedPreKey?: SignedPreKeyClaim | null
   /** published on 'join': signed forward-secrecy capability commitment */
-  supportsV2?: boolean
+  supportsV2?: boolean | undefined
 }
 
 /** The data a caller supplies to {@link SignalingClient.signal} / `_buildSignalPayload`. */
 export interface SignalData {
-  sdp?: string
+  sdp?: string | undefined
   candidate?: RTCIceCandidateInit
-  pubKey?: string
+  pubKey?: string | undefined
 }
 
 /** Signs a canonical string with this client's ECDSA identity, returning a base64 signature. */
@@ -177,17 +177,17 @@ export type SignFrameFn = (msg: string) => Promise<string>
 // @internal — exported only for tests via peer-auth.test.js which re-implements it.
 function _canonical({ type, session, to, from, nonce, ts, sdp, candidate, pubKey }: {
   type: SignalFrameType
-  session?: string
-  to?: string | null
+  session?: string | undefined
+  to?: string | null | undefined
   from: string
-  nonce?: string
-  ts?: number
-  sdp?: string
-  candidate?: RTCIceCandidateInit
-  pubKey?: string
+  nonce?: string | undefined
+  ts?: number | undefined
+  sdp?: string | undefined
+  candidate?: RTCIceCandidateInit | undefined
+  pubKey?: string | undefined
 }): string {
   const msg: {
-    type: SignalFrameType, session?: string, to: string | null, from: string, nonce?: string, ts?: number,
+    type: SignalFrameType, session?: string | undefined, to: string | null, from: string, nonce?: string | undefined, ts?: number | undefined,
     sdp?: string, candidate?: RTCIceCandidateInit, pubKey?: string
   } = { type, session, to: to ?? null, from, nonce, ts }
   if (sdp !== undefined) msg.sdp = sdp
@@ -233,13 +233,13 @@ function _canonical({ type, session, to, from, nonce, ts, sdp, candidate, pubKey
 //
 // @internal — re-implemented by tests to construct/tamper signed joins.
 function _canonicalJoin({ session, from, depositPubKey, boxPubKey, supportsV2, nonce, ts }: {
-  session?: string
+  session?: string | undefined
   from: string
-  depositPubKey?: string | null
-  boxPubKey?: string | null
-  supportsV2?: boolean
-  nonce?: string
-  ts?: number
+  depositPubKey?: string | null | undefined
+  boxPubKey?: string | null | undefined
+  supportsV2?: boolean | undefined
+  nonce?: string | undefined
+  ts?: number | undefined
 }): string {
   return JSON.stringify({
     type: 'join',

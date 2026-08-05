@@ -78,7 +78,7 @@ let _allowedProbeHosts: string[] = []
 // Hosts learned from a trusted BackendTarget via seedFromResolveBackend() (the
 // cloud control plane's /api/resolve/backend response). These are as trusted as
 // injected/env endpoints for the purpose of the credentialed-probe allowlist.
-let _seededHosts: string[] = []
+const _seededHosts: string[] = []
 
 // How long a health-probe may take before the endpoint is considered down.
 const HEALTH_TIMEOUT_MS = 2_500
@@ -99,7 +99,7 @@ type State = {
   selecting: Promise<string> | null
 }
 
-let _state: State = {
+const _state: State = {
   pair: { cloud: '', lan: '' },
   selected: '',
   selectedAt: 0,
@@ -405,7 +405,7 @@ export async function probe(base: string): Promise<boolean> {
       method: 'GET',
       credentials: 'include',
       cache: 'no-store',
-      signal: ctrl ? ctrl.signal : undefined,
+      signal: ctrl ? ctrl.signal : null,
     })
     // Any response — including 401/403 — means the endpoint is reachable.
     return !!res

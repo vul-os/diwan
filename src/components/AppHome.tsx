@@ -730,7 +730,7 @@ export function ContentSearchResults({ results, searching, query, onOpen }: Cont
 // SnippetText renders a server snippet, highlighting the «matched» span the
 // backend delimits with « » guillemets. Rendered as plain text nodes (no HTML
 // injection) so document content can never inject markup.
-export function SnippetText({ snippet }: { snippet?: string }) {
+export function SnippetText({ snippet }: { snippet?: string | undefined }) {
   if (!snippet) return null
   const parts: React.ReactNode[] = []
   let rest = snippet
@@ -863,7 +863,7 @@ interface FileCardProps {
 }
 
 function FileCard({
-  file, Icon, type, view, renaming, renameValue, setRenaming, setRenameValue,
+  file, Icon: _Icon, type, view, renaming, renameValue, setRenaming, setRenameValue,
   menuOpen, setMenuOpen, onOpen, onRename, onRenameCommit,
   onStar, onMove, onShare, onTrash, onRestore, onDelete,
 }: FileCardProps) {

@@ -31,7 +31,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { Excalidraw } from '@excalidraw/excalidraw'
 import '@excalidraw/excalidraw/index.css'
 import type { ExcalidrawImperativeAPI, ExcalidrawProps } from '@excalidraw/excalidraw/types'
-import { ArrowLeft, Users, Eye, Share2, Presentation as BoardIcon, Info, WifiOff } from 'lucide-react'
+import { ArrowLeft, Users, Eye, Share2, Info, WifiOff } from 'lucide-react'
 import { useFilesStore, getSaveState, onSaveStateChange, type DiwanFile } from '../../store/filesStore'
 import { api } from '../../lib/api'
 import { useAuthStore } from '../../store/authStore'
@@ -46,7 +46,7 @@ import {
   isBoardDocEmpty,
   boardDocToScene,
 } from '../../lib/crdt/boardYdoc.js'
-import { ExcalidrawYBinding } from './binding.js'
+import { ExcalidrawYBinding, type BoardEditorAPI } from './binding.js'
 import { useP2PCollab } from '../docs/useP2PCollab.js'
 import P2PShareModal from '../docs/components/P2PShareModal.jsx'
 
@@ -148,7 +148,12 @@ export default function WhiteboardEditor() {
   // ── Bind Excalidraw <-> Y.Doc once the editor API is available ──────────────
   useEffect(() => {
     if (!excalidrawAPI || !ctx) return
-    const binding = new ExcalidrawYBinding(ctx.ydoc, excalidrawAPI)
+    // binding.ts's BoardEditorAPI is a deliberately loose, vendored-shared
+    // subset of Excalidraw's real imperative API (see its own doc comment —
+    // BoardElement is read defensively, not the full ExcalidrawElement union).
+    // Real Excalidraw elements always carry the fuller shape, so this is a
+    // type-level-only bridge, not a behavioural cast.
+    const binding = new ExcalidrawYBinding(ctx.ydoc, excalidrawAPI as unknown as BoardEditorAPI)
     bindingRef.current = binding
     binding.loadInitial()
     return () => { binding.destroy(); bindingRef.current = null }

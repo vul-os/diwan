@@ -14,7 +14,7 @@ import { Workbook } from '@fortune-sheet/react'
 import type { WorkbookInstance } from '@fortune-sheet/react/dist/components/Workbook'
 import type { Sheet as FSSheet } from '@fortune-sheet/core'
 import { Parser as FormulaParser } from '@fortune-sheet/formula-parser'
-import { createRef } from 'react'
+import { createRef, type ComponentPropsWithRef } from 'react'
 import { installCustomFormulas, type FormulaParserClass } from './formulaFunctions.js'
 
 // Real FortuneSheet types (Settings/Sheet) are large and mostly-required; these
@@ -43,7 +43,12 @@ function str(r: number, c: number, v: string): TestCell {
 
 async function mount(data: TestSheet[]) {
   const ref = createRef<WorkbookInstance>()
-  render(<Workbook ref={ref} data={cast<FSSheet[]>(data)} />)
+  // See the matching comment in SheetsEditor.tsx: @fortune-sheet/react's own
+  // WorkbookInstance type re-evaluates its getCellValue() options union
+  // slightly differently across structural positions under
+  // exactOptionalPropertyTypes — both sides are the SAME library type, so
+  // this is cast through unknown rather than widening a 3rd-party type.
+  render(<Workbook ref={ref as unknown as ComponentPropsWithRef<typeof Workbook>['ref']} data={cast<FSSheet[]>(data)} />)
   await waitFor(() => expect(ref.current).toBeTruthy())
   return ref
 }

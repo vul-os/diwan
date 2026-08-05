@@ -6,7 +6,6 @@ import {
   AlertCircle,
   Check,
   CheckCircle,
-  ChevronDown,
   FileText,
   Loader2,
   Lock,
@@ -74,16 +73,6 @@ const FIELD_LABELS_AND_HUE: Record<SignFieldKind, string> = {
   text:      'Text',
 }
 
-// Kept for backwards-compat in case any code reads from it; new layout uses
-// the unified `field-affordance` style.
-const FIELD_COLORS: Record<SignFieldKind, string> = {
-  signature: 'border-accent bg-accent-tint',
-  initial:   'border-accent bg-accent-tint',
-  date:      'border-accent bg-accent-tint',
-  name:      'border-accent bg-accent-tint',
-  text:      'border-accent bg-accent-tint',
-}
-
 const FIELD_LABELS = FIELD_LABELS_AND_HUE
 
 const TYPED_FONTS: Array<{ label: string; value: string }> = [
@@ -146,7 +135,7 @@ function DrawPad({ onDataUrl }: { onDataUrl: (url: string | null) => void }) {
 }
 
 // ── TypedPad: text → PNG via canvas ─────────────────────────────
-function TypedPad({ signerName, onDataUrl }: { signerName?: string; onDataUrl: (url: string | null) => void }) {
+function TypedPad({ signerName, onDataUrl }: { signerName?: string | undefined; onDataUrl: (url: string | null) => void }) {
   const [text, setText] = useState(signerName || '')
   const [fontIdx, setFontIdx] = useState(0)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -684,7 +673,7 @@ export default function SignView() {
             </div>
           )}
 
-          {pdfPages.map(({ canvas, width, height, pageNum }) => {
+          {pdfPages.map(({ canvas, width, pageNum }) => {
             const pageFields = fields.filter((f) => f.page === pageNum)
             return (
               <div

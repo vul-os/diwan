@@ -155,13 +155,13 @@ const ANNOT_INK = '#1a1916'
 
 export interface PDFEditorProps {
   apiBase?: string
-  onSignOut?: () => void
-  onNotification?: (title: string, body: string, priority?: string) => void
+  onSignOut?: (() => void) | undefined
+  onNotification?: ((title: string, body: string, priority?: string) => void) | undefined
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- props accepted
-// for interface parity with <PDFApp/>'s callers; this single-user editor does
-// not yet use them (pre-existing — noted, not fixed, during the TS conversion).
+// props accepted for interface parity with <PDFApp/>'s callers; this
+// single-user editor does not yet use them (pre-existing — noted, not fixed,
+// during the TS conversion).
 export default function PDFEditor(_props: PDFEditorProps) {
   const navigate = useNavigate()
   const location = useLocation()
@@ -1817,7 +1817,7 @@ export default function PDFEditor(_props: PDFEditorProps) {
                     </span>
                   </div>
                   <div className="flex gap-2 justify-center mt-3">
-                    {[['Dancing Script', 'Signature'], ['Pinyon Script', 'Elegant']].map(([f, label]) => (
+                    {[['Dancing Script', 'Signature'], ['Pinyon Script', 'Elegant']].map(([f, _label]) => (
                       <button
                         key={f}
                         type="button"

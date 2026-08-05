@@ -19,8 +19,8 @@ import { MemoryRouter, Routes, Route, Navigate } from 'react-router-dom'
 // cast documents the props DocsApp forwards to it without widening to `any`.
 export interface DocsEditorProps {
   apiBase?: string
-  onNotification?: (title: string, body: string, priority?: string) => void
-  onSignOut?: () => void
+  onNotification?: ((title: string, body: string, priority?: string) => void) | undefined
+  onSignOut?: (() => void) | undefined
 }
 
 const DocsEditor = lazy(() =>

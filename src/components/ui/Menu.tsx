@@ -134,7 +134,7 @@ function MenuBase({ trigger, children, align = 'left', width = 'w-44', className
 
 interface MenuItemProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   children?: ReactNode
-  active?: boolean
+  active?: boolean | undefined
 }
 
 function MenuItem({ children, onClick, active, disabled, className = '', ...rest }: MenuItemProps) {

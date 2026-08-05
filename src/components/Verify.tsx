@@ -65,7 +65,7 @@ interface VerifyResult {
 // Helpers
 // ─────────────────────────────────────────────────────────
 
-function Pill({ ok, label }: { ok?: boolean; label: string }) {
+function Pill({ ok, label }: { ok?: boolean | undefined; label: string }) {
   return (
     <span
       className={[
@@ -79,7 +79,7 @@ function Pill({ ok, label }: { ok?: boolean; label: string }) {
   )
 }
 
-function HashDisplay({ hash, label }: { hash?: string; label: string }) {
+function HashDisplay({ hash, label }: { hash?: string | undefined; label: string }) {
   if (!hash) return null
   return (
     <div className="flex items-start gap-2 mt-1.5">

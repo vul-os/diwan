@@ -37,7 +37,7 @@ interface SelectionRect { r0: number; r1: number; c0: number; c1: number }
 
 export interface ProtectedRangesPanelProps {
   data: PRSheet[]
-  fileId?: string | null
+  fileId?: string | null | undefined
   me?: string | null
   selectionRect?: SelectionRect | null
   onClose: () => void

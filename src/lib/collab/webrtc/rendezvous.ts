@@ -203,7 +203,7 @@ export interface RendezvousClientOptions {
    * itself is signature-authenticated; a token is only for a paid/gated
    * relay's edge). Refused on an insecure (plaintext non-loopback) baseUrl.
    */
-  authToken?: string | null
+  authToken?: string | null | undefined
   /** injectable fetch (tests) */
   fetch?: RendezvousFetch
 }

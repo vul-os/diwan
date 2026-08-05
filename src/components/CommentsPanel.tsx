@@ -46,7 +46,7 @@ type PanelAnchor = CommentAnchor & {
 
 // `assignee` is a server-only field (see handleAssign) not tracked by the
 // CRDT store, so it is layered on top of CommentWithReplies here.
-type PanelComment = Omit<CommentWithReplies, 'anchor'> & { anchor: PanelAnchor; assignee?: string }
+type PanelComment = Omit<CommentWithReplies, 'anchor'> & { anchor: PanelAnchor; assignee?: string | undefined }
 
 interface Collaborator {
   account_id: string
@@ -173,8 +173,8 @@ interface CommentItemProps {
   collaborators?: Collaborator[]
   onUpdated: (updated: PanelComment) => void
   onDeleted: (commentId: string) => void
-  onChange?: () => void
-  onJump?: (commentId: string) => void
+  onChange?: (() => void) | undefined
+  onJump?: ((commentId: string) => void) | undefined
   isActive: boolean
 }
 
@@ -559,11 +559,6 @@ export default function CommentsPanel({ fileId, anchorCtx, authorId = 'You', onC
       .catch(() => setCollaborators([]))
   }, [fileId])
 
-  const refresh = useCallback(() => {
-    const store = getCommentStore(fileId)
-    setComments(store.list() as PanelComment[])
-  }, [fileId])
-
   const handleAdd = async () => {
     const body = newBody.trim()
     if (!body) return
@@ -571,7 +566,7 @@ export default function CommentsPanel({ fileId, anchorCtx, authorId = 'You', onC
     const mentions = getMentions(body, collaborators)
     setBusy(true)
     try {
-      const c = await api.createComment(fileId, anchor, authorId, body, mentions)
+      await api.createComment(fileId, anchor, authorId, body, mentions)
       const store = getCommentStore(fileId)
       store.addComment(anchor, authorId, body)
       setComments(store.list() as PanelComment[])

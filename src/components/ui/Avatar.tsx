@@ -49,8 +49,8 @@ function initials(name = '') {
 }
 
 interface AvatarProps extends HTMLAttributes<HTMLSpanElement> {
-  name?: string
-  color?: string
+  name?: string | undefined
+  color?: string | undefined
   size?: number
   title?: string
   className?: string
@@ -85,7 +85,7 @@ export interface AvatarStackPerson {
   accountId?: string
   name?: string
   displayName?: string
-  color?: string
+  color?: string | undefined
 }
 
 interface AvatarStackProps {

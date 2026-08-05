@@ -35,8 +35,8 @@ interface ApiError extends Error {
 }
 
 interface UpdateFileOpts {
-  rev?: number
-  onConflict?: (current: DiwanFile | undefined, content: unknown) => boolean | Promise<boolean> | void | Promise<void>
+  rev?: number | undefined
+  onConflict?: ((current: DiwanFile | undefined, content: unknown) => boolean | Promise<boolean> | void | Promise<void>) | undefined
   _retried?: boolean
 }
 

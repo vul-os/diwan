@@ -9,6 +9,7 @@
     "checkJs": false,
     "strict": true,
     "noUncheckedIndexedAccess": false,
+    "exactOptionalPropertyTypes": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "forceConsistentCasingInFileNames": true,

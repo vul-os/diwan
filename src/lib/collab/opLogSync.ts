@@ -59,7 +59,7 @@ export type OpLogSyncOptions = {
   /** required when no transport is supplied */
   fileId?: string
   /** inject a transport (tests) */
-  transport?: UpdateLogTransport
+  transport?: UpdateLogTransport | undefined
   subscribeLocal?: (cb: (op: unknown) => void) => () => void
   applyOp: (op: unknown) => void
   applySnapshot?: (state: unknown) => void

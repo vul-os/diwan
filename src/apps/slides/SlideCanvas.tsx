@@ -25,7 +25,6 @@ import {
 } from './slideObjects'
 import ShapeSvg from './ShapeSvg'
 
-const ASPECT = 9 / 16          // stage height / width
 const HANDLE = 8               // handle hit size (px)
 const SNAP_PX = 6              // snap threshold in stage px
 const NUDGE = 0.005            // keyboard nudge step (fraction)
@@ -122,7 +121,7 @@ interface MarqueeDrag {
 
 interface SlideCanvasProps {
   objects?: SlideObject[]
-  background?: string
+  background?: string | undefined
   selectedIds?: string[]
   onSelect?: (ids: string[]) => void
   onChange?: (nextObjects: SlideObject[], opts: { commit: boolean }) => void
@@ -401,10 +400,6 @@ export default function SlideCanvas({
     return () => window.removeEventListener('keydown', onKey, true)
   }, [editable, selectedIds, objects, onChange, onSelect])
 
-  const px = (fracW: number, fracH: number) => ({
-    left: `${fracW * 100}%`, top: `${fracH * 100}%`,
-  })
-
   // Announce the current selection to assistive tech. Kept terse (type when one
   // object, count when several, "nothing" when cleared) so it reads naturally.
   let selectionAnnouncement = ''
@@ -582,7 +577,7 @@ function ObjectBody({ obj, stageW }: { obj: SlideObject; stageW: number }) {
           fontSize: `${Math.max(10, stageW * 0.028)}px`,
           padding: '2%',
         }}
-        // eslint-disable-next-line react/no-danger — html is sanitizeSlideHtml()'d
+        // html is sanitizeSlideHtml()'d
         // at every ingress (sanitizeObject + ensureObjects); never raw peer input.
         dangerouslySetInnerHTML={{ __html: obj.html || '' }}
       />

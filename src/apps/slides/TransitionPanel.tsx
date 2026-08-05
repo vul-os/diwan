@@ -18,8 +18,8 @@ import type { SlideAnimation, AnimationType, AnimationEffect } from './slideAnim
 /** The slide shape this panel reads/writes: the generic slide plus the two
  * fields it owns (transition + per-element animations). */
 export interface TransitionSlide extends SlideLike {
-  transition?: string
-  animations?: SlideAnimation[]
+  transition?: string | undefined
+  animations?: SlideAnimation[] | undefined
 }
 
 interface TransitionPanelProps {

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, useMemo, lazy, Suspense, type ChangeEvent } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo, lazy, Suspense, type ChangeEvent, type ComponentPropsWithRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { Workbook } from '@fortune-sheet/react'
 import type { WorkbookInstance } from '@fortune-sheet/react/dist/components/Workbook'
@@ -29,7 +29,7 @@ import {
   GridSession, getGridReplicaId,
   type GridSessionOptions, type ChartDescriptor as CrdtChartDescriptor,
 } from '../../lib/crdt/grid.js'
-import { GRID_ENGINE_MISMATCH_NOTICE, type EngineMismatch } from '../../lib/crdt/gridEngine.js'
+import { GRID_ENGINE_MISMATCH_NOTICE } from '../../lib/crdt/gridEngine.js'
 import { OpLogSync } from '../../lib/collab/opLogSync.js'
 import { updateLogEnabled, substrateSyncEnabled } from '../../lib/flags.js'
 import CommentsPanel from '../../components/CommentsPanel'
@@ -126,7 +126,7 @@ export interface Sheet {
 }
 
 export interface SheetCellValue {
-  v?: string | number | boolean
+  v?: string | number | boolean | undefined
   m?: string | number
   f?: string
   ct?: { fa?: string; t?: string }
@@ -822,7 +822,7 @@ export default function SheetsEditor() {
       }
       gridSessionRef.current = null
     }
-  }, [id, fabric]) // eslint-disable-line — recreate session when the fabric attaches
+  }, [id, fabric]) // recreate session when the fabric attaches
 
   useEffect(() => {
     if (!id) return
@@ -1581,7 +1581,14 @@ export default function SheetsEditor() {
             // is uncontrolled and would otherwise keep showing the sheet it
             // first mounted with.
             key={`${id}:${loadKey}`}
-            ref={workbookRef}
+            // @fortune-sheet/react's own WorkbookInstance type re-evaluates its
+            // getCellValue() options union slightly differently across two
+            // structural positions under exactOptionalPropertyTypes (both sides
+            // are the SAME library type; this is a library type-identity quirk,
+            // not a real mismatch) — cast through unknown to the ref prop's own
+            // type (as this JSX site itself derives it) rather than widen a
+            // 3rd-party type we don't own.
+            ref={workbookRef as unknown as ComponentPropsWithRef<typeof Workbook>['ref']}
             data={cast<FSSheet[]>(renderData)}
             onChange={handleChange}
             showFormulaBar={true}

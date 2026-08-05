@@ -340,7 +340,12 @@ export async function exportToDocx(editor: Editor, filename: string, opts: Expor
     if (bandHasContent(hf.header)) headers = { default: new Header({ children: [bandParagraph(hf.header, ctx)] }) }
     if (bandHasContent(hf.footer)) footers = { default: new Footer({ children: [bandParagraph(hf.footer, ctx)] }) }
   }
-  const section: ISectionOptions = { properties: { page }, children, headers, footers }
+  const section: ISectionOptions = {
+    properties: { page },
+    children,
+    ...(headers ? { headers } : {}),
+    ...(footers ? { footers } : {}),
+  }
 
   const doc = new Document({
     styles: { default: { document: { run: { font: 'Calibri', size: 24 } } } },
@@ -604,15 +609,18 @@ export function inlineNodes(nodes: JSONContent[], fnOrder?: FootnoteOrderMap): P
       text: node.text || '',
       bold: hasMark('bold'),
       italics: hasMark('italic'),
-      // Linked runs get the conventional underline even if no explicit mark.
-      underline: (hasMark('underline') || linkOk) ? {} : undefined,
       strike: hasMark('strike'),
       superScript: hasMark('superscript'),
       subScript: hasMark('subscript'),
       color: color || (linkOk ? '0563C1' : undefined),
+      // Linked runs get the conventional underline even if no explicit mark.
+      // Optional docx fields (underline/size/font) are omitted entirely rather
+      // than set to `undefined` — IRunOptions doesn't accept an explicit
+      // undefined value for them.
+      ...((hasMark('underline') || linkOk) ? { underline: {} } : {}),
       // docx size is in half-points.
-      size: Number.isFinite(sizePt) && sizePt > 0 ? Math.round(sizePt * 2) : undefined,
-      font,
+      ...(Number.isFinite(sizePt) && sizePt > 0 ? { size: Math.round(sizePt * 2) } : {}),
+      ...(font ? { font } : {}),
     })
     // Only emit a hyperlink for safe schemes (http/https/mailto). A javascript:
     // or data: href is dropped to plain text rather than written as a live link.

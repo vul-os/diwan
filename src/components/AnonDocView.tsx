@@ -65,7 +65,7 @@ function renderNode(node: DocNode | null | undefined, key: number): ReactNode {
   }
 }
 
-function DocBody({ doc }: { doc?: DocNode | null }) {
+function DocBody({ doc }: { doc?: DocNode | null | undefined }) {
   if (!doc || typeof doc !== 'object' || !Array.isArray(doc.content)) {
     // Not a TipTap doc (sheet/slide or raw) — show a plain read-only notice.
     return (

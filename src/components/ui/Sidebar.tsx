@@ -110,7 +110,7 @@ function Sidebar({ mode, collapsed: collapsedProp, children, className = '' }: S
  */
 interface SidebarBrandProps {
   name?: string
-  onSetMode?: (mode: SidebarMode) => void
+  onSetMode?: ((mode: SidebarMode) => void) | undefined
 }
 
 function SidebarBrand({ name = 'Diwan', onSetMode }: SidebarBrandProps) {
@@ -191,7 +191,7 @@ function SidebarSection({ label, children, className = '' }: SidebarSectionProps
 interface SidebarItemProps {
   to?: string
   end?: boolean
-  onClick?: (e: MouseEvent) => void
+  onClick?: ((e: MouseEvent) => void) | undefined
   icon?: LucideIcon
   iconAccent?: string    // optional category tint for the icon when not active
   dense?: boolean         // tighter row height + smaller glyph (Recent files)
@@ -260,7 +260,7 @@ function SidebarItem({
 
   if (to) {
     return (
-      <NavLink to={to} end={end} title={title} onClick={onClick} className={({ isActive }) => cn(isActive)}>
+      <NavLink to={to} end={!!end} title={title} onClick={onClick} className={({ isActive }) => cn(isActive)}>
         {({ isActive }) => renderInner(isActive)}
       </NavLink>
     )

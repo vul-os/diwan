@@ -34,16 +34,16 @@ interface MockVersion {
 }
 interface MockReply {
   id: string
-  author_id?: string
-  body?: string
+  author_id?: string | undefined
+  body?: string | undefined
   mentions?: string[]
   created_at: string
 }
 interface MockComment {
   id: string
   anchor?: unknown
-  author_id?: string
-  body?: string
+  author_id?: string | undefined
+  body?: string | undefined
   mentions?: string[]
   assignee?: string
   state: string
@@ -56,11 +56,11 @@ interface MockCollaborator {
 }
 interface MockSuggestion {
   id: string
-  kind?: string
-  author_id?: string
+  kind?: string | undefined
+  author_id?: string | undefined
   from?: unknown
   to?: unknown
-  text?: string
+  text?: string | undefined
   state: string
   reviewer_id?: string
   created_at: string
@@ -176,10 +176,6 @@ export function resetMock({ role = 'owner' }: { role?: string } = {}) {
   mockState.owner = 'you@vulos.test'
   mockState.sharedWithMe = []
 }
-
-// WAVE37: only owner/editor may PUSH collab ops. viewer/commenter → 403.
-// This mirrors the same editor gate the wave-14 restore path enforces.
-const CAN_EDIT = new Set(['owner', 'editor'])
 
 // A restore is only permitted for owner/editor. viewer/commenter → 403.
 // This mirrors the wave-14 server-side authorization the UI relies on.

@@ -66,7 +66,7 @@ export function fortuneToWorksheet(sheet: ExportSheet): XLSX.WorkSheet {
   let maxR = 0, maxC = 0
   for (const { r, c, v } of cells) {
     if (!v) continue
-    const raw = v.v !== undefined ? v.v : v.m
+    const raw = v.v !== undefined ? v.v : (v.m !== undefined ? v.m : '')
     const cell: XLSX.CellObject = { v: raw, t: typeof raw === 'number' ? 'n' : 's' }
     // DATA-INTEGRITY: preserve the cell FORMULA on export. sheetsImport stores an
     // imported formula as `v.f = "=..."` (leading '='), and the import docstring

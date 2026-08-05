@@ -47,7 +47,7 @@ const TableHeader = TableHeaderBase.extend({
     return ['th', { ...HTMLAttributes, scope: HTMLAttributes.scope || 'col' }, 0]
   },
 })
-import { ArrowLeft, Save, Loader2, AlertCircle, History, Users, MessageSquare, Activity, GitBranch, Search, Type as TypeIcon, ListTree, Share2, Eye } from 'lucide-react'
+import { ArrowLeft, Save, Loader2, AlertCircle, History, Users, MessageSquare, Activity, GitBranch, Search, ListTree, Share2, Eye } from 'lucide-react'
 import FindReplace from './components/FindReplace'
 import WordCountModal from './components/WordCountModal'
 import DocumentOutline from './components/DocumentOutline'
@@ -580,8 +580,9 @@ export default function DocsEditor() {
     // With collaboration ON the document comes from the Y.Doc (the sync plugin
     // owns the content), so passing `content` here would fight the seed and could
     // duplicate the document. It is seeded once, from the same authoritative JSON,
-    // in the effect below.
-    content: collabEnabled ? undefined : resolveContent(file?.content),
+    // in the effect below. Omit the key entirely rather than pass `undefined` —
+    // tiptap's own Content type doesn't accept an explicit undefined value.
+    ...(collabEnabled ? {} : { content: resolveContent(file?.content) }),
     // Not editable until the collaborative document is hydrated — see collabReady.
     editable: !collabEnabled,
     // WAVE-57: paste / drop a raster image → embed it as a bounded base64 data:

@@ -58,7 +58,7 @@ export type ProtectedRangeInput = {
 }
 
 export interface PRSheet {
-  protectedRanges?: ProtectedRange[]
+  protectedRanges?: ProtectedRange[] | undefined
   [key: string]: unknown
 }
 

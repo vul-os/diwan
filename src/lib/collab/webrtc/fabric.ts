@@ -32,7 +32,7 @@ import { SignalingClient, type SignalPayload, type SignalData, type SignedPreKey
 import { fetchIce, resolveStunFallback } from './call/ice.js'
 import {
   generateBoxKeyPair, sealRelayBlob, openRelayBlob,
-  bytesToB64, b64ToBytes,
+  b64ToBytes,
   relayBlobVersion, sealRelayBlobV2, parseRelayBlobV2, openRelayBlobV2,
   type BoxKeyPair, type ParsedRelayBlobV2,
 } from './relayBox.js'
@@ -115,7 +115,7 @@ export interface FabricClientOptions {
   /** base URL for relay deposit/pickup; defaults to '' (same origin) */
   relayBaseUrl?: string
   /** Bearer JWT (optional) */
-  authToken?: string | null
+  authToken?: string | null | undefined
   /**
    * opt in to the unsigned "Vula-Relay <peerId>.<ts>" fallback auth header
    * when no authToken is configured. This header is forgeable (anyone can
@@ -653,6 +653,7 @@ export class FabricClient extends EventTarget {
       if (!polite && ps.pc && ps.pc.signalingState === 'have-local-offer') {
         return
       }
+      if (!sdp) return   // malformed offer frame — no SDP to negotiate with
       ps.reset()
       const pc = this._buildPC(from, ps)
       ps.pc = pc
@@ -676,7 +677,7 @@ export class FabricClient extends EventTarget {
         console.error('[fabric] answer error:', err)
       }
     } else if (type === 'answer') {
-      if (!ps.pc) return
+      if (!ps.pc || !sdp) return   // no pc to answer, or a malformed answer frame
       try {
         await ps.pc.setRemoteDescription({ type: 'answer', sdp })
         for (const c of ps.pendingCandidates) await ps.pc.addIceCandidate(c)
