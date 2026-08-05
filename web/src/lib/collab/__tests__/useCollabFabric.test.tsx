@@ -42,10 +42,10 @@ class FakeFabric extends EventTarget {
   constructor(opts: FakeFabricOpts) {
     super()
     this.opts = opts
-    lastFabric = this
   }
-  async join(): Promise<void> {
-    if (joinBehaviour === 'reject') throw new Error('no peering backend')
+  join(): Promise<void> {
+    if (joinBehaviour === 'reject') return Promise.reject(new Error('no peering backend'))
+    return Promise.resolve()
   }
   leave() { this.left = true }
   send() {}
@@ -58,7 +58,13 @@ class FakeFabric extends EventTarget {
 
 vi.mock('../webrtc/fabric.js', () => ({
   FabricClient: class {
-    constructor(opts: FakeFabricOpts) { return new FakeFabric(opts) }
+    constructor(opts: FakeFabricOpts) {
+      // Record the constructed instance for tests to reach — assigning here
+      // (not inside FakeFabric's own constructor) avoids aliasing `this`.
+      const f = new FakeFabric(opts)
+      lastFabric = f
+      return f
+    }
   },
 }))
 
@@ -150,14 +156,14 @@ describe('useCollabFabric', () => {
     // /api/peering/ice 404s (standalone: no host-box peering) but
     // /api/reachability reports a configured rendezvous_url — the deployment
     // pointed Diwan at a self-hosted relayd with no Vulos OS involved at all.
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    vi.stubGlobal('fetch', vi.fn((url: string) => {
       if (String(url).includes('/api/reachability')) {
-        return {
+        return Promise.resolve({
           ok: true,
-          json: async () => ({ rendezvous_url: 'https://relay.example.org' }),
-        }
+          json: () => Promise.resolve({ rendezvous_url: 'https://relay.example.org' }),
+        })
       }
-      return { ok: false, status: 404 }
+      return Promise.resolve({ ok: false, status: 404 })
     }))
 
     const { result } = renderHook(() =>
