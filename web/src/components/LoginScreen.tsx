@@ -58,7 +58,7 @@ export default function LoginScreen() {
             </p>
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4">
             <div>
               <label htmlFor="login-password" className="block text-xs font-medium text-ink-muted mb-1.5 tracking-tightish">
                 Password
