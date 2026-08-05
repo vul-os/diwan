@@ -44,7 +44,7 @@ describe('endpoints — office wiring', () => {
     setEndpoints()
     const ep = await freshModule()
     ep.resolveEndpoints()
-    const cached: EndpointPair = JSON.parse(localStorage.getItem(OFFICE_LS_KEY) as string)
+    const cached = JSON.parse(localStorage.getItem(OFFICE_LS_KEY) as string) as EndpointPair
     expect(cached.cloud).toBe(CLOUD)
     expect(cached.lan).toBe(LAN)
   })
@@ -52,7 +52,7 @@ describe('endpoints — office wiring', () => {
   it('prefers LAN-direct when both endpoints are reachable', async () => {
     setEndpoints()
     const ep = await freshModule()
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, status: 200 })))
+    vi.stubGlobal('fetch', vi.fn(() => ({ ok: true, status: 200 })))
     const selected = await ep.selectEndpoint({ force: true })
     expect(selected).toBe(LAN)
   })
@@ -60,7 +60,7 @@ describe('endpoints — office wiring', () => {
   it('falls back to cloud when LAN is down', async () => {
     setEndpoints()
     const ep = await freshModule()
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    vi.stubGlobal('fetch', vi.fn((url: string) => {
       if (String(url).startsWith(LAN)) throw new Error('LAN unreachable')
       return { ok: true, status: 200 }
     }))
