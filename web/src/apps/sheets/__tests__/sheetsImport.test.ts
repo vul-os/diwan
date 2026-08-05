@@ -19,12 +19,17 @@ import { buildLyingZip } from '../../../lib/__tests__/zipBombFixture.js'
 function cast<T>(v: unknown): T { return v as T }
 
 // Build a workbook ArrayBuffer for a given bookType from a worksheet mutator.
-function buildBook(mutate: (ws: XLSX.WorkSheet, wb: XLSX.WorkBook) => void, bookType: XLSX.BookType = 'xlsx') {
+//
+// XLSX.write()'s return type is `any` in the library's own types (overloaded
+// on `opts` in a way TS can't narrow from an inline object) — cast to
+// ArrayBuffer, documented as `type: 'array'`'s real return, same as
+// roundTripCheck.ts's boundary fix.
+function buildBook(mutate: (ws: XLSX.WorkSheet, wb: XLSX.WorkBook) => void, bookType: XLSX.BookType = 'xlsx'): ArrayBuffer {
   const wb = XLSX.utils.book_new()
   const ws = XLSX.utils.aoa_to_sheet([['Name', 'Amount'], ['Widget', 5]])
   mutate(ws, wb)
   XLSX.utils.book_append_sheet(wb, ws, 'Data')
-  return XLSX.write(wb, { bookType, type: 'array' })
+  return XLSX.write(wb, { bookType, type: 'array' }) as ArrayBuffer
 }
 
 function findCell(sheet: { celldata: ImportCellEntry[] }, r: number, c: number): ImportCellEntry | undefined {
@@ -36,7 +41,7 @@ describe('workbookToSheets — fidelity', () => {
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['a', 'b']]), 'One')
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['c']]), 'Two')
-    const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+    const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
     const sheets = workbookToSheets(buf, 't.xlsx')
     expect(sheets.map((s) => s.name)).toEqual(['One', 'Two'])
     expect(findCell(sheets[0], 0, 0)!.v.m).toBe('a')
@@ -51,7 +56,9 @@ describe('workbookToSheets — fidelity', () => {
   })
 
   it('preserves a number-format code (currency) via ct.fa', () => {
-    const buf = buildBook((ws) => { ws.B2.z = '$#,##0.00' })
+    // ws.B2 indexes WorkSheet's own `[cell: string]: CellObject | WSKeys | any`
+    // signature, which resolves to `any` by TS's rules — cast the one read.
+    const buf = buildBook((ws) => { (ws.B2 as XLSX.CellObject).z = '$#,##0.00' })
     const sheets = workbookToSheets(buf, 't.xlsx')
     expect(findCell(sheets[0], 1, 1)!.v.ct.fa).toBe('$#,##0.00')
   })
