@@ -27,14 +27,14 @@ export default function NotificationsPanel({ onClose, fileTypeOf }: Notification
   const { items, fetch, markRead, markAllRead } = useNotificationsStore()
   const navigate = useNavigate()
 
-  useEffect(() => { fetch() }, [fetch])
+  useEffect(() => { void fetch() }, [fetch])
 
   const open = (n: { id: string; file_id?: string }) => {
-    markRead(n.id)
+    void markRead(n.id)
     if (n.file_id) {
       const t = fileTypeOf?.(n.file_id)
       const route = (t && ROUTE[t]) || 'docs'
-      navigate(`/${route}/${n.file_id}`)
+      void navigate(`/${route}/${n.file_id}`)
     }
     onClose?.()
   }
@@ -49,7 +49,7 @@ export default function NotificationsPanel({ onClose, fileTypeOf }: Notification
         <div className="flex items-center gap-1">
           {items.some((n) => !n.read) && (
             <button
-              onClick={markAllRead}
+              onClick={() => void markAllRead()}
               className="flex items-center gap-1 text-2xs text-ink-faint hover:text-ink-muted transition-colors px-1.5 py-1 rounded-sm"
               title="Mark all read"
             >
