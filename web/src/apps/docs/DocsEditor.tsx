@@ -44,7 +44,10 @@ const Superscript = Mark.create({
 // TableHeader without changing its schema/parse behaviour.
 const TableHeader = TableHeaderBase.extend({
   renderHTML({ HTMLAttributes }) {
-    return ['th', { ...HTMLAttributes, scope: HTMLAttributes.scope || 'col' }, 0]
+    // HTMLAttributes is tiptap's own Record<string, any> — narrow the one
+    // field this override actually touches.
+    const scope: unknown = HTMLAttributes.scope
+    return ['th', { ...HTMLAttributes, scope: typeof scope === 'string' && scope ? scope : 'col' }, 0]
   },
 })
 import { ArrowLeft, Save, Loader2, AlertCircle, History, Users, MessageSquare, Activity, GitBranch, Search, ListTree, Share2, Eye } from 'lucide-react'
@@ -174,7 +177,8 @@ export function contentToPMJSON(content: unknown, schema: Schema): Record<string
     // cannot represent is dropped here, not smuggled into the document.
     const el = document.createElement('div')
     el.innerHTML = resolved
-    return PMDOMParser.fromSchema(schema).parse(el).toJSON()
+    // ProseMirror's Node.toJSON() is typed `any` upstream.
+    return PMDOMParser.fromSchema(schema).parse(el).toJSON() as Record<string, unknown>
   }
   const { pageSetup: _ps, headerFooter: _hf, _html: _h, ...doc } = resolved
   if (!doc || doc.type !== 'doc') return { type: 'doc', content: [{ type: 'paragraph' }] }
@@ -674,7 +678,8 @@ export default function DocsEditor() {
       clearTimeout(saveTimer.current)
       clearTimeout(retryTimer.current)
       setRetryCount(0)
-      saveTimer.current = setTimeout(() => doSave(), AUTOSAVE_DELAY_MS)
+      // doSave catches its own errors (see its try/catch) and never rejects.
+      saveTimer.current = setTimeout(() => { void doSave() }, AUTOSAVE_DELAY_MS)
 
       // NOTE: there is no broadcast here any more. The document IS the Y.Doc —
       // y-prosemirror writes every local transaction into it, and the sessions
@@ -722,7 +727,8 @@ export default function DocsEditor() {
   // Check for a pending draft on mount (crash recovery)
   useEffect(() => {
     if (!id) return
-    readDraft(id).then((d) => {
+    // readDraft catches its own IndexedDB failures internally (draftStore.ts).
+    void readDraft(id).then((d) => {
       if (d && d.ts) {
         setDraft(d)
       }
@@ -825,7 +831,7 @@ export default function DocsEditor() {
   // object that reaches here came from getSuggestionStore().list() and always
   // has from/to/text set, but the fallbacks below are honest about what the
   // prop contract itself guarantees.
-  const handleAcceptSuggestion = async (sg: PanelSuggestion) => {
+  const handleAcceptSuggestion = (sg: PanelSuggestion) => {
     if (!editor) return
     applyingRemoteRef.current = true
     try {
@@ -836,7 +842,7 @@ export default function DocsEditor() {
         // Delete the proposed range.
         editor.chain().focus().deleteRange({ from: (sg.from ?? 0) + 1, to: (sg.to ?? 0) + 1 }).run()
       }
-      doSave()
+      void doSave() // catches its own errors
     } finally {
       applyingRemoteRef.current = false
     }
@@ -848,7 +854,7 @@ export default function DocsEditor() {
   }
 
   // Reject: discard the suggestion (document unchanged).
-  const handleRejectSuggestion = async (sg: PanelSuggestion) => {
+  const handleRejectSuggestion = (sg: PanelSuggestion) => {
     const store = getSuggestionStore(id || '')
     store.reject(sg.id, 'reviewer')
     setSuggestions(store.list())
@@ -977,10 +983,15 @@ export default function DocsEditor() {
       .then((res) => {
         const r = res as RawCollaborator[] | { collaborators?: RawCollaborator[] } | null | undefined
         const raw: RawCollaborator[] = Array.isArray(r) ? r : (Array.isArray(r?.collaborators) ? r.collaborators : [])
+        // Each field is `unknown` (server response, not schema-guaranteed) —
+        // only accept a real string rather than String()-ing whatever comes
+        // back, which would silently turn a malformed (object-shaped) field
+        // into the literal text "[object Object]" as a chip id/name.
+        const str = (v: unknown): string | undefined => (typeof v === 'string' && v ? v : undefined)
         const list = raw
           .map((c) => ({
-            id: String(c.account_id || c.accountId || c.id || ''),
-            name: String(c.display_name || c.account_id || c.accountId || c.id || ''),
+            id: str(c.account_id) ?? str(c.accountId) ?? str(c.id) ?? '',
+            name: str(c.display_name) ?? str(c.account_id) ?? str(c.accountId) ?? str(c.id) ?? '',
           }))
           .filter((p) => p.id)
         setChipPeople(list)
@@ -999,7 +1010,7 @@ export default function DocsEditor() {
     const href = el.getAttribute('data-chip-href') || ''
     if (!isSafeChipHref(href)) return
     e.preventDefault()
-    navigate(`/${href}`)
+    void navigate(`/${href}`) // BrowserRouter mode — always synchronous void here
   }, [navigate])
 
   // ── OFFICE-25: Live cursors ───────────────────────────────────────────────
@@ -1008,8 +1019,9 @@ export default function DocsEditor() {
   if (!localCursorIdentity.current) {
     try {
       const stored = localStorage.getItem('presence_identity')
-      const parsed = stored ? JSON.parse(stored) : null
-      localCursorIdentity.current = (parsed && parsed.accountId ? parsed : {
+      const parsed: unknown = stored ? JSON.parse(stored) : null
+      const parsedIdentity = parsed as Partial<LocalIdentity> | null
+      localCursorIdentity.current = (parsedIdentity?.accountId ? parsedIdentity : {
         accountId: `guest:${sessionStorage.getItem('vulos_peer_id') || 'local'}`,
         displayName: 'Me',
       }) as LocalIdentity
@@ -1031,7 +1043,7 @@ export default function DocsEditor() {
     fabric: fabricForCursors as unknown as FabricLike | null | undefined,
     localIdentity: localCursorIdentity.current,
     color: localCursorIdentity.current
-      ? (() => { let h=0; for(const c of localCursorIdentity.current!.accountId){h=(h<<5)-h+c.charCodeAt(0);h|=0} return `hsl(${Math.abs(h)%360},65%,50%)` })()
+      ? (() => { let h=0; for(const c of localCursorIdentity.current.accountId){h=(h<<5)-h+c.charCodeAt(0);h|=0} return `hsl(${Math.abs(h)%360},65%,50%)` })()
       : '#6366f1',
   })
   // Presence roster (avatar bar + typing/active indicators). Reuses the SAME
@@ -1180,7 +1192,7 @@ export default function DocsEditor() {
         const delay = RETRY_DELAY_MS * (retryNum + 1)
         retryTimer.current = setTimeout(() => {
           setRetryCount(retryNum + 1)
-          doSave(retryNum + 1)
+          void doSave(retryNum + 1)
         }, delay)
       }
     }
@@ -1190,7 +1202,7 @@ export default function DocsEditor() {
     clearTimeout(saveTimer.current)
     clearTimeout(retryTimer.current)
     setRetryCount(0)
-    doSave()
+    void doSave()
   }
 
   // ── P3: page setup ────────────────────────────────────────────────────────
@@ -1198,7 +1210,7 @@ export default function DocsEditor() {
     setPageSetup(normalizePageSetup(next))
     markDirty(id || '')
     clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => doSave(), 800)
+    saveTimer.current = setTimeout(() => { void doSave() }, 800)
   }, [id, markDirty, doSave])
 
   // ── P2: headers & footers ─────────────────────────────────────────────────
@@ -1206,7 +1218,7 @@ export default function DocsEditor() {
     setHeaderFooter(normalizeHeaderFooter(next))
     markDirty(id || '')
     clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => doSave(), 800)
+    saveTimer.current = setTimeout(() => { void doSave() }, 800)
   }, [id, markDirty, doSave])
 
   // ── P4: equations ─────────────────────────────────────────────────────────
@@ -1217,7 +1229,8 @@ export default function DocsEditor() {
     if (editor.isActive('mathInline') || editor.isActive('mathBlock')) {
       const display = editor.isActive('mathBlock')
       const attrs = editor.getAttributes(display ? 'mathBlock' : 'mathInline')
-      setEquationEditor({ latex: attrs.latex || '', display, editing: true })
+      const latex: unknown = attrs.latex
+      setEquationEditor({ latex: typeof latex === 'string' ? latex : '', display, editing: true })
     } else {
       setEquationEditor({ latex: '', display: false, editing: false })
     }
@@ -1249,7 +1262,7 @@ export default function DocsEditor() {
     setTitle(newTitle)
     markDirty(id || '')
     clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => doSave(), 1500)
+    saveTimer.current = setTimeout(() => { void doSave() }, 1500)
   }
 
   const handleRestoreDraft = () => {
@@ -1261,12 +1274,16 @@ export default function DocsEditor() {
   }
 
   const handleDiscardDraft = () => {
-    clearDraft(id || '')
+    void clearDraft(id || '') // catches its own errors (draftStore.ts)
     setDraft(null)
   }
 
-  const wordCount = (editor?.storage.characterCount?.words() as number | undefined) ?? 0
-  const charCount = (editor?.storage.characterCount?.characters() as number | undefined) ?? 0
+  // editor.storage is tiptap's own Record<string, any> — narrow the one
+  // extension's storage shape this component actually reads.
+  const characterCountStorage = editor?.storage.characterCount as
+    { words?: () => number; characters?: () => number } | undefined
+  const wordCount = characterCountStorage?.words?.() ?? 0
+  const charCount = characterCountStorage?.characters?.() ?? 0
 
   // P1/P3: concrete page geometry for the paper card + break overlay.
   const geo = pageDimensions(pageSetup)
@@ -1331,7 +1348,7 @@ export default function DocsEditor() {
       <Topbar
         leading={
           <Tooltip label="Back to Docs">
-            <IconButton size="sm" onClick={() => navigate('/docs')}>
+            <IconButton size="sm" onClick={() => void navigate('/docs')}>
               <ArrowLeft size={15} />
             </IconButton>
           </Tooltip>
@@ -1662,7 +1679,7 @@ export default function DocsEditor() {
                     editor.state.selection.to,
                     ' '
                   ).slice(0, 80),
-                } as unknown as CommentAnchor)
+                } satisfies CommentAnchor)
               : null
             }
             onClose={() => setShowComments(false)}
@@ -1720,15 +1737,17 @@ export default function DocsEditor() {
         // The P2P invite-link path is a co-editing feature: with co-editing off
         // the button is not offered at all (an invite link that can never sync is
         // worse than no button).
-        onSwitchToLink={!collabEnabled ? undefined : async () => {
+        onSwitchToLink={!collabEnabled ? undefined : () => {
           setShowP2PShare(true)
           // startShare() rejects (peeringUnavailable=true) only when NEITHER
           // this server's own peering fabric NOR a configured rendezvous URL
           // is reachable — surfaced in the modal itself (its `unavailable`
           // prop below), not by this catch.
-          try { if (!p2p.links) await p2p.startShare() } catch (err) {
-            console.warn('[p2p] share unavailable:', (err as Error)?.message)
-          }
+          void (async () => {
+            try { if (!p2p.links) await p2p.startShare() } catch (err) {
+              console.warn('[p2p] share unavailable:', (err as Error)?.message)
+            }
+          })()
         }}
       />
 
@@ -1741,7 +1760,18 @@ export default function DocsEditor() {
           onClose={() => setShowP2PShare(false)}
           links={p2p.links}
           roomId={p2p.roomId}
-          onRotate={() => p2p.rotate()}
+          onRotate={() => {
+            // BUG FIX: p2p.rotate() (== startShare()) can reject — same
+            // failure modes as onSwitchToLink's startShare() call above — but
+            // this call site had no catch, so a rotate failure (e.g. a
+            // transient peering-transport error) was an unhandled promise
+            // rejection with no feedback: the user clicks "Rotate", nothing
+            // visibly happens, and the console shows an uncaught error only
+            // they'll never see.
+            p2p.rotate().catch((err: unknown) => {
+              console.warn('[p2p] rotate failed:', (err as Error)?.message)
+            })
+          }}
           unavailable={p2p.peeringUnavailable}
         />
       )}
