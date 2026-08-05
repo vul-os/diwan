@@ -122,7 +122,7 @@ function resolveReachability({ force = false }: { force?: boolean } = {}): Promi
       try {
         const res = await fetch(REACHABILITY_URL, { method: 'GET', signal: ctrl?.signal ?? null })
         if (!res?.ok) return applyFallback()
-        const body: { public_base_url?: unknown; rendezvous_url?: unknown; builtin_rendezvous_prefix?: unknown } = await res.json()
+        const body = await res.json() as { public_base_url?: unknown; rendezvous_url?: unknown; builtin_rendezvous_prefix?: unknown }
         const pub = body && typeof body.public_base_url === 'string' ? body.public_base_url.trim() : ''
         const base = pub ? pub.replace(/\/+$/, '') : fallback.base
         const rv = body && typeof body.rendezvous_url === 'string' ? body.rendezvous_url.trim() : ''
