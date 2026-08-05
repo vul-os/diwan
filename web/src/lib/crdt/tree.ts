@@ -41,7 +41,7 @@
  *   session.destroy();
  */
 
-import type { FabricClient } from '../collab/webrtc/fabric.js'
+import type { FabricClient, FabricMessageDetail } from '../collab/webrtc/fabric.js'
 
 // ---------------------------------------------------------------------------
 // Lamport clock (same as grid.js)
@@ -338,8 +338,8 @@ type SlideDiff = {
 }
 
 function diffSlide(prev: Slide | undefined, next: Slide | undefined): SlideDiff {
-  const prevObjs = new Map((Array.isArray(prev?.objects) ? prev!.objects! : []).map((o, i) => [objectId(o, i), o] as const))
-  const nextObjs = new Map((Array.isArray(next?.objects) ? next!.objects! : []).map((o, i) => [objectId(o, i), o] as const))
+  const prevObjs = new Map((Array.isArray(prev?.objects) ? prev.objects : []).map((o, i) => [objectId(o, i), o] as const))
+  const nextObjs = new Map((Array.isArray(next?.objects) ? next.objects : []).map((o, i) => [objectId(o, i), o] as const))
 
   const objects: Array<{ id: string, obj: SlideObject | null }> = []
   for (const [id, o] of nextObjs) {
@@ -467,7 +467,7 @@ class TreeCRDT {
           this._nodes.set(op.target, n)
         }
         let slide: Slide
-        try { slide = op.value ? JSON.parse(op.value) : {} } catch { slide = {} }
+        try { slide = op.value ? (JSON.parse(op.value) as Slide) : {} } catch { slide = {} }
         n.slide.applyWhole(op.id, slide)
         break
       }
@@ -564,7 +564,7 @@ class TreeCRDT {
       for (const [key, { opId, val }] of incoming.scalars) n.slide._setScalar(key, opId, val)
     } else if (snapNode.value !== undefined && snapNode.value !== '') {
       let slide: Slide
-      try { slide = JSON.parse(snapNode.value) } catch { slide = {} }
+      try { slide = JSON.parse(snapNode.value) as Slide } catch { slide = {} }
       n.slide.applyWhole(snapNode.valueId || snapNode.ordId || snapNode.id, slide)
     }
   }
@@ -597,7 +597,7 @@ class TreeCRDT {
       } else if (n.value !== undefined && n.value !== '') {
         // Legacy snapshot: fold the whole-slide value in under its valueId.
         let slide: Slide
-        try { slide = JSON.parse(n.value) } catch { slide = {} }
+        try { slide = JSON.parse(n.value) as Slide } catch { slide = {} }
         node.slide.applyWhole(n.valueId || n.ordId || n.id, slide)
       }
       this._nodes.set(n.id, node)
@@ -689,7 +689,7 @@ export class TreeSession extends EventTarget {
     this._loadLocal()
 
     if (this._fabric) {
-      this._onFabricMessage = (ev: Event) => this._handleFabricMessage((ev as CustomEvent).detail.data)
+      this._onFabricMessage = (ev: Event) => this._handleFabricMessage((ev as CustomEvent<FabricMessageDetail>).detail.data)
       this._fabric.addEventListener('message', this._onFabricMessage)
     }
   }
@@ -820,7 +820,7 @@ export class TreeSession extends EventTarget {
     try {
       const raw = localStorage.getItem(SNAPSHOT_KEY(this._session))
       if (raw) {
-        const nodes: TreeNodeSnapshot[] = JSON.parse(raw)
+        const nodes: TreeNodeSnapshot[] = JSON.parse(raw) as TreeNodeSnapshot[]
         this._crdt.restore(nodes)
         for (const n of nodes) {
           const seedIds: Array<string | undefined> = [n.ordId, n.valueId]
@@ -839,7 +839,7 @@ export class TreeSession extends EventTarget {
       }
       const logRaw = localStorage.getItem(OP_LOG_KEY(this._session))
       if (logRaw) {
-        const ops: TreeOp[] = JSON.parse(logRaw)
+        const ops: TreeOp[] = JSON.parse(logRaw) as TreeOp[]
         for (const op of ops) this._crdt.apply(op)
       }
     } catch { /* corrupt — ignore */ }
@@ -848,7 +848,7 @@ export class TreeSession extends EventTarget {
   private _persistOp(op: TreeOp): void {
     try {
       const logRaw = localStorage.getItem(OP_LOG_KEY(this._session))
-      const ops: TreeOp[] = logRaw ? JSON.parse(logRaw) : []
+      const ops: TreeOp[] = logRaw ? (JSON.parse(logRaw) as TreeOp[]) : []
       ops.push(op)
       if (ops.length > MAX_OPLOG) ops.splice(0, ops.length - MAX_OPLOG)
       localStorage.setItem(OP_LOG_KEY(this._session), JSON.stringify(ops))

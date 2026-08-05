@@ -83,7 +83,7 @@ import {
   classifyOp, classifySnapshot, mismatchLogLine,
   type EngineMismatch,
 } from './gridEngine.js'
-import type { FabricClient } from '../collab/webrtc/fabric.js'
+import type { FabricClient, FabricMessageDetail } from '../collab/webrtc/fabric.js'
 import type { SyncEngine, HlcClock } from '@vul-os/kotva-sync'
 import type { ChartDescriptor, PivotDescriptor, ColorScaleRule, GridCellSnapshot } from './grid.js'
 
@@ -169,6 +169,8 @@ function opBytesFromWire(op: unknown): Uint8Array | null {
   return bytes && bytes.length ? bytes : null
 }
 
+// The engine only ever round-trips this opaque HLC through JSON.stringify
+// (never reads a field off it directly), so it stays `unknown` here.
 type DecodedHlc = unknown
 
 type DecodedLwwOp = {
@@ -178,6 +180,20 @@ type DecodedLwwOp = {
   field: string
   value: { tstr?: string }
   hlc: DecodedHlc
+}
+
+// Unlike DecodedHlc above, _overlayId (below) DOES read `.wall`/`.counter` off
+// a freshly-ticked HLC to build an overlay op id — that's the one place this
+// engine's HLC JSON shape is actually consumed by field name, so it gets its
+// own named type instead of `unknown`.
+type TickedHlc = { wall: number; counter: number }
+
+/** The shape `SyncEngine.observable_state_json()` parses to: a flat list of
+ * [target, field, value] LWW register triples. Only the `lww` field this
+ * engine's own cells()/setCell() round-trip is named; everything else the
+ * WASM engine may emit is out of scope here. */
+type ObservableState = {
+  lww?: [target: string, field: string, value: { tstr?: string } | null][]
 }
 
 export type SubstrateGridSessionOptions = {
@@ -260,7 +276,7 @@ export class SubstrateGridSession extends EventTarget {
     this._loadLocal()
 
     if (this._fabric) {
-      this._onFabricMessage = (ev: Event) => this._handleFabricMessage((ev as CustomEvent).detail.data)
+      this._onFabricMessage = (ev: Event) => this._handleFabricMessage((ev as CustomEvent<FabricMessageDetail>).detail.data)
       this._fabric.addEventListener('message', this._onFabricMessage)
       this._announceEngine()
     }
@@ -308,7 +324,7 @@ export class SubstrateGridSession extends EventTarget {
       target: cellTarget(row, col),
       field: FIELD,
       value: { tstr: tagged },
-      hlc: JSON.parse(hlc),
+      hlc: JSON.parse(hlc) as DecodedHlc,
     }))
     this._ingest(bytes)
     const op = wireOp(bytes)
@@ -359,7 +375,7 @@ export class SubstrateGridSession extends EventTarget {
 
   /** Non-deleted cells as [{ r, c, v }] — the FortuneSheet celldata shape. */
   cells(): GridCellSnapshot[] {
-    const state = JSON.parse(this._engine.observable_state_json())
+    const state = JSON.parse(this._engine.observable_state_json()) as ObservableState
     const out: GridCellSnapshot[] = []
     for (const [target, field, value] of state.lww || []) {
       if (field !== FIELD) continue
@@ -412,7 +428,7 @@ export class SubstrateGridSession extends EventTarget {
 
     let decoded: DecodedLwwOp
     try {
-      decoded = JSON.parse(sy.decode_op(bytes))
+      decoded = JSON.parse(sy.decode_op(bytes)) as DecodedLwwOp
     } catch {
       return true
     }
@@ -473,7 +489,7 @@ export class SubstrateGridSession extends EventTarget {
   private _persistOp(op: SubstrateWireOp): void {
     try {
       const logRaw = localStorage.getItem(OP_LOG_KEY(this._session))
-      const ops: SubstrateWireOp[] = logRaw ? JSON.parse(logRaw) : []
+      const ops: SubstrateWireOp[] = logRaw ? (JSON.parse(logRaw) as SubstrateWireOp[]) : []
       ops.push(op)
       if (ops.length > MAX_OPLOG) ops.splice(0, ops.length - MAX_OPLOG)
       localStorage.setItem(OP_LOG_KEY(this._session), JSON.stringify(ops))
@@ -522,7 +538,7 @@ export class SubstrateGridSession extends EventTarget {
 
   /** An overlay op id: the HLC, encoded so the receiver can order LWW-by-id. */
   private _overlayId(): string {
-    const h = JSON.parse(this._clock.tick(Date.now()))
+    const h = JSON.parse(this._clock.tick(Date.now())) as TickedHlc
     return `${h.wall}_${h.counter}_${this._replicaId}`
   }
 

@@ -42,7 +42,7 @@ import {
   classifyOp, classifySnapshot, mismatchLogLine,
   type EngineMismatch,
 } from './gridEngine.js'
-import type { FabricClient } from '../collab/webrtc/fabric.js'
+import type { FabricClient, FabricMessageDetail } from '../collab/webrtc/fabric.js'
 
 // ---------------------------------------------------------------------------
 // Lamport clock (mirrors backend/crdt/id.go LamportClock)
@@ -302,7 +302,7 @@ export class GridSession extends EventTarget {
 
     // Wire fabric message handler.
     if (this._fabric) {
-      this._onFabricMessage = (ev: Event) => this._handleFabricMessage((ev as CustomEvent).detail.data)
+      this._onFabricMessage = (ev: Event) => this._handleFabricMessage((ev as CustomEvent<FabricMessageDetail>).detail.data)
       this._fabric.addEventListener('message', this._onFabricMessage)
       this._announceEngine()
     }
@@ -383,7 +383,12 @@ export class GridSession extends EventTarget {
    * blind replace, so a concurrent local edit is not clobbered). */
   applyLogSnapshot(cells: unknown): void {
     if (this._engineGuard.observeShape(classifySnapshot(cells))) return
-    if (Array.isArray(cells)) this._ingestSnapshotCells(cells)
+    // Array.isArray narrows to `any[]`, not `GridCellRecord[]`. This durable-log
+    // payload is untrusted (peer/server-controlled); _ingestSnapshotCells
+    // already re-validates each entry's own `.opId`/`.r`/`.c` before using it
+    // (see below), so the cast here just names the array shape, not the
+    // per-cell contents.
+    if (Array.isArray(cells)) this._ingestSnapshotCells(cells as GridCellRecord[])
   }
 
   /** The full compacted state to post as a durable snapshot frame. */
@@ -487,7 +492,7 @@ export class GridSession extends EventTarget {
     try {
       const raw = localStorage.getItem(SNAPSHOT_KEY(this._session))
       if (raw) {
-        const cells: GridCellRecord[] = JSON.parse(raw)
+        const cells: GridCellRecord[] = JSON.parse(raw) as GridCellRecord[]
         this._crdt.restore(cells)
         // Re-seed clock from max counter in the snapshot.
         for (const cell of cells) {
@@ -501,7 +506,7 @@ export class GridSession extends EventTarget {
       // Replay persisted op-log for ops that arrived after last snapshot.
       const logRaw = localStorage.getItem(OP_LOG_KEY(this._session))
       if (logRaw) {
-        const ops: GridOp[] = JSON.parse(logRaw)
+        const ops: GridOp[] = JSON.parse(logRaw) as GridOp[]
         for (const op of ops) this._crdt.apply(op)
       }
     } catch { /* corrupt storage — ignore */ }
@@ -510,7 +515,7 @@ export class GridSession extends EventTarget {
   private _persistOp(op: GridOp): void {
     try {
       const logRaw = localStorage.getItem(OP_LOG_KEY(this._session))
-      const ops: GridOp[] = logRaw ? JSON.parse(logRaw) : []
+      const ops: GridOp[] = logRaw ? (JSON.parse(logRaw) as GridOp[]) : []
       ops.push(op)
       // Cap log to avoid unbounded growth; a periodic saveLocal() resets it.
       if (ops.length > MAX_OPLOG) ops.splice(0, ops.length - MAX_OPLOG)
