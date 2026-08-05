@@ -38,13 +38,13 @@ describe('Diwan manifest.webmanifest', () => {
 
   it('parses as valid JSON', () => {
     const raw = readFileSync(manifestPath, 'utf-8')
-    expect(() => { manifest = JSON.parse(raw) }).not.toThrow()
-    manifest = JSON.parse(raw)
+    expect(() => { manifest = JSON.parse(raw) as Manifest }).not.toThrow()
+    manifest = JSON.parse(raw) as Manifest
   })
 
   it('has required string fields', () => {
     const raw = readFileSync(manifestPath, 'utf-8')
-    manifest = JSON.parse(raw)
+    manifest = JSON.parse(raw) as Manifest
 
     expect(manifest.name).toBe('Diwan')
     expect(manifest.short_name).toBe('Diwan')
@@ -55,7 +55,7 @@ describe('Diwan manifest.webmanifest', () => {
 
   it('has at least two icon entries with src, sizes, and type', () => {
     const raw = readFileSync(manifestPath, 'utf-8')
-    manifest = JSON.parse(raw)
+    manifest = JSON.parse(raw) as Manifest
 
     expect(Array.isArray(manifest.icons)).toBe(true)
     expect(manifest.icons.length).toBeGreaterThanOrEqual(2)
@@ -70,7 +70,7 @@ describe('Diwan manifest.webmanifest', () => {
 
   it('includes a 192x192 and a 512x512 icon', () => {
     const raw = readFileSync(manifestPath, 'utf-8')
-    manifest = JSON.parse(raw)
+    manifest = JSON.parse(raw) as Manifest
 
     const sizes = manifest.icons.map((i) => i.sizes)
     expect(sizes).toContain('192x192')
