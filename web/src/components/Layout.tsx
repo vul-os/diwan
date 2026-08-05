@@ -88,8 +88,8 @@ function SidebarContent({ collapsed, onNavigate, onNewFile, onSetMode }: Sidebar
 
   // Poll for @-mention notifications so the badge stays fresh.
   useEffect(() => {
-    fetchNotifs()
-    const t = setInterval(fetchNotifs, 60000)
+    void fetchNotifs()
+    const t = setInterval(() => { void fetchNotifs() }, 60000)
     return () => clearInterval(t)
   }, [fetchNotifs])
   const unread = notifs.filter((n) => !n.read).length
@@ -153,7 +153,7 @@ function SidebarContent({ collapsed, onNavigate, onNewFile, onSetMode }: Sidebar
               dense
               icon={RECENT_ICON[f.type] || FileText}
               iconAccent={RECENT_TINT[f.type] || 'text-ink-faint'}
-              onClick={() => { navigate(typeRoute(f)); onNavigate?.() }}
+              onClick={() => { void navigate(typeRoute(f)); onNavigate?.() }}
               title={f.name}
             >
               {f.name}
@@ -198,7 +198,7 @@ function SidebarContent({ collapsed, onNavigate, onNewFile, onSetMode }: Sidebar
         </Sidebar.Item>
         {status?.enabled && (
           <Sidebar.Item
-            onClick={() => { logout(); onNavigate?.() }}
+            onClick={() => { void logout(); onNavigate?.() }}
             icon={LogOut}
             title="Sign out"
             variant="danger"
