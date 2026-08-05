@@ -124,7 +124,11 @@ function SlideLinkButton({ editor }: { editor: Editor }) {
       {open && (
         <UrlPopover
           label="Link URL"
-          initialValue={editor.getAttributes('link').href || ''}
+          initialValue={(() => {
+            // editor.getAttributes returns tiptap's own Record<string, any>.
+            const href: unknown = editor.getAttributes('link').href
+            return typeof href === 'string' ? href : ''
+          })()}
           onSubmit={(url) => {
             editor.chain().focus().extendMarkRange('link').setLink({ href: url, target: '_blank' }).run()
             setOpen(false)
@@ -145,7 +149,8 @@ function SlideLinkButton({ editor }: { editor: Editor }) {
 // same. Pure textStyle-mark op — writes only into the slide's content HTML, so
 // the CRDT slide tree is untouched.
 function SlideFontFamilySelector({ editor }: { editor: Editor }) {
-  const currentFamily = editor.getAttributes('textStyle').fontFamily || ''
+  const currentFamilyRaw: unknown = editor.getAttributes('textStyle').fontFamily
+  const currentFamily = typeof currentFamilyRaw === 'string' ? currentFamilyRaw : ''
   const currentLabel = SLIDE_FONT_FAMILIES.find((f) => f.value === currentFamily)?.label || 'Font'
   return (
     <Menu
