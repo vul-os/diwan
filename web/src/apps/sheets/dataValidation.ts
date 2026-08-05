@@ -140,14 +140,14 @@ export function dateConditionArity(type2: unknown): number {
 
 /** validationRange — a validated dropdown-source range, or '' when unusable. */
 export function validationRange(text: unknown): string {
-  const s = String(text ?? '').trim()
+  const s = (typeof text === 'string' ? text : '').trim()
   if (!s || s.length > 80 || !RANGE_RE.test(s)) return ''
   return s
 }
 
 /** validationDate — a validated ISO calendar date, or '' when unusable. */
 export function validationDate(text: unknown): string {
-  const s = String(text ?? '').trim()
+  const s = (typeof text === 'string' ? text : '').trim()
   if (!DATE_RE.test(s)) return ''
   const [y, m, d] = s.split('-').map(Number)
   const t = new Date(Date.UTC(y, m - 1, d))
@@ -173,7 +173,8 @@ export function dropdownItems(value1: unknown): string[] {
   if (!value1) return []
   const seen = new Set<string>()
   const out: string[] = []
-  for (const raw of String(value1).split(',')) {
+  const value1Str = typeof value1 === 'string' || typeof value1 === 'number' ? String(value1) : ''
+  for (const raw of value1Str.split(',')) {
     const item = safeStr(raw, MAX_ITEM_LEN).trim()
     if (!item || seen.has(item)) continue
     seen.add(item)
