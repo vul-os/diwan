@@ -21,11 +21,16 @@ beforeAll(() => server.listen({ onUnhandledRequest: 'bypass' }))
 afterEach(() => server.resetHandlers())
 afterAll(() => server.close())
 
-// jsdom lacks clipboard; stub it so copy handlers don't throw.
+// jsdom lacks clipboard; stub it so copy handlers don't throw. Held in a
+// named local (not read back off navigator.clipboard at the assertion site)
+// so the copy-URL test doesn't extract a bare method reference off a typed
+// Clipboard interface — that's what unbound-method is warning about, even
+// though nothing here ever calls it unbound.
+const clipboardWriteText = vi.fn().mockResolvedValue(undefined)
 beforeAll(() => {
   if (!navigator.clipboard) {
     Object.defineProperty(navigator, 'clipboard', {
-      value: { writeText: vi.fn().mockResolvedValue(undefined) },
+      value: { writeText: clipboardWriteText },
       configurable: true,
     })
   }
@@ -126,7 +131,7 @@ describe('Share links + transfer ownership (MSW integration)', () => {
     const url = screen.getByText(/\/view\/tok_/).textContent
     fireEvent.click(copyBtn)
     await waitFor(() =>
-      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(url))
+      expect(clipboardWriteText).toHaveBeenCalledWith(url))
     expect(url).not.toMatch(/undefined/)
   })
 
