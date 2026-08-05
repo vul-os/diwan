@@ -14,6 +14,7 @@
  */
 
 import * as XLSX from 'xlsx'
+import type { CellObject } from 'xlsx'
 import type { TiptapNode } from './templates.js'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -76,7 +77,10 @@ function xlsxBufToFortuneSheets(buf: unknown): FortuneSheet[] {
     for (let r = range.s.r; r <= range.e.r; r++) {
       for (let c = range.s.c; c <= range.e.c; c++) {
         const addr = XLSX.utils.encode_cell({ r, c })
-        const cell = ws[addr]
+        // xlsx's own WorkSheet index signature is `CellObject | WSKeys | any`
+        // — the `any` half of that union absorbs the whole thing, so `ws[addr]`
+        // is `any` by the library's own types, not this file's.
+        const cell = ws[addr] as CellObject | undefined
         if (!cell) continue
         const v = cell.v ?? ''
         const m = cell.w || String(v)
@@ -119,7 +123,10 @@ function checkMergedCellRoundTrip() {
   const ws = fortuneToWorksheet(original)
   const wb = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, original.name)
-  const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+  // XLSX.write's return type is overloaded on `type` in a way TS can't narrow
+  // from an options object built inline; `type: 'array'` is documented to
+  // return an array buffer.
+  const buf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
 
   results.push(assert('merged-cell export: produces !merges in worksheet', ((ws['!merges'] as unknown[]) || []).length === 2))
 
