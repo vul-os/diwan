@@ -222,27 +222,34 @@ jobs:
       # The default-path suite. VULOS_RELAYD_BIN is deliberately NOT set, so the
       # external-relay suite skips (with its reason printed) while this one runs —
       # it has no external dependency and therefore cannot be skipped.
+      #
+      # PLAYWRIGHT_JSON_OUTPUT_NAME also makes playwright.p2p.config.js's `json`
+      # reporter (CI-only, see that file) write a machine-readable per-test
+      # report to $RUNNER_TEMP/p2p-report.json. The next step asserts against
+      # it — this run is not repeated just to gather that data.
       - name: Run real P2P E2E (built-in discovery surface)
         run: npm run test:e2e:p2p
         env:
           CI: 'true'
+          PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ runner.temp }}/p2p-report.json
 
-      # Fail closed on a vanished suite. `playwright test` exits 0 when every test
-      # skipped, so a regression that made the built-in suite skip itself — a
-      # renamed file, a beforeAll that bails, a testMatch that stops matching —
-      # would look exactly like success. Assert instead that the default-path
-      # tests actually EXECUTED, by name.
-      - name: Assert the default-path suite really ran
-        run: |
-          set -euo pipefail
-          npx playwright test --config playwright.p2p.config.js --list --reporter=list \
-            > "$RUNNER_TEMP/p2p-list.txt" 2>&1 || true
-          echo "── collected tests ──"
-          cat "$RUNNER_TEMP/p2p-list.txt"
-          grep -q 'builtin-rendezvous-p2p' "$RUNNER_TEMP/p2p-list.txt" \
-            || { echo "FAIL: the built-in-rendezvous P2P suite was not collected at all"; exit 1; }
-          grep -q 'THE PAYOFF' "$RUNNER_TEMP/p2p-list.txt" \
-            || { echo "FAIL: the payoff test is missing from the collected suite"; exit 1; }
+      # Fail closed on a vanished suite — including one that vanishes AT
+      # RUNTIME. `playwright test --list` (the previous form of this check)
+      # only proves collection: its output is byte-identical whether every
+      # test in the file ran to completion or every one of them skipped
+      # itself (e.g. a beforeAll that bails), because `--list` never executes
+      # anything and `playwright test` itself exits 0 when a suite is all
+      # skips. So a collection-only check catches a renamed file or a
+      # testMatch that stops matching, but NOT a suite that is collected yet
+      # never actually runs.
+      #
+      # This step instead reads the JSON report produced by the run above and
+      # asserts on ACTUAL per-test status: exactly 4 tests from
+      # e2e-p2p/builtin-rendezvous-p2p.e2e.ts, including the payoff test, must
+      # report "passed" — no more, no fewer, none "skipped", none "failed".
+      # See web/scripts/assert-p2p-suite-ran.mjs for the exact check.
+      - name: Assert the default-path suite really EXECUTED
+        run: node scripts/assert-p2p-suite-ran.mjs "$RUNNER_TEMP/p2p-report.json"
 
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
