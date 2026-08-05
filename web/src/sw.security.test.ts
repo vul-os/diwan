@@ -40,7 +40,7 @@ const root = resolve(here, '..')
 const swSource = readFileSync(resolve(root, 'public/sw.js'), 'utf8')
 const manifest: WebManifest = JSON.parse(
   readFileSync(resolve(root, 'public/manifest.webmanifest'), 'utf8')
-)
+) as WebManifest
 
 // Every path that can carry the session, a token, introspection, a live stream,
 // or a DOCUMENT's bytes must stay network-only. SECURITY-CRITICAL: keep in sync
