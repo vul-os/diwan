@@ -85,7 +85,7 @@ describe('measurePageBreaks', () => {
   })
 
   it('three pages worth of content produces two breaks', () => {
-    const el = fakeContent(new Array(9).fill(100)) // 900px, page = 300 → 3 pages
+    const el = fakeContent(new Array<number>(9).fill(100)) // 900px, page = 300 → 3 pages
     const { breaks, pageCount } = measurePageBreaks(el, 300)
     expect(pageCount).toBe(3)
     expect(breaks.length).toBe(2)
