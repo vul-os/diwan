@@ -1,4 +1,4 @@
-package main
+package docsgate
 
 // docs_links_test.go — every relative link in the repo's Markdown must resolve
 // to a file that exists.
@@ -14,6 +14,12 @@ package main
 // cross-document links to in-page slugs (and unpublished ones to the repo), so
 // its links are correct in the context that renders them and wrong only when
 // resolved as file paths.
+//
+// Moved out of package main (originally repo-root docs_links_test.go): this
+// gate checks repo-hygiene of the documentation tree, not the diwan binary.
+// All paths resolve from the module root (see root.go) rather than the
+// process's working directory, so the gate runs the same regardless of where
+// `go test` is invoked from.
 
 import (
 	"os"
@@ -32,12 +38,14 @@ func markdownSources(t *testing.T) []string {
 	t.Helper()
 	var out []string
 	for _, f := range []string{"README.md", "SECURITY.md", "CONTRIBUTING.md", "CHANGELOG.md", "ROADMAP.md"} {
-		if _, err := os.Stat(f); err == nil {
-			out = append(out, f)
+		p := repoPath(f)
+		if _, err := os.Stat(p); err == nil {
+			out = append(out, p)
 		}
 	}
 	for _, dir := range []string{"docs", "third_party"} {
-		err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+		root := repoPath(dir)
+		err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
@@ -47,7 +55,7 @@ func markdownSources(t *testing.T) []string {
 			return nil
 		})
 		if err != nil && !os.IsNotExist(err) {
-			t.Fatalf("walk %s: %v", dir, err)
+			t.Fatalf("walk %s: %v", root, err)
 		}
 	}
 	return out
