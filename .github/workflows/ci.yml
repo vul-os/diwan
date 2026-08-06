@@ -117,6 +117,16 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # scripts/assert-p2p-suite-ran.mjs is the CI gate (job e2e-p2p below)
+      # that proves the built-in-rendezvous P2P suite actually EXECUTED,
+      # not just that it was collected — the logic that gate is trusted
+      # through, yet was itself unchecked JavaScript parsing untyped
+      # JSON.parse output. scripts/tsconfig.json (allowJs+checkJs) brings
+      # it under real tsc checking without a runtime rename; blocking,
+      # same as Typecheck above.
+      - name: Typecheck (CI gate scripts)
+        run: npm run typecheck:scripts
+
       - name: Lint
         run: npm run lint
 
