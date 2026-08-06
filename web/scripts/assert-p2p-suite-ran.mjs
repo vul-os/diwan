@@ -24,6 +24,41 @@
 
 import { readFileSync } from 'node:fs'
 
+/**
+ * The subset of Playwright's `json` reporter shape this script actually
+ * relies on. Hand-written (not imported from @playwright/test/reporter) so
+ * that a field this script reads — e.g. `.status` — is what gets checked;
+ * a typo'd field name here becomes a compile error instead of silently
+ * resolving to `undefined` the way untyped `JSON.parse` output would.
+ * @typedef {Object} P2PReportTestResult
+ * @property {string} status
+ */
+/**
+ * @typedef {Object} P2PReportTest
+ * @property {P2PReportTestResult[]} [results]
+ */
+/**
+ * @typedef {Object} P2PReportSpec
+ * @property {string} file
+ * @property {string} title
+ * @property {P2PReportTest[]} [tests]
+ */
+/**
+ * @typedef {Object} P2PReportSuite
+ * @property {P2PReportSuite[]} [suites]
+ * @property {P2PReportSpec[]} [specs]
+ */
+/**
+ * @typedef {Object} P2PReport
+ * @property {P2PReportSuite[]} [suites]
+ */
+/**
+ * @typedef {Object} CollectedTest
+ * @property {string} file
+ * @property {string} title
+ * @property {string} status
+ */
+
 const SUITE_FILE = 'builtin-rendezvous-p2p.e2e.ts'
 const EXPECTED_PASSED_COUNT = 4
 const REQUIRED_TITLE_SUBSTRING = 'THE PAYOFF'
@@ -34,15 +69,21 @@ if (!reportPath) {
   process.exit(1)
 }
 
+/** @type {P2PReport} */
 let report
 try {
   report = JSON.parse(readFileSync(reportPath, 'utf8'))
 } catch (err) {
-  console.error(`FAIL: could not read/parse Playwright JSON report at ${reportPath}: ${err.message}`)
+  console.error(`FAIL: could not read/parse Playwright JSON report at ${reportPath}: ${err instanceof Error ? err.message : String(err)}`)
   process.exit(1)
 }
 
-/** Flatten Playwright's nested suite tree into { file, title, status }[]. */
+/**
+ * Flatten Playwright's nested suite tree into { file, title, status }[].
+ * @param {P2PReportSuite} suite
+ * @param {CollectedTest[]} out
+ * @returns {CollectedTest[]}
+ */
 function collectTests(suite, out) {
   for (const child of suite.suites ?? []) collectTests(child, out)
   for (const spec of suite.specs ?? []) {
