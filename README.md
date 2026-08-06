@@ -4,13 +4,19 @@
 
 # Diwan
 
+[![CI](https://github.com/vul-os/diwan/actions/workflows/ci.yml/badge.svg)](https://github.com/vul-os/diwan/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/vul-os/diwan?sort=semver&label=release)](https://github.com/vul-os/diwan/releases)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
+[![Go 1.25](https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white)](go.mod)
+[![React 18](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)](web/package.json)
+
 ### A real, self-hostable collaborative office suite you own.
 
 Documents, spreadsheets, slides, and whiteboards — **CRDT-native** and
 **real-time**, shipped as a single binary, running on **your own storage**.
 No cloud account, no telemetry, no lock-in.
 
-**[Version 0.3.0](CHANGELOG.md) · [MIT OR Apache-2.0](LICENSE-MIT) · [Self-hostable, single binary](docs/SELFHOST.md) · [CRDT, real-time P2P](docs/COLLABORATION.md) · Go 1.25 · React 18**
+**[Changelog](CHANGELOG.md) · [MIT OR Apache-2.0](LICENSE-MIT) · [Self-hostable, single binary](docs/SELFHOST.md) · [CRDT, real-time P2P](docs/COLLABORATION.md) · Go 1.25 · React 18**
 
 [**Quickstart**](#quick-start) · [**Docs**](docs/) · [**Collaboration**](docs/COLLABORATION.md) · [**Architecture**](docs/ARCHITECTURE.md) · [**Self-hosting**](docs/SELFHOST.md)
 
