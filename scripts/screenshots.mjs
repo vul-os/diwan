@@ -21,9 +21,9 @@
  *   npx playwright install chromium
  */
 
-import { chromium } from 'playwright'
 import { mkdirSync, writeFileSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { createRequire } from 'node:module'
 import path from 'node:path'
 import { spawn, execSync } from 'node:child_process'
 
@@ -32,6 +32,16 @@ import { seedStaticFiles, seedLocalDriveFiles, DEMO_DATA_DIR, DEMO_HOME_DIR } fr
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT       = path.resolve(__dirname, '..')
 const OUT        = path.join(ROOT, 'docs', 'screenshots')
+
+// playwright is a devDependency of web/, but this script lives at the repo
+// root — and Node resolves bare specifiers by walking up from the *importing
+// file*, so scripts/ sees scripts/node_modules and <root>/node_modules and
+// never web/node_modules. A plain `import { chromium } from 'playwright'`
+// therefore only worked while a stray <root>/node_modules happened to exist,
+// and died with ERR_MODULE_NOT_FOUND the moment it was cleaned up. Resolve it
+// from where it is actually installed instead.
+const webRequire = createRequire(path.join(ROOT, 'web', 'package.json'))
+const { chromium } = webRequire('playwright')
 
 const EXTERNAL_URL = process.env.BASE_URL
 const FORCE_SEED   = process.argv.includes('--seed')
