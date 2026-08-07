@@ -75,7 +75,11 @@ Diwan is a collaborative document editing + e-signing service. It exposes:
 ## Component Map
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'ui-monospace, SFMono-Regular, Menlo, monospace','primaryColor':'#2A241C','primaryBorderColor':'#8E8677','primaryTextColor':'#F1EBE0','lineColor':'#D0471F','edgeLabelBackground':'#201B15','tertiaryTextColor':'#F1EBE0','clusterBorder':'#8E8677','clusterBkg':'transparent'}}}%%
 flowchart TD
+    classDef entry fill:#201B15,stroke:#8E8677,color:#C3BAAC
+    classDef subject fill:#AE3917,stroke:#FF8759,color:#FFF1EA
+    classDef downstream fill:#2A241C,stroke:#8E8677,color:#F1EBE0
     Browser["Browser clients (React SPA)"]
     Server["Gin HTTP Server (main.go)<br/>/api/files/* → FileHandler<br/>/api/files/:id/versions → ...<br/>/api/sign/* → SigningHandler<br/>/version → build info<br/>/metrics → obs.Handler()"]
     Storage["backend/storage/<br/>local, PG"]
@@ -87,6 +91,9 @@ flowchart TD
     Server --> Signing
     Server --> Fileacl
     Server --> Obs
+    class Browser entry
+    class Server subject
+    class Storage,Signing,Fileacl,Obs downstream
 ```
 
 ## Key Design Decisions

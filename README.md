@@ -45,12 +45,18 @@ that proved productivity software can be free, open, and community-driven — in
 the browser, on a fast React frontend and a lightweight Go backend.
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables':{'fontFamily':'ui-monospace, SFMono-Regular, Menlo, monospace','primaryColor':'transparent','primaryBorderColor':'#14b8a6','primaryTextColor':'#8f969e','lineColor':'#8a8f98','nodeBorder':'#5f8f8a','edgeLabelBackground':'transparent','clusterBorder':'#3f8f86','clusterBkg':'transparent'}}}%%
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'ui-monospace, SFMono-Regular, Menlo, monospace','primaryColor':'#2A241C','primaryBorderColor':'#8E8677','primaryTextColor':'#F1EBE0','lineColor':'#D0471F','edgeLabelBackground':'#201B15','tertiaryTextColor':'#F1EBE0','clusterBorder':'#8E8677','clusterBkg':'transparent'}}}%%
 flowchart LR
+    classDef entry fill:#201B15,stroke:#8E8677,color:#C3BAAC
+    classDef subject fill:#AE3917,stroke:#FF8759,color:#FFF1EA
+    classDef downstream fill:#2A241C,stroke:#8E8677,color:#F1EBE0
     you["you (browser)"] -->|edits| diwan["Diwan<br/>single binary"]
     peer["a collaborator"] -.->|"E2E-encrypted P2P (WebRTC)"| you
     diwan --> store["your storage<br/>files · SQLite · Postgres · S3"]
     diwan --> surfaces["Docs · Sheets · Slides<br/>Whiteboards · PDF signing"]
+    class you,peer entry
+    class diwan subject
+    class store,surfaces downstream
 ```
 
 > *A diwan was a register of records, and a collected volume of work. This one is yours.*
@@ -171,8 +177,11 @@ Self-hosting it yourself is always the default path, and never second-class.
 ## Architecture
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables':{'fontFamily':'ui-monospace, SFMono-Regular, Menlo, monospace','primaryColor':'transparent','primaryBorderColor':'#14b8a6','primaryTextColor':'#8f969e','lineColor':'#8a8f98','nodeBorder':'#5f8f8a','edgeLabelBackground':'transparent','clusterBorder':'#3f8f86','clusterBkg':'transparent'}}}%%
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'ui-monospace, SFMono-Regular, Menlo, monospace','primaryColor':'#2A241C','primaryBorderColor':'#8E8677','primaryTextColor':'#F1EBE0','lineColor':'#D0471F','edgeLabelBackground':'#201B15','tertiaryTextColor':'#F1EBE0','clusterBorder':'#8E8677','clusterBkg':'transparent'}}}%%
 flowchart TD
+    classDef entry fill:#201B15,stroke:#8E8677,color:#C3BAAC
+    classDef subject fill:#AE3917,stroke:#FF8759,color:#FFF1EA
+    classDef downstream fill:#2A241C,stroke:#8E8677,color:#F1EBE0
     FE["React + Vite + Tailwind frontend<br/>Docs · Sheets · Slides · Whiteboards · PDF signing"]
     BE["Go backend (Gin)<br/>handlers · userauth · signing · storage · obs"]
     Seam["backend/seam — Identity · Entitlements · Usage<br/>standalone defaults (local, unlimited, no-op)"]
@@ -180,6 +189,9 @@ flowchart TD
     FE -->|"embedded into the binary"| BE
     BE --> Seam
     Seam -->|optional| Adapter
+    class FE entry
+    class BE subject
+    class Seam,Adapter downstream
 ```
 
 Diwan is a **single Go binary with the whole frontend embedded** — one file to

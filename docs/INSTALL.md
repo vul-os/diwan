@@ -67,7 +67,11 @@ shared identity/fabric init). Both are pulled in by `vulos-bundle.target` (the
 all-up sentinel).
 
 ```mermaid
+%%{init: {'theme':'base','themeVariables':{'fontFamily':'ui-monospace, SFMono-Regular, Menlo, monospace','primaryColor':'#2A241C','primaryBorderColor':'#8E8677','primaryTextColor':'#F1EBE0','lineColor':'#D0471F','edgeLabelBackground':'#201B15','tertiaryTextColor':'#F1EBE0','clusterBorder':'#8E8677','clusterBkg':'transparent'}}}%%
 flowchart TD
+    classDef entry fill:#201B15,stroke:#8E8677,color:#C3BAAC
+    classDef subject fill:#AE3917,stroke:#FF8759,color:#FFF1EA
+    classDef downstream fill:#2A241C,stroke:#8E8677,color:#F1EBE0
     Net["network-online.target"]
     MinIO["[vulos-minio.service]<br/>(optional — local-MinIO mode only)"]
     Fabric["vulos-fabric.service<br/>(shared fabric identity init — oneshot)"]
@@ -79,6 +83,9 @@ flowchart TD
     Fabric --> OS
     Fabric --> Diwan
     Diwan --> Bundle
+    class Net entry
+    class Diwan subject
+    class MinIO,Fabric,OS,Bundle downstream
 ```
 
 The relevant ordering for office (from
