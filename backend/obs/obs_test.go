@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	dto "github.com/prometheus/client_model/go"
 	"diwan/backend/obs"
+	dto "github.com/prometheus/client_model/go"
 )
 
 func TestMetricIncrement(t *testing.T) {
