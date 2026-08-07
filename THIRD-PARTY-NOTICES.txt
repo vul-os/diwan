@@ -11003,7 +11003,7 @@ licenses; we recommend you read them, as their terms may differ from the
 terms above.
 
 ==============================================================================
-lodash-es  4.17.21
+lodash-es  4.18.1
 Licence declared by the component: MIT
 Source: https://github.com/lodash/lodash
 Publisher: John-David Dalton

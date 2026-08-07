@@ -1,0 +1,31 @@
+# Trivy suppressions — one CVE ID per line, comments start with #.
+#
+# This file must exist even when it is empty. security-scan.yml passes
+# `trivyignores: .trivyignore`, and Trivy treats a named-but-absent ignorefile
+# as a fatal error ("cannot find ignorefile '.trivyignore'"), exiting 1 before
+# it scans anything. Because that job is advisory (continue-on-error: true),
+# the run still rolled up green — so the filesystem scan reported no findings
+# for the same reason a scan that found nothing would: it never ran.
+#
+# That is the second time this exact shape has bitten this workflow; see the
+# note in security-scan.yml about the dead `git clone` that used to take gosec
+# and govulncheck down with it just as quietly.
+#
+# Every entry needs a reason and a date next to it, because an unexplained CVE
+# ID is indistinguishable from one that was silenced because it was
+# inconvenient.
+
+# 2026-08-07 — react-router 7.18.1, "RSC Mode CSRF Bypass Allows Action
+# Execution Before 400 Response". Not reachable here: the advisory is specific
+# to React Server Components mode, and diwan's frontend is a Vite SPA that the
+# Go binary serves as static assets — there are no server components and no
+# router-handled actions. It is also not straightforwardly fixable: the fix
+# lands in react-router 8, but this app depends on react-router-dom, which is
+# frozen at 7.18.2 because v8 consolidated it back into react-router. Clearing
+# it therefore means an import-path migration off react-router-dom, which is a
+# deliberate change to make on its own, not a side effect of a CVE sweep.
+# Re-check when that migration happens.
+GHSA-qwww-vcr4-c8h2
+#
+# Syntax reference:
+#   https://trivy.dev/latest/docs/configuration/filtering/

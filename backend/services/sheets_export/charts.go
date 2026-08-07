@@ -496,17 +496,21 @@ func chartDimension(ch Chart) excelize.ChartDimension {
 	return excelize.ChartDimension{Width: uint(w), Height: uint(h)}
 }
 
-func richTitle(s string) []excelize.RichTextRun {
+// richTitle builds a chart title. excelize 2.11 replaced the bare
+// []RichTextRun with a ChartTitle struct that carries the runs in Paragraph
+// alongside fill/border/font settings; an empty struct is the "no title" value
+// where nil used to be.
+func richTitle(s string) excelize.ChartTitle {
 	if s == "" {
-		return nil
+		return excelize.ChartTitle{}
 	}
-	return []excelize.RichTextRun{{Text: escapeChartText(s, 200)}}
+	return excelize.ChartTitle{Paragraph: []excelize.RichTextRun{{Text: escapeChartText(s, 200)}}}
 }
 
 func axisTitle(s string) excelize.ChartAxis {
 	ax := excelize.ChartAxis{}
 	if s != "" {
-		ax.Title = []excelize.RichTextRun{{Text: escapeChartText(s, 120)}}
+		ax.Title = excelize.ChartTitle{Paragraph: []excelize.RichTextRun{{Text: escapeChartText(s, 120)}}}
 	}
 	return ax
 }
@@ -728,7 +732,7 @@ func addCharts(f *excelize.File, sheetName string, sheet Sheet, idx cellIndex, r
 			}}
 			gap := uint(0)
 			primary.GapWidth = &gap
-			if primary.YAxis.Title == nil {
+			if len(primary.YAxis.Title.Paragraph) == 0 {
 				primary.YAxis = axisTitle("Frequency")
 				primary.YAxis.MajorGridLines = true
 			}
@@ -749,7 +753,7 @@ func addCharts(f *excelize.File, sheetName string, sheet Sheet, idx cellIndex, r
 						Name:       seriesName(s, i+1, aux),
 						Categories: refs.catRef,
 						Values:     s.valRef,
-						Line:       excelize.ChartLine{Width: 2.25},
+						Line:       excelize.LineOptions{Width: 2.25},
 					})
 				}
 				lineChart := &excelize.Chart{
