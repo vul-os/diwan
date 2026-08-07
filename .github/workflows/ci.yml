@@ -268,3 +268,24 @@ jobs:
           name: playwright-report-p2p
           path: web/playwright-report/
           retention-days: 7
+
+  # ── Published docs match their sources ──────────────────────────────────────
+  # site/docs/*.md are copies of docs/*.md (plus CHANGELOG.md and ROADMAP.md).
+  # They were copied by hand once and nothing kept them in step, so every later
+  # edit to a source published stale text silently — a diagram restyle landed in
+  # docs/ARCHITECTURE.md while site/docs/architecture.md kept serving the old
+  # one. Dependency-free, so it needs no npm install and runs in seconds.
+  docs-sync:
+    name: site/docs mirrors docs/
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Published docs are in sync with their sources
+        run: node scripts/sync-site-docs.mjs --check
