@@ -84,7 +84,7 @@
   --arabic:'SF Arabic','Geeza Pro','Noto Naskh Arabic',Amiri,'Traditional Arabic','Segoe UI',serif;
 
   --grain:.04; --grain-blend:multiply;
-  --max:1160px;
+  --max:1360px;
   --ease:cubic-bezier(.16,1,.3,1);
   color-scheme:light;
 }
@@ -205,8 +205,18 @@ img{max-width:100%;display:block}
 @media(max-width:768px){.vulos-badge{min-height:44px;min-width:44px;justify-content:center}}
 
 /* ══ Docs shell ═════════════════════════════════════════════════════════════ */
-.docs-shell{display:grid;grid-template-columns:262px 1fr;gap:38px;align-items:start;padding:40px 0 84px}
-@media(max-width:860px){.docs-shell{grid-template-columns:1fr;padding-top:28px}}
+/* Chapters | prose | on-this-page. This was a 1160px two-column shell centred
+   on the page, which left the chapter rail floating ~380px in from the edge of
+   a wide display with dead space beside it, and gave the prose a narrower
+   column than the window could easily afford. minmax(0,1fr) on the prose,
+   not 1fr: a grid child defaults to min-width:auto, so a wide <pre> or table
+   would push the whole page sideways. */
+.docs-shell{
+  display:grid;grid-template-columns:262px minmax(0,1fr) 210px;gap:40px;
+  align-items:start;padding:40px 0 84px;
+}
+@media(max-width:1200px){.docs-shell{grid-template-columns:246px minmax(0,1fr);gap:32px}.docs-toc{display:none}}
+@media(max-width:860px){.docs-shell{grid-template-columns:minmax(0,1fr);padding-top:28px;gap:24px}}
 
 .docs-rail{
   background:var(--paper);border:1px solid var(--line);border-radius:12px;
@@ -231,6 +241,21 @@ img{max-width:100%;display:block}
 }
 
 .docs-main{min-width:0}
+
+/* On this page — built from the headings each chapter actually rendered. */
+.docs-toc{position:sticky;top:82px;max-height:calc(100vh - 104px);overflow-y:auto}
+.docs-toc .label{
+  font-family:var(--mono);font-size:11.5px;font-weight:500;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--ink-ghost);padding:0 0 10px 12px;
+}
+.docs-toc a{
+  display:block;padding:5px 12px;font-size:13px;line-height:1.45;color:var(--ink-faint);
+  border-left:2px solid var(--line);transition:color .18s,border-color .18s;
+}
+.docs-toc a:hover{color:var(--ink);border-left-color:var(--line-emph)}
+.docs-toc a.lvl3{padding-left:24px;font-size:12.5px}
+.docs-toc a[aria-current=true]{color:var(--ink);border-left-color:var(--accent);font-weight:600}
+.docs-toc .empty{padding:5px 12px;font-size:12.5px;color:var(--ink-faint)}
 .docs-crumb{margin:0 0 8px}
 .docs-error{
   color:var(--pdf);background:var(--accent-tint);border:1px solid var(--accent-tint-2);
@@ -383,6 +408,7 @@ img{max-width:100%;display:block}
     <p class="eyebrow docs-crumb" id="crumb"></p>
     <article class="markdown" id="content">Loading…</article>
   </div>
+  <nav class="docs-toc" id="docsToc" aria-label="On this page"></nav>
 </div>
 </main>
 
@@ -505,6 +531,7 @@ async function load(slug){
   setActive(doc.slug);
   crumb.textContent = doc.title;
   content.innerHTML = 'Loading…';
+  if (docsToc) docsToc.innerHTML = '';
   try {
     const res = await fetch(doc.path, {cache:'no-cache'});
     if(!res.ok) throw new Error('HTTP '+res.status);
@@ -540,6 +567,7 @@ async function load(slug){
       }
     });
     content.querySelectorAll('a[href^="http"]').forEach(a=>{a.target='_blank';a.rel='noopener';});
+    buildToc();
     if (content.querySelector('code.language-mermaid')) await paintMermaid();
     window.scrollTo({top:0});
   } catch(err){
@@ -548,6 +576,65 @@ async function load(slug){
 }
 
 function current(){ return (location.hash||'').replace('#','') || DOCS[0].slug; }
+/* ── on this page ──────────────────────────────────────────────────────
+   marked emits no heading ids, so anchors are minted here first — without
+   them the rail would have nothing to link to. h2/h3 only: h1 is the
+   chapter title, already shown as the crumb, and h4+ makes the rail longer
+   than the prose it indexes. A chapter with no subheadings says so rather
+   than leaving an unexplained empty column. */
+var docsToc = document.getElementById('docsToc');
+var tocSpy = null;
+
+function slugifyHeading(text, seen){
+  var base = String(text).toLowerCase().trim()
+    .replace(/[^\w\s-]/g, '').replace(/\s+/g, '-') || 'section';
+  var n = seen.get(base) || 0;
+  seen.set(base, n + 1);
+  return n ? base + '-' + n : base;
+}
+
+function buildToc(){
+  if(!docsToc) return;
+  var seen = new Map();
+  content.querySelectorAll('h1,h2,h3,h4,h5,h6').forEach(function(h){
+    if(!h.id) h.id = slugifyHeading(h.textContent, seen);
+  });
+
+  var heads = [].slice.call(content.querySelectorAll('h2,h3'));
+  if(!heads.length){
+    docsToc.innerHTML = '<div class="label">On this page</div>' +
+      '<div class="empty">No sections in this chapter.</div>';
+    return;
+  }
+  docsToc.innerHTML = '<div class="label">On this page</div>' + heads.map(function(h){
+    return '<a href="#" data-id="' + h.id + '"' +
+      (h.tagName === 'H3' ? ' class="lvl3"' : '') + '>' + h.textContent + '</a>';
+  }).join('');
+
+  [].forEach.call(docsToc.querySelectorAll('a[data-id]'), function(a){
+    a.addEventListener('click', function(e){
+      e.preventDefault();
+      var el = document.getElementById(a.dataset.id);
+      if(!el) return;
+      var reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+      el.scrollIntoView({block:'start', behavior: reduce ? 'auto' : 'smooth'});
+    });
+  });
+
+  if(tocSpy) tocSpy.disconnect();
+  if(!('IntersectionObserver' in window)) return;
+  tocSpy = new IntersectionObserver(function(entries){
+    entries.forEach(function(en){
+      if(!en.isIntersecting) return;
+      [].forEach.call(docsToc.querySelectorAll('a[data-id]'), function(a){
+        if(a.dataset.id === en.target.id) a.setAttribute('aria-current','true');
+        else a.removeAttribute('aria-current');
+      });
+    });
+  }, {rootMargin:'-80px 0px -70% 0px'});
+  heads.forEach(function(h){ tocSpy.observe(h); });
+}
+
 window.addEventListener('hashchange', ()=>load(current()));
 load(current());
 
